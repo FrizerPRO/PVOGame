@@ -19,7 +19,19 @@ class GeometryComponent: GKComponent {
             geometryNode.physicsBody = SKPhysicsBody(rectangleOf: geometryNode.frame.size)
         geometryNode.physicsBody?.mass = 1
     }
-    
+    public init(spriteNode: SKSpriteNode,
+                                      categoryBitMask: UInt32,
+                                      contactTestBitMask: UInt32,
+                                      collisionBitMask: UInt32){
+        self.geometryNode = spriteNode
+        super.init()
+        geometryNode.physicsBody = SKPhysicsBody(rectangleOf: geometryNode.frame.size)
+        geometryNode.physicsBody?.mass = 1
+        geometryNode.physicsBody?.categoryBitMask = categoryBitMask
+        geometryNode.physicsBody?.contactTestBitMask = contactTestBitMask
+        geometryNode.physicsBody?.collisionBitMask = collisionBitMask
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

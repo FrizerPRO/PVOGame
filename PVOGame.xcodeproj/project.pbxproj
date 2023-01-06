@@ -20,6 +20,10 @@
 		E95511D0293B6693000137C6 /* InPlayGKScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511CF293B6693000137C6 /* InPlayGKScene.swift */; };
 		E95511D4293D0E72000137C6 /* InPlaySKScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511D3293D0E72000137C6 /* InPlaySKScene.swift */; };
 		E9551215293E5A04000137C6 /* RotationComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9551214293E5A04000137C6 /* RotationComponent.swift */; };
+		E96D79F32964623500D47A57 /* FlyingProjectile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79F22964623500D47A57 /* FlyingProjectile.swift */; };
+		E96D79F5296474C400D47A57 /* AttackDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79F4296474C400D47A57 /* AttackDroneEntity.swift */; };
+		E96D79F92964BA4700D47A57 /* FlyingProjectileComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79F82964BA4700D47A57 /* FlyingProjectileComponent.swift */; };
+		E96D79FB29657F2400D47A57 /* FlyingPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79FA29657F2400D47A57 /* FlyingPath.swift */; };
 		E9873F752939344500302524 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9873F742939344500302524 /* AppDelegate.swift */; };
 		E9873F772939344500302524 /* GameScene.sks in Resources */ = {isa = PBXBuildFile; fileRef = E9873F762939344500302524 /* GameScene.sks */; };
 		E9873F792939344500302524 /* Actions.sks in Resources */ = {isa = PBXBuildFile; fileRef = E9873F782939344500302524 /* Actions.sks */; };
@@ -64,6 +68,10 @@
 		E95511CF293B6693000137C6 /* InPlayGKScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InPlayGKScene.swift; sourceTree = "<group>"; };
 		E95511D3293D0E72000137C6 /* InPlaySKScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InPlaySKScene.swift; sourceTree = "<group>"; };
 		E9551214293E5A04000137C6 /* RotationComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotationComponent.swift; sourceTree = "<group>"; };
+		E96D79F22964623500D47A57 /* FlyingProjectile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyingProjectile.swift; sourceTree = "<group>"; };
+		E96D79F4296474C400D47A57 /* AttackDroneEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttackDroneEntity.swift; sourceTree = "<group>"; };
+		E96D79F82964BA4700D47A57 /* FlyingProjectileComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyingProjectileComponent.swift; sourceTree = "<group>"; };
+		E96D79FA29657F2400D47A57 /* FlyingPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyingPath.swift; sourceTree = "<group>"; };
 		E9873F712939344500302524 /* PVOGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PVOGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E9873F742939344500302524 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		E9873F762939344500302524 /* GameScene.sks */ = {isa = PBXFileReference; lastKnownFileType = file.sks; path = GameScene.sks; sourceTree = "<group>"; };
@@ -118,6 +126,9 @@
 				E95511BC293A05FD000137C6 /* BulletEntity.swift */,
 				E95511BF293A069C000137C6 /* Shell.swift */,
 				E95511CA293B459F000137C6 /* GunEntity.swift */,
+				E96D79F22964623500D47A57 /* FlyingProjectile.swift */,
+				E96D79F4296474C400D47A57 /* AttackDroneEntity.swift */,
+				E96D79FA29657F2400D47A57 /* FlyingPath.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -130,6 +141,7 @@
 				E95511CC293B5650000137C6 /* SpriteComponent.swift */,
 				E9551214293E5A04000137C6 /* RotationComponent.swift */,
 				E9356FFC2959A564005BC143 /* ShootComponent.swift */,
+				E96D79F82964BA4700D47A57 /* FlyingProjectileComponent.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -141,6 +153,13 @@
 				E95511D3293D0E72000137C6 /* InPlaySKScene.swift */,
 			);
 			path = Scenes;
+			sourceTree = "<group>";
+		};
+		E96D79FC2966F98F00D47A57 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Extensions;
 			sourceTree = "<group>";
 		};
 		E9873F682939344500302524 = {
@@ -166,6 +185,7 @@
 		E9873F732939344500302524 /* PVOGame */ = {
 			isa = PBXGroup;
 			children = (
+				E96D79FC2966F98F00D47A57 /* Extensions */,
 				E9356F7A2948A68E005BC143 /* Enums */,
 				E95511CE293B6671000137C6 /* Scenes */,
 				E95511C1293A361E000137C6 /* Components */,
@@ -341,12 +361,16 @@
 				E95511CB293B459F000137C6 /* GunEntity.swift in Sources */,
 				E95511C3293A45E6000137C6 /* GeometryComponent.swift in Sources */,
 				E9356FFF295B83D2005BC143 /* Constants.swift in Sources */,
+				E96D79FB29657F2400D47A57 /* FlyingPath.swift in Sources */,
+				E96D79F32964623500D47A57 /* FlyingProjectile.swift in Sources */,
 				E95511D0293B6693000137C6 /* InPlayGKScene.swift in Sources */,
 				E9873F7D2939344500302524 /* GameViewController.swift in Sources */,
 				E9551215293E5A04000137C6 /* RotationComponent.swift in Sources */,
 				E95511CD293B5650000137C6 /* SpriteComponent.swift in Sources */,
+				E96D79F92964BA4700D47A57 /* FlyingProjectileComponent.swift in Sources */,
 				E95511BD293A05FD000137C6 /* BulletEntity.swift in Sources */,
 				E9873FA82939E98900302524 /* UIView_Pin.swift in Sources */,
+				E96D79F5296474C400D47A57 /* AttackDroneEntity.swift in Sources */,
 				E9873F752939344500302524 /* AppDelegate.swift in Sources */,
 				E95511D4293D0E72000137C6 /* InPlaySKScene.swift in Sources */,
 			);

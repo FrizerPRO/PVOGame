@@ -10,13 +10,16 @@ import SpriteKit
 import GameplayKit
 
 class GameViewController: UIViewController {
-    
     fileprivate func setupView() {
         // Load 'GameScene.sks' as a GKScene. This provides gameplay related content
         // including entities and graphs.
         let scene = InPlaySKScene(size: view.frame.size)
-        let gunEntity = setupGun()
         
+        let gunEntity = setupGun()
+        for _ in 1...1000{
+            let droneEntity = setupAttackDrone(scene: scene)
+            scene.addEntity(droneEntity)
+        }
         scene.addEntity(gunEntity)
         // Get the SKScene from the loaded GKScene
         // Copy gameplay related content over to the scene
@@ -32,7 +35,30 @@ class GameViewController: UIViewController {
             view.showsNodeCount = true
         }
     }
-    
+    private func setupAttackDrone(scene: SKScene)->AttackDroneEntity{
+        let flyingPath = FlyingPath(topLevel: view.frame.height, bottomLevel: 30, leadingLevel: 0, trailingLevel: view.frame.width, startLevel: view.frame.height, endLevel: 0, pathGenerator: {flyingPath in
+            var nodes = [vector_float2]()
+            nodes.append(vector_float2(x: Float.random(in: flyingPath.leadingLevel...flyingPath.trailingLevel),
+                                       y: Float(flyingPath.startLevel)))
+            let counter = Int.random(in: 15...20)
+            for i in 1 ..< counter{
+                nodes.append(vector_float2(x: Float.random(in: flyingPath.leadingLevel...flyingPath.trailingLevel),
+                                           y: flyingPath.topLevel * Float(counter - i)/Float(counter)))
+            }
+            nodes.append(vector_float2(x: Float(flyingPath.trailingLevel/2), y: Float(flyingPath.endLevel)))
+            return nodes
+        })
+//        var points = [CGPoint]()
+//        for i in flyingPath.nodes{
+//            points.append(CGPoint(x: CGFloat(i.x), y: CGFloat(i.y)))
+//        }
+//        let shape = SKShapeNode(points: &points, count: points.count)
+//        shape.lineWidth = 2
+//        shape.strokeColor = .white
+//        shape.zPosition = 10
+        //scene.addChild(shape)
+        return AttackDroneEntity(damage: 1, speed: 500, imageName: "Drone",flyingPath: flyingPath)
+    }
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view = SKView(frame: view.frame)
@@ -40,8 +66,8 @@ class GameViewController: UIViewController {
         setupView()
     }
     private func setupGun() -> GunEntity{
-        let bullet = BulletEntity(damage: 1, startImpact: 1300,imageName: "PistolGun")
-        let gunEntity = GunEntity(imageName: "PistolGun",shell: bullet,shootingSpeed: 1000)
+        let bullet = BulletEntity(damage: 1, startImpact: 1450,imageName: "Bullet")
+        let gunEntity = GunEntity(imageName: "PistolGun",shell: bullet,shootingSpeed: 5000)
         if let spriteComponent = gunEntity.component(ofType: SpriteComponent.self){
             spriteComponent.spriteNode.size = CGSize(
                 width: spriteComponent.spriteNode.frame.width/view.frame.size.width*70, height: spriteComponent.spriteNode.frame.height/view.frame.size.width*70)

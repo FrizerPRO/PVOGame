@@ -18,10 +18,12 @@ class PlayerControlComponent: GKComponent {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    func newTap(deltaTime: TimeInterval,lastTap: CGPoint){
+    func changedFingerPosition(deltaTime: TimeInterval,lastTap: CGPoint){
         if let rotation = entity?.component(ofType: RotationComponent.self){
             rotation.rotate(tap: lastTap, deltaTime: deltaTime)
         }
+    }
+    func newTap(deltaTime: TimeInterval,lastTap: CGPoint){
         if let gun = entity as? GunEntity{
             gun.shoot(deltaTime: deltaTime)
         }

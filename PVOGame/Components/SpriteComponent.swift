@@ -23,4 +23,7 @@ class SpriteComponent: GKComponent {
     func setPosition(position: CGPoint){
         spriteNode.position = position
     }
+    override func didAddToEntity() {
+        spriteNode.entity = entity
+    }
 }

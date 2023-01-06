@@ -33,11 +33,15 @@ class GunEntity: GKEntity {
         if let shell = shell.copy() as? Shell{
             if let gunSprite = component(ofType: SpriteComponent.self){
                 if let shellSprite = shell.component(ofType: SpriteComponent.self){
-                    gunSprite.spriteNode.scene?.addChild(shellSprite.spriteNode)
-                    shellSprite.setPosition(position: CGPoint(x: gunSprite.spriteNode.position.x +
-                                                              gunSprite.spriteNode.frame.width * cos(gunSprite.spriteNode.zRotation + .pi/2),
-                                                              y: gunSprite.spriteNode.position.y +
-                                                              gunSprite.spriteNode.frame.height * sin(gunSprite.spriteNode.zRotation + .pi/2)))
+                    if let scene = gunSprite.spriteNode.scene as? InPlaySKScene{
+                        scene.addEntity(shell)
+                    }
+                    let randHeight = Int.random(in: 0...30)
+
+                    shellSprite.setPosition(position: CGPoint(x: gunSprite.spriteNode.position.x + (CGFloat(randHeight) +
+                                                              gunSprite.spriteNode.frame.width) * cos(gunSprite.spriteNode.zRotation + .pi/2),
+                                                              y: gunSprite.spriteNode.position.y + (CGFloat(randHeight) +
+                                                              gunSprite.spriteNode.frame.height) * sin(gunSprite.spriteNode.zRotation + .pi/2)))
                     shellSprite.spriteNode.zRotation = gunSprite.spriteNode.zRotation
                     if let shell = shell.component(ofType: ShootComponent.self){
                         shell.shoot(vector: CGVector(dx: cos(gunSprite.spriteNode.zRotation + .pi/2),
