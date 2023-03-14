@@ -17,5 +17,4 @@ class Constants{
     static let exitFromGameButtonName = "exitFromGameButtonName"
     static let cancelExitFromGameButtonName = "cancelExitFromGameButtonName"
     static let exitMenuName = "exitMenuName"
-
 }

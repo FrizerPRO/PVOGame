@@ -93,7 +93,7 @@ class InPlaySKScene: SKScene {
         addEntity(mainGun!)
     }
     private func setupArmyOfAttackDrones(_ view: UIView){
-        for _ in 1...100{
+        for _ in 1...1000{
             addEntity(setupAttackDrone(view))
         }
     }
@@ -110,7 +110,7 @@ class InPlaySKScene: SKScene {
             nodes.append(vector_float2(x: Float(flyingPath.trailingLevel/2), y: Float(flyingPath.endLevel)))
             return nodes
         })
-        return AttackDroneEntity(damage: 1, speed: 500, imageName: "Dildo",flyingPath: flyingPath)
+        return AttackDroneEntity(damage: 1, speed: 500, imageName: "Drone",flyingPath: flyingPath)
     }
     func startGame(){
         guard let view = view
