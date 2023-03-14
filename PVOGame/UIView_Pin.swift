@@ -237,15 +237,15 @@ extension UIView {
     }
 
     @discardableResult
-    func setHeight(_ const: Int) -> NSLayoutConstraint {
+    func setHeight(_ const: CGFloat) -> NSLayoutConstraint {
         let constraint = heightAnchor.constraint(equalToConstant: CGFloat(const))
         constraint.isActive = true
         return constraint
     }
 
     @discardableResult
-    func setWidth(_ const: Int) -> NSLayoutConstraint {
-        let constraint = widthAnchor.constraint(equalToConstant: CGFloat(const))
+    func setWidth(_ const: CGFloat) -> NSLayoutConstraint {
+        let constraint = widthAnchor.constraint(equalToConstant: const)
         constraint.isActive = true
         return constraint
     }

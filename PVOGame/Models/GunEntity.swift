@@ -8,14 +8,19 @@
 import UIKit
 import GameplayKit
 class GunEntity: GKEntity {
-    let shootingSpeed: Int
-    let shell: Shell
-    
+    var shootingSpeed: Int
+    var shell: Shell
+    var rotateSpeed: CGFloat
+    var label: String
+    var imageName: String
     private var timeSinceLastShot: TimeInterval = 0.0
     
-    init(imageName: String, shell: Shell, shootingSpeed: Int){
+    init(imageName: String, shell: Shell, shootingSpeed: Int,rotateSpeed: CGFloat, label: String){
         self.shell = shell
         self.shootingSpeed = shootingSpeed
+        self.rotateSpeed = rotateSpeed
+        self.label = label
+        self.imageName = imageName
         super.init()
         addComponent(SpriteComponent(imageName: imageName))
         if let component = component(ofType: SpriteComponent.self){
@@ -24,6 +29,18 @@ class GunEntity: GKEntity {
     }
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    func copyFrom(gun: GunEntity){
+        self.shootingSpeed = gun.shootingSpeed
+        self.shell = gun.shell
+        self.rotateSpeed = gun.rotateSpeed
+        self.label = gun.label
+        self.imageName = gun.imageName
+
+        timeSinceLastShot = 0
+        if let component = component(ofType: SpriteComponent.self){
+            component.spriteNode.texture = .init(imageNamed: imageName)
+        }
     }
     func shoot(deltaTime: TimeInterval){
         timeSinceLastShot += deltaTime

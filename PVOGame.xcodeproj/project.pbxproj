@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		E9356F7C2948A6A6005BC143 /* Direction.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9356F7B2948A6A6005BC143 /* Direction.swift */; };
 		E9356FFD2959A564005BC143 /* ShootComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9356FFC2959A564005BC143 /* ShootComponent.swift */; };
-		E9356FFF295B83D2005BC143 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9356FFE295B83D2005BC143 /* Constants.swift */; };
 		E95511BD293A05FD000137C6 /* BulletEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511BC293A05FD000137C6 /* BulletEntity.swift */; };
 		E95511C0293A069C000137C6 /* Shell.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511BF293A069C000137C6 /* Shell.swift */; };
 		E95511C3293A45E6000137C6 /* GeometryComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511C2293A45E6000137C6 /* GeometryComponent.swift */; };
@@ -17,13 +16,25 @@
 		E95511C9293A7341000137C6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E95511C8293A7340000137C6 /* Assets.xcassets */; };
 		E95511CB293B459F000137C6 /* GunEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511CA293B459F000137C6 /* GunEntity.swift */; };
 		E95511CD293B5650000137C6 /* SpriteComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511CC293B5650000137C6 /* SpriteComponent.swift */; };
-		E95511D0293B6693000137C6 /* InPlayGKScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511CF293B6693000137C6 /* InPlayGKScene.swift */; };
 		E95511D4293D0E72000137C6 /* InPlaySKScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511D3293D0E72000137C6 /* InPlaySKScene.swift */; };
 		E9551215293E5A04000137C6 /* RotationComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9551214293E5A04000137C6 /* RotationComponent.swift */; };
+		E95E43AA296C0F6900A06F86 /* SettingsButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95E43A9296C0F6900A06F86 /* SettingsButton.swift */; };
+		E95E43AC296C161700A06F86 /* InGameSettingsMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95E43AB296C161700A06F86 /* InGameSettingsMenu.swift */; };
 		E96D79F32964623500D47A57 /* FlyingProjectile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79F22964623500D47A57 /* FlyingProjectile.swift */; };
 		E96D79F5296474C400D47A57 /* AttackDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79F4296474C400D47A57 /* AttackDroneEntity.swift */; };
 		E96D79F92964BA4700D47A57 /* FlyingProjectileComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79F82964BA4700D47A57 /* FlyingProjectileComponent.swift */; };
 		E96D79FB29657F2400D47A57 /* FlyingPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = E96D79FA29657F2400D47A57 /* FlyingPath.swift */; };
+		E9731FEC29BDC96100BD198A /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FEB29BDC96100BD198A /* Constants.swift */; };
+		E9731FEF29BDD3F000BD198A /* MenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FEE29BDD3F000BD198A /* MenuButton.swift */; };
+		E9731FF129BDDB7D00BD198A /* SpriteKitNodeExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FF029BDDB7D00BD198A /* SpriteKitNodeExtension.swift */; };
+		E9731FF329BDE17A00BD198A /* ExitMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FF229BDE17A00BD198A /* ExitMenu.swift */; };
+		E9731FF629BE4AEA00BD198A /* WeaponCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FF529BE4AEA00BD198A /* WeaponCell.swift */; };
+		E9731FF829BE4E4500BD198A /* UIImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FF729BE4E4500BD198A /* UIImage.swift */; };
+		E9731FFA29BE5A6600BD198A /* UIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FF929BE5A6600BD198A /* UIView.swift */; };
+		E9731FFC29BF08D400BD198A /* WeaponRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FFB29BF08D400BD198A /* WeaponRow.swift */; };
+		E9731FFF29BF75BF00BD198A /* PistolGun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9731FFE29BF75BF00BD198A /* PistolGun.swift */; };
+		E973200129BF818600BD198A /* MiniGun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E973200029BF818600BD198A /* MiniGun.swift */; };
+		E973200429BF8D3D00BD198A /* CollisionDetectedInGame.swift in Sources */ = {isa = PBXBuildFile; fileRef = E973200329BF8D3D00BD198A /* CollisionDetectedInGame.swift */; };
 		E9873F752939344500302524 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9873F742939344500302524 /* AppDelegate.swift */; };
 		E9873F772939344500302524 /* GameScene.sks in Resources */ = {isa = PBXBuildFile; fileRef = E9873F762939344500302524 /* GameScene.sks */; };
 		E9873F792939344500302524 /* Actions.sks in Resources */ = {isa = PBXBuildFile; fileRef = E9873F782939344500302524 /* Actions.sks */; };
@@ -56,7 +67,6 @@
 /* Begin PBXFileReference section */
 		E9356F7B2948A6A6005BC143 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
 		E9356FFC2959A564005BC143 /* ShootComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShootComponent.swift; sourceTree = "<group>"; };
-		E9356FFE295B83D2005BC143 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Constants.swift; path = ../../../Documents/Constants.swift; sourceTree = "<group>"; };
 		E95511BC293A05FD000137C6 /* BulletEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulletEntity.swift; sourceTree = "<group>"; };
 		E95511BF293A069C000137C6 /* Shell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shell.swift; sourceTree = "<group>"; };
 		E95511C2293A45E6000137C6 /* GeometryComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryComponent.swift; sourceTree = "<group>"; };
@@ -65,13 +75,25 @@
 		E95511C8293A7340000137C6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E95511CA293B459F000137C6 /* GunEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GunEntity.swift; sourceTree = "<group>"; };
 		E95511CC293B5650000137C6 /* SpriteComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteComponent.swift; sourceTree = "<group>"; };
-		E95511CF293B6693000137C6 /* InPlayGKScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InPlayGKScene.swift; sourceTree = "<group>"; };
 		E95511D3293D0E72000137C6 /* InPlaySKScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InPlaySKScene.swift; sourceTree = "<group>"; };
 		E9551214293E5A04000137C6 /* RotationComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotationComponent.swift; sourceTree = "<group>"; };
+		E95E43A9296C0F6900A06F86 /* SettingsButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsButton.swift; sourceTree = "<group>"; };
+		E95E43AB296C161700A06F86 /* InGameSettingsMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InGameSettingsMenu.swift; sourceTree = "<group>"; };
 		E96D79F22964623500D47A57 /* FlyingProjectile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyingProjectile.swift; sourceTree = "<group>"; };
 		E96D79F4296474C400D47A57 /* AttackDroneEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttackDroneEntity.swift; sourceTree = "<group>"; };
 		E96D79F82964BA4700D47A57 /* FlyingProjectileComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyingProjectileComponent.swift; sourceTree = "<group>"; };
 		E96D79FA29657F2400D47A57 /* FlyingPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyingPath.swift; sourceTree = "<group>"; };
+		E9731FEB29BDC96100BD198A /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		E9731FEE29BDD3F000BD198A /* MenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuButton.swift; sourceTree = "<group>"; };
+		E9731FF029BDDB7D00BD198A /* SpriteKitNodeExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteKitNodeExtension.swift; sourceTree = "<group>"; };
+		E9731FF229BDE17A00BD198A /* ExitMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExitMenu.swift; sourceTree = "<group>"; };
+		E9731FF529BE4AEA00BD198A /* WeaponCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeaponCell.swift; sourceTree = "<group>"; };
+		E9731FF729BE4E4500BD198A /* UIImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIImage.swift; sourceTree = "<group>"; };
+		E9731FF929BE5A6600BD198A /* UIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIView.swift; sourceTree = "<group>"; };
+		E9731FFB29BF08D400BD198A /* WeaponRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeaponRow.swift; sourceTree = "<group>"; };
+		E9731FFE29BF75BF00BD198A /* PistolGun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PistolGun.swift; sourceTree = "<group>"; };
+		E973200029BF818600BD198A /* MiniGun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniGun.swift; sourceTree = "<group>"; };
+		E973200329BF8D3D00BD198A /* CollisionDetectedInGame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollisionDetectedInGame.swift; sourceTree = "<group>"; };
 		E9873F712939344500302524 /* PVOGame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PVOGame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E9873F742939344500302524 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		E9873F762939344500302524 /* GameScene.sks */ = {isa = PBXFileReference; lastKnownFileType = file.sks; path = GameScene.sks; sourceTree = "<group>"; };
@@ -129,6 +151,8 @@
 				E96D79F22964623500D47A57 /* FlyingProjectile.swift */,
 				E96D79F4296474C400D47A57 /* AttackDroneEntity.swift */,
 				E96D79FA29657F2400D47A57 /* FlyingPath.swift */,
+				E95E43A9296C0F6900A06F86 /* SettingsButton.swift */,
+				E95E43AB296C161700A06F86 /* InGameSettingsMenu.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -149,7 +173,6 @@
 		E95511CE293B6671000137C6 /* Scenes */ = {
 			isa = PBXGroup;
 			children = (
-				E95511CF293B6693000137C6 /* InPlayGKScene.swift */,
 				E95511D3293D0E72000137C6 /* InPlaySKScene.swift */,
 			);
 			path = Scenes;
@@ -158,8 +181,46 @@
 		E96D79FC2966F98F00D47A57 /* Extensions */ = {
 			isa = PBXGroup;
 			children = (
+				E9731FF029BDDB7D00BD198A /* SpriteKitNodeExtension.swift */,
+				E9731FF729BE4E4500BD198A /* UIImage.swift */,
+				E9731FF929BE5A6600BD198A /* UIView.swift */,
 			);
 			path = Extensions;
+			sourceTree = "<group>";
+		};
+		E9731FED29BDD35100BD198A /* GameplayViews */ = {
+			isa = PBXGroup;
+			children = (
+				E9731FEE29BDD3F000BD198A /* MenuButton.swift */,
+				E9731FF229BDE17A00BD198A /* ExitMenu.swift */,
+			);
+			path = GameplayViews;
+			sourceTree = "<group>";
+		};
+		E9731FF429BE4A2B00BD198A /* MainMenu */ = {
+			isa = PBXGroup;
+			children = (
+				E9731FF529BE4AEA00BD198A /* WeaponCell.swift */,
+				E9731FFB29BF08D400BD198A /* WeaponRow.swift */,
+			);
+			path = MainMenu;
+			sourceTree = "<group>";
+		};
+		E9731FFD29BF759F00BD198A /* Guns */ = {
+			isa = PBXGroup;
+			children = (
+				E9731FFE29BF75BF00BD198A /* PistolGun.swift */,
+				E973200029BF818600BD198A /* MiniGun.swift */,
+			);
+			path = Guns;
+			sourceTree = "<group>";
+		};
+		E973200229BF8CFD00BD198A /* CollisionDetection */ = {
+			isa = PBXGroup;
+			children = (
+				E973200329BF8D3D00BD198A /* CollisionDetectedInGame.swift */,
+			);
+			path = CollisionDetection;
 			sourceTree = "<group>";
 		};
 		E9873F682939344500302524 = {
@@ -185,6 +246,10 @@
 		E9873F732939344500302524 /* PVOGame */ = {
 			isa = PBXGroup;
 			children = (
+				E973200229BF8CFD00BD198A /* CollisionDetection */,
+				E9731FFD29BF759F00BD198A /* Guns */,
+				E9731FF429BE4A2B00BD198A /* MainMenu */,
+				E9731FED29BDD35100BD198A /* GameplayViews */,
 				E96D79FC2966F98F00D47A57 /* Extensions */,
 				E9356F7A2948A68E005BC143 /* Enums */,
 				E95511CE293B6671000137C6 /* Scenes */,
@@ -199,7 +264,7 @@
 				E95511C8293A7340000137C6 /* Assets.xcassets */,
 				E9873F832939344600302524 /* LaunchScreen.storyboard */,
 				E95511C7293A71EF000137C6 /* MyPlayground.playground */,
-				E9356FFE295B83D2005BC143 /* Constants.swift */,
+				E9731FEB29BDC96100BD198A /* Constants.swift */,
 			);
 			path = PVOGame;
 			sourceTree = "<group>";
@@ -353,19 +418,30 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E9731FFF29BF75BF00BD198A /* PistolGun.swift in Sources */,
+				E9731FFC29BF08D400BD198A /* WeaponRow.swift in Sources */,
 				E95511C5293A6255000137C6 /* PlayerControlComponent.swift in Sources */,
+				E9731FEC29BDC96100BD198A /* Constants.swift in Sources */,
 				E9356F7C2948A6A6005BC143 /* Direction.swift in Sources */,
 				E9356FFD2959A564005BC143 /* ShootComponent.swift in Sources */,
+				E973200429BF8D3D00BD198A /* CollisionDetectedInGame.swift in Sources */,
 				E95511C0293A069C000137C6 /* Shell.swift in Sources */,
 				E9873F7B2939344500302524 /* GameScene.swift in Sources */,
+				E9731FF629BE4AEA00BD198A /* WeaponCell.swift in Sources */,
+				E9731FF129BDDB7D00BD198A /* SpriteKitNodeExtension.swift in Sources */,
+				E9731FEF29BDD3F000BD198A /* MenuButton.swift in Sources */,
 				E95511CB293B459F000137C6 /* GunEntity.swift in Sources */,
 				E95511C3293A45E6000137C6 /* GeometryComponent.swift in Sources */,
-				E9356FFF295B83D2005BC143 /* Constants.swift in Sources */,
+				E9731FF829BE4E4500BD198A /* UIImage.swift in Sources */,
+				E95E43AC296C161700A06F86 /* InGameSettingsMenu.swift in Sources */,
 				E96D79FB29657F2400D47A57 /* FlyingPath.swift in Sources */,
 				E96D79F32964623500D47A57 /* FlyingProjectile.swift in Sources */,
-				E95511D0293B6693000137C6 /* InPlayGKScene.swift in Sources */,
+				E973200129BF818600BD198A /* MiniGun.swift in Sources */,
 				E9873F7D2939344500302524 /* GameViewController.swift in Sources */,
 				E9551215293E5A04000137C6 /* RotationComponent.swift in Sources */,
+				E95E43AA296C0F6900A06F86 /* SettingsButton.swift in Sources */,
+				E9731FFA29BE5A6600BD198A /* UIView.swift in Sources */,
+				E9731FF329BDE17A00BD198A /* ExitMenu.swift in Sources */,
 				E95511CD293B5650000137C6 /* SpriteComponent.swift in Sources */,
 				E96D79F92964BA4700D47A57 /* FlyingProjectileComponent.swift in Sources */,
 				E95511BD293A05FD000137C6 /* BulletEntity.swift in Sources */,
@@ -544,7 +620,7 @@
 				DEVELOPMENT_TEAM = CUP6J8M2U4;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = "";
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -571,7 +647,7 @@
 				DEVELOPMENT_TEAM = CUP6J8M2U4;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UILaunchStoryboardName = "";
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

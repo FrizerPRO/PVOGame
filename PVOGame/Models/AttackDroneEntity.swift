@@ -23,7 +23,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         self.flyingPath = flyingPath
         super.init()
         let spriteComponent = SpriteComponent(imageName: imageName);
-        spriteComponent.spriteNode.size = CGSize(width: 6, height: 6)
+        spriteComponent.spriteNode.size = CGSize(width: 30, height: 30)
         addComponent(spriteComponent)
         addComponent(setupGeometryComponent(spriteComponent: spriteComponent))
         addComponent(FlyingProjectileComponent(speed: speed, behavior: getBehavior(flyingPath: flyingPath),position: flyingPath.nodes.first ?? vector_float2()))
