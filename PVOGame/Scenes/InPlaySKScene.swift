@@ -65,7 +65,8 @@ class InPlaySKScene: SKScene {
         setupGunChooseRow(view)
     }
     func setupGunChooseRow(_ view: SKView){
-        weaponRow = WeaponRow(frame: CGRect(x: 0, y: 100, width: view.frame.width/2, height: 200), guns: [setupMiniGun(view),setupPistolGun(view)],
+        weaponRow = WeaponRow(frame: CGRect(x: 0, y: 100, width: view.frame.width/2, height: 200),
+                              guns: [setupMiniGun(view),setupPistolGun(view), setupDickGun(view)],
                             cellSize: CGSize(width: 300, height: 170))
         view.addSubview(weaponRow!)
         
@@ -87,13 +88,18 @@ class InPlaySKScene: SKScene {
         let gunEntity = MiniGun(view, shell: bullet)
         return gunEntity;
     }
+    private func setupDickGun(_ view: UIView) -> GunEntity{
+        let bullet = BulletEntity(damage: 1, startImpact: 1450,imageName: "BulletY")
+        let gunEntity = DickGun(view, shell: bullet)
+        return gunEntity;
+    }
 
     private func setupMainGun(_ view: UIView){
         mainGun = setupMiniGun(view)
         addEntity(mainGun!)
     }
     private func setupArmyOfAttackDrones(_ view: UIView){
-        for _ in 1...1000{
+        for _ in 1...100{
             addEntity(setupAttackDrone(view))
         }
     }

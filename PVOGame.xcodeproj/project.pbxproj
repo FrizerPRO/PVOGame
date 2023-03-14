@@ -41,6 +41,7 @@
 		E9873F992939344600302524 /* PVOGameUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9873F982939344600302524 /* PVOGameUITests.swift */; };
 		E9873F9B2939344600302524 /* PVOGameUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9873F9A2939344600302524 /* PVOGameUITestsLaunchTests.swift */; };
 		E9873FA82939E98900302524 /* UIView_Pin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9873FA72939E98900302524 /* UIView_Pin.swift */; };
+		E9BC12B229C0D93200BAC76F /* DickGun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC12B129C0D93200BAC76F /* DickGun.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,6 +99,7 @@
 		E9873F982939344600302524 /* PVOGameUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PVOGameUITests.swift; sourceTree = "<group>"; };
 		E9873F9A2939344600302524 /* PVOGameUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PVOGameUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		E9873FA72939E98900302524 /* UIView_Pin.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UIView_Pin.swift; sourceTree = "<group>"; };
+		E9BC12B129C0D93200BAC76F /* DickGun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DickGun.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -203,6 +205,7 @@
 			children = (
 				E9731FFE29BF75BF00BD198A /* PistolGun.swift */,
 				E973200029BF818600BD198A /* MiniGun.swift */,
+				E9BC12B129C0D93200BAC76F /* DickGun.swift */,
 			);
 			path = Guns;
 			sourceTree = "<group>";
@@ -430,6 +433,7 @@
 				E9873FA82939E98900302524 /* UIView_Pin.swift in Sources */,
 				E96D79F5296474C400D47A57 /* AttackDroneEntity.swift in Sources */,
 				E9873F752939344500302524 /* AppDelegate.swift in Sources */,
+				E9BC12B229C0D93200BAC76F /* DickGun.swift in Sources */,
 				E95511D4293D0E72000137C6 /* InPlaySKScene.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
