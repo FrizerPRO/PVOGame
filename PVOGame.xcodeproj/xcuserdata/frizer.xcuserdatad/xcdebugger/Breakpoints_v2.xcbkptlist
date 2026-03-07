@@ -80,7 +80,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "220"
             endingLineNumber = "220"
-            landmarkName = "touchesMoved(_:with:)"
+            landmarkName = "touchesEstimatedPropertiesUpdated(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -479,8 +479,7 @@
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
                   startingLineNumber = "88"
-                  endingLineNumber = "88"
-                  offsetFromSymbolStart = "268">
+                  endingLineNumber = "88">
                </Location>
                <Location
                   uuid = "6803095C-2C5F-4A43-AB31-58EA32AE44A0 - b9723e57ef4ef985"
@@ -494,8 +493,7 @@
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
                   startingLineNumber = "88"
-                  endingLineNumber = "88"
-                  offsetFromSymbolStart = "348">
+                  endingLineNumber = "88">
                </Location>
             </Locations>
          </BreakpointContent>
