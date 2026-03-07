@@ -24,7 +24,7 @@ public class FlyingPath{
         self.startLevel = Float(startLevel)
         self.endLevel = Float(endLevel)
         self.pathGenerator = pathGenerator
-        generatePathes()
+        generatePaths()
     }
     
     required init?(coder: NSCoder) {
@@ -41,7 +41,7 @@ public class FlyingPath{
         }
         return CGFloat(sum)
     }
-    private func generatePathes(){
+    private func generatePaths() {
         if !nodes.isEmpty{
             nodes.removeAll()
         }

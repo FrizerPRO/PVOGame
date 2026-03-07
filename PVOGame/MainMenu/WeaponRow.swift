@@ -45,7 +45,7 @@ class WeaponRow: UIScrollView {
     
     func addGunsInStack(){
         for gun in guns{
-            var weaponCell = WeaponCell(frame: CGRect(x: 0, y: 0, width: cellSize.width, height: cellSize.height),
+            let weaponCell = WeaponCell(frame: CGRect(x: 0, y: 0, width: cellSize.width, height: cellSize.height),
                                         imageName: gun.imageName, gunEntity: gun)
             weaponCell.mainGun = mainGun
             stackView?.addArrangedSubview(weaponCell)

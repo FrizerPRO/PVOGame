@@ -15,7 +15,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
     public var speed: CGFloat
     
     public var imageName: String
-    public var isHitted = false
+    public var isHit = false
     public required init(damage: CGFloat, speed: CGFloat, imageName: String, flyingPath: FlyingPath) {
         self.damage = damage
         self.speed = speed
@@ -26,11 +26,29 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         spriteComponent.spriteNode.size = CGSize(width: 30, height: 30)
         addComponent(spriteComponent)
         addComponent(setupGeometryComponent(spriteComponent: spriteComponent))
-        addComponent(FlyingProjectileComponent(speed: speed, behavior: getBehavior(flyingPath: flyingPath),position: flyingPath.nodes.first ?? vector_float2()))
+        addComponent(FlyingProjectileComponent(speed: speed, behavior: behavior(for: flyingPath),position: flyingPath.nodes.first ?? vector_float2()))
 
     }
+
+    public func resetFlight(flyingPath: FlyingPath, speed: CGFloat) {
+        self.flyingPath = flyingPath
+        self.speed = speed
+        isHit = false
+
+        if let flight = component(ofType: FlyingProjectileComponent.self) {
+            flight.maxSpeed = Float(speed)
+            flight.maxAcceleration = Float(speed) / 2
+            flight.behavior = behavior(for: flyingPath)
+            flight.position = flyingPath.nodes.first ?? vector_float2()
+        }
+        if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
+            physicsBody.affectedByGravity = false
+            physicsBody.contactTestBitMask = Constants.bulletBitMask | Constants.groundBitMask
+        }
+    }
+
     public func didHit(){
-        isHitted = true
+        isHit = true
         component(ofType: FlyingProjectileComponent.self)?.behavior?.removeAllGoals()
         let physicBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody
         physicBody?.affectedByGravity = true
@@ -44,13 +62,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         else {return}
         scene.removeEntity(self)
     }
-    public func getBehavior(flyingPath: FlyingPath)->GKBehavior{
-//        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode
-//        else{
-//            return GKBehavior()
-//        }
-        
-        //let path = GKPath(graphNodes: nodes, radius: Float(max(spriteNode.frame.width,spriteNode.frame.height)),cyclical: false)
+    private func behavior(for flyingPath: FlyingPath)->GKBehavior{
         let path = GKPath(points: flyingPath.nodes, radius: 1/*Float(max(spriteNode.frame.width,spriteNode.frame.height))*/, cyclical: false)
         
         let goal = GKGoal(toFollow: path, maxPredictionTime: 100/speed * 1.5, forward: true)
@@ -74,7 +86,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
     public func agentDidUpdate(_ agent: GKAgent) {
         guard let agent2d = agent as? GKAgent2D,
               let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
-              !isHitted
+              !isHit
         else{
             return
         }

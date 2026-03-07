@@ -17,9 +17,9 @@ class RotationComponent: GKComponent {
         super.init()
     }
     
-    func rotate(directon: Direction, deltaTime: TimeInterval,speed: CGFloat){
+    func rotate(direction: Direction, deltaTime: TimeInterval, speed: CGFloat){
         let angle: CGFloat;
-        switch directon {
+        switch direction {
         case .RIGHT:
             angle = speed * deltaTime
         case .LEFT:
@@ -49,7 +49,7 @@ class RotationComponent: GKComponent {
         if abs(angle) < .pi / 180 * speed {
             templeSpeed = abs(angle) / deltaTime
         }
-        rotate(directon: direction, deltaTime: deltaTime,speed: templeSpeed)
+        rotate(direction: direction, deltaTime: deltaTime, speed: templeSpeed)
     }
     
     required init?(coder: NSCoder) {

@@ -6,31 +6,58 @@
 //
 
 import XCTest
+import UIKit
+import SpriteKit
 @testable import PVOGame
 
-class PVOGameTests: XCTestCase {
+final class PVOGameTests: XCTestCase {
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+    func testGunCopyFromCopiesWeaponStats() {
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let source = PistolGun(view, shell: BulletEntity(damage: 3, startImpact: 1200, imageName: "Bullet"))
+        let target = MiniGun(view, shell: BulletEntity(damage: 1, startImpact: 1450, imageName: "Bullet"))
+
+        target.copyFrom(gun: source)
+
+        XCTAssertEqual(target.shootingSpeed, source.shootingSpeed)
+        XCTAssertEqual(target.rotateSpeed, source.rotateSpeed)
+        XCTAssertEqual(target.label, source.label)
+        XCTAssertEqual(target.imageName, source.imageName)
+        XCTAssertEqual(target.shell.damage, source.shell.damage)
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    func testWeaponCellShowsRotateSpeed() {
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let gun = MiniGun(view, shell: BulletEntity(damage: 1, startImpact: 1450, imageName: "Bullet"))
+        let cell = WeaponCell(frame: CGRect(x: 0, y: 0, width: 300, height: 170), imageName: gun.imageName, gunEntity: gun)
+
+        XCTAssertEqual(cell.rotateSpeedLabel?.text, "Rotate speed : \(gun.rotateSpeed)")
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
+    func testSceneStartStopMaintainsDronePool() {
+        let view = SKView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let scene = InPlaySKScene(size: view.frame.size)
+
+        view.presentScene(scene)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+
+        XCTAssertEqual(scene.availableDroneCount, Constants.GameBalance.dronesPerWave)
+        XCTAssertEqual(scene.activeDroneCount, 0)
+
+        scene.startGame()
+
+        XCTAssertTrue(scene.isStarted)
+        XCTAssertEqual(scene.activeDroneCount, Constants.GameBalance.dronesPerWave)
+
+        scene.stopGame()
+
+        XCTAssertFalse(scene.isStarted)
+        XCTAssertEqual(scene.activeDroneCount, 0)
+        XCTAssertEqual(scene.availableDroneCount, Constants.GameBalance.dronesPerWave)
     }
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
-        }
+    func testInGameSettingsMenuHasThreeRows() {
+        let menu = InGameSettingsMenu(frame: CGRect(x: 0, y: 0, width: 280, height: 220), onResume: {}, onExit: {})
+        XCTAssertEqual(menu.arrangedSubviews.count, 3)
     }
-
 }

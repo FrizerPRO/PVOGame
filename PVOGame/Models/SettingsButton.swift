@@ -8,29 +8,32 @@
 import UIKit
 
 class SettingsButton: UIButton {
-    let callInGameSettingsMenu: ()->Void
-    let image: UIImageView
-    init(frame:CGRect, callSettingsMenu: @escaping ()->Void){
-        image = UIImageView(image: UIImage(imageLiteralResourceName: "Settings"))
+    let callInGameSettingsMenu: () -> Void
+
+    init(frame: CGRect, callSettingsMenu: @escaping () -> Void) {
         self.callInGameSettingsMenu = callSettingsMenu
         super.init(frame: frame)
+        setupUI()
+    }
+
+    private func setupUI() {
         translatesAutoresizingMaskIntoConstraints = false
-        self.backgroundColor = .green
-        
+        backgroundColor = .black
+        layer.borderWidth = 2
+        layer.borderColor = UIColor.green.cgColor
+        layer.cornerRadius = 8
+
+        let image = UIImage(systemName: "gearshape.fill")
+        setImage(image, for: .normal)
+        tintColor = .green
+        addTarget(self, action: #selector(didTouchButton), for: .touchUpInside)
     }
-    private func setupImage(){
-        self.addSubview(image)
-        image.pinCenter(to: self)
-        image.translatesAutoresizingMaskIntoConstraints = false
-        image.frame.size = self.frame.size
-        self.addTarget(self, action: #selector(didTouchButton), for: .touchUpInside)
-    }
-    
+
     @objc
-    private func didTouchButton(){
-        self.isHidden = true
+    private func didTouchButton() {
         callInGameSettingsMenu()
     }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

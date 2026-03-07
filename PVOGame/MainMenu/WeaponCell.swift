@@ -83,7 +83,7 @@ class WeaponCell: UIButton {
     }
     func initRotateSpeedLabel(){
         rotateSpeedLabel = UILabel()
-        rotateSpeedLabel?.text = "Rotate speed : \(gunEntity.shell.damage)"
+        rotateSpeedLabel?.text = "Rotate speed : \(gunEntity.rotateSpeed)"
         rotateSpeedLabel?.textColor = .green
         rotateSpeedLabel?.font = .systemFont(ofSize: 15)
 
