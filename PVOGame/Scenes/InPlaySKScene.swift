@@ -10,6 +10,13 @@ import SpriteKit
 import GameplayKit
 
 class InPlaySKScene: SKScene {
+    enum GameState {
+        case menu
+        case playing
+        case paused
+        case gameOver
+    }
+
     private static let gameOverOverlayNodeName = "gameOverOverlay"
     private static let rocketBlastNodeName = "rocketBlastNode"
     private static let rocketLauncherInsets = CGPoint(x: 24, y: 66)
@@ -32,7 +39,8 @@ class InPlaySKScene: SKScene {
     private var isTouched = false
     private var availableDrones = [AttackDroneEntity]()
     private var activeDrones = [AttackDroneEntity]()
-    private(set) var isStarted = false
+    private(set) var gameState: GameState = .menu
+    var isStarted: Bool { gameState != .menu }
     var activeDroneCount: Int { activeDrones.count }
     var availableDroneCount: Int { availableDrones.count }
 
@@ -43,7 +51,7 @@ class InPlaySKScene: SKScene {
     private(set) var dronesDestroyed = 0
     private(set) var currentWave = 0
     private(set) var isWaveInProgress = false
-    private(set) var isGameOver = false
+    var isGameOver: Bool { gameState == .gameOver }
     private(set) var rocketType = Constants.GameBalance.defaultRocketType
     private var rocketAmmo = Constants.GameBalance.rocketSpec(for: Constants.GameBalance.defaultRocketType).defaultAmmo
     private var rocketCooldownRemaining: TimeInterval = 0
@@ -65,6 +73,32 @@ class InPlaySKScene: SKScene {
     var activeRocketSpecForTests: Constants.GameBalance.RocketSpec { rocketSpec }
     private var rocketSpec: Constants.GameBalance.RocketSpec {
         Constants.GameBalance.rocketSpec(for: rocketType)
+    }
+
+    private func canTransition(from source: GameState, to destination: GameState) -> Bool {
+        switch (source, destination) {
+        case (_, _) where source == destination:
+            return true
+        case (.menu, .playing):
+            return true
+        case (.playing, .paused), (.playing, .gameOver), (.playing, .menu):
+            return true
+        case (.paused, .playing), (.paused, .menu):
+            return true
+        case (.gameOver, .playing), (.gameOver, .menu):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func transition(to destination: GameState) {
+        guard canTransition(from: gameState, to: destination) else {
+            assertionFailure("Invalid game state transition: \(gameState) -> \(destination)")
+            return
+        }
+        gameState = destination
+        isPaused = (destination == .paused || destination == .gameOver)
     }
 
     // MARK: - Scene Setup
@@ -259,9 +293,7 @@ class InPlaySKScene: SKScene {
     }
 
     private func canFireRocket() -> Bool {
-        isStarted &&
-            !isGameOver &&
-            !isPaused &&
+        gameState == .playing &&
             rocketAmmo > 0 &&
             rocketCooldownRemaining <= 0.01 &&
             !aliveThreatDrones().isEmpty
@@ -293,7 +325,7 @@ class InPlaySKScene: SKScene {
     }
 
     private func registerThreatDroneCrossings() {
-        guard isStarted, !isGameOver else { return }
+        guard gameState == .playing else { return }
 
         let halfScreenY = frame.height * 0.5
         for drone in activeDrones where !drone.isHit {
@@ -520,7 +552,7 @@ class InPlaySKScene: SKScene {
     // MARK: - Game Events
 
     func onDroneDestroyed(drone: AttackDroneEntity? = nil) {
-        guard isStarted, !isGameOver else { return }
+        guard gameState == .playing else { return }
         if let drone, !activeDrones.contains(drone) { return }
         score += Constants.GameBalance.scorePerDrone
         dronesDestroyed += 1
@@ -528,7 +560,7 @@ class InPlaySKScene: SKScene {
     }
 
     func onDroneReachedGround(drone: AttackDroneEntity? = nil) {
-        guard isStarted, !isGameOver else { return }
+        guard gameState == .playing else { return }
         if let drone {
             if drone.isHit { return }
             if !activeDrones.contains(drone) { return }
@@ -541,7 +573,7 @@ class InPlaySKScene: SKScene {
     }
 
     private func cleanupStrayDrones() {
-        guard isStarted, !isGameOver else { return }
+        guard gameState == .playing else { return }
         let dronesSnapshot = activeDrones
         let bottomThreshold: CGFloat = -40
         let sideTopThreshold: CGFloat = 120
@@ -690,8 +722,7 @@ class InPlaySKScene: SKScene {
     // MARK: - Game Over
 
     private func triggerGameOver() {
-        isGameOver = true
-        isPaused = true
+        transition(to: .gameOver)
         settingsButton?.isHidden = true
         rocketLauncherNode?.isHidden = true
         showGameOverOverlay()
@@ -771,8 +802,7 @@ class InPlaySKScene: SKScene {
     }
 
     func playAgain() {
-        isPaused = false
-        isGameOver = false
+        transition(to: .playing)
         hideGameOverOverlay()
         lastUpdateTime = 0
 
@@ -806,25 +836,22 @@ class InPlaySKScene: SKScene {
     }
 
     func returnToMenu() {
-        isPaused = false
-        isGameOver = false
-        hideGameOverOverlay()
-        lastUpdateTime = 0
         stopGame()
     }
 
     // MARK: - Pause & Settings
 
     private func presentPauseMenu() {
-        guard isStarted, !isGameOver else { return }
+        guard gameState == .playing else { return }
         settingsMenu?.isHidden = false
-        isPaused = true
+        transition(to: .paused)
         isTouched = false
     }
 
     private func resumeGame() {
+        guard gameState == .paused else { return }
         settingsMenu?.isHidden = true
-        isPaused = false
+        transition(to: .playing)
         lastUpdateTime = 0
     }
 
@@ -837,10 +864,10 @@ class InPlaySKScene: SKScene {
 
     func startGame() {
         guard view != nil else { return }
+        guard gameState == .menu else { return }
 
-        isStarted = true
+        transition(to: .playing)
         isTouched = false
-        isGameOver = false
         settingsButton?.isHidden = false
         settingsMenu?.isHidden = true
         weaponRow?.isHidden = true
@@ -863,16 +890,14 @@ class InPlaySKScene: SKScene {
     }
 
     func stopGame() {
-        isStarted = false
+        transition(to: .menu)
         isWaveInProgress = false
-        isGameOver = false
         settingsButton?.isHidden = true
         settingsMenu?.isHidden = true
         hudNode?.isHidden = true
         rocketLauncherNode?.isHidden = true
         hideGameOverOverlay()
         weaponRow?.isHidden = false
-        isPaused = false
         isTouched = false
         lastUpdateTime = 0
         lastTap = Constants.noTapPoint
@@ -927,7 +952,7 @@ class InPlaySKScene: SKScene {
         if entities.contains(entity) {
             return
         }
-        if isStarted && entity is Shell {
+        if gameState == .playing && entity is Shell {
             shotsFired += 1
         }
         entities.append(entity)
@@ -961,7 +986,7 @@ class InPlaySKScene: SKScene {
         let location = touch.location(in: self)
         let touchedNode = atPoint(location)
 
-        if isGameOver {
+        if gameState == .gameOver {
             if touchedNode.name == "playAgainButton" {
                 playAgain()
             } else if touchedNode.name == "menuButton_gameOver" {
@@ -969,19 +994,20 @@ class InPlaySKScene: SKScene {
             }
             return
         }
-
-        isTouched = true
-
-        if !isStarted && touchedNode.name == Constants.backgroundName {
-            startGame()
+        if gameState == .menu {
+            if touchedNode.name == Constants.backgroundName {
+                startGame()
+            }
             return
         }
+        guard gameState == .playing else { return }
+        isTouched = true
         lastTap = location
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesMoved(touches, with: event)
-        guard !isGameOver else { return }
+        guard gameState == .playing else { return }
         isTouched = true
         if let touch = touches.first {
             lastTap = touch.location(in: self)
@@ -995,7 +1021,7 @@ class InPlaySKScene: SKScene {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesEnded(touches, with: event)
-        guard !isGameOver else { return }
+        guard gameState == .playing else { return }
         isTouched = false
         guard let view else { return }
         lastTap = CGPoint(x: view.frame.width / 2, y: view.frame.height)
@@ -1016,7 +1042,7 @@ class InPlaySKScene: SKScene {
         }
 
         let dt = currentTime - lastUpdateTime
-        if isStarted && rocketCooldownRemaining > 0 {
+        if gameState == .playing && rocketCooldownRemaining > 0 {
             rocketCooldownRemaining = max(0, rocketCooldownRemaining - dt)
         }
         for entity in entities {
@@ -1036,7 +1062,7 @@ class InPlaySKScene: SKScene {
         fireAutoRocketIfNeeded()
         lastUpdateTime = currentTime
 
-        if isStarted && isWaveInProgress && !isGameOver && activeDrones.isEmpty {
+        if gameState == .playing && isWaveInProgress && activeDrones.isEmpty {
             isWaveInProgress = false
             startNextWave()
         }

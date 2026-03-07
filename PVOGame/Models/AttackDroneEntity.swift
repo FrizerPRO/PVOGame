@@ -34,16 +34,25 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         self.flyingPath = flyingPath
         self.speed = speed
         isHit = false
+        let startPosition = flyingPath.nodes.first ?? vector_float2()
 
         if let flight = component(ofType: FlyingProjectileComponent.self) {
             flight.maxSpeed = Float(speed)
             flight.maxAcceleration = Float(speed) / 2
             flight.behavior = behavior(for: flyingPath)
-            flight.position = flyingPath.nodes.first ?? vector_float2()
+            flight.position = startPosition
+        }
+        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+            spriteNode.position = CGPoint(x: CGFloat(startPosition.x), y: CGFloat(startPosition.y))
+            spriteNode.zRotation = 0
         }
         if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
             physicsBody.affectedByGravity = false
             physicsBody.contactTestBitMask = Constants.bulletBitMask | Constants.groundBitMask
+            physicsBody.collisionBitMask = 0
+            physicsBody.velocity = .zero
+            physicsBody.angularVelocity = 0
+            physicsBody.isResting = false
         }
     }
 

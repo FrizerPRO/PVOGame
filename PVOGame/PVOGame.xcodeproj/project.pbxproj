@@ -56,7 +56,7 @@
 /* Begin PBXFileReference section */
 		E9356F7B2948A6A6005BC143 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
 		E9356FFC2959A564005BC143 /* ShootComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShootComponent.swift; sourceTree = "<group>"; };
-		E9356FFE295B83D2005BC143 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Constants.swift; path = ../../../Documents/Constants.swift; sourceTree = "<group>"; };
+		E9356FFE295B83D2005BC143 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Constants.swift; path = ../../Documents/Constants.swift; sourceTree = "<group>"; };
 		E95511BC293A05FD000137C6 /* BulletEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulletEntity.swift; sourceTree = "<group>"; };
 		E95511BF293A069C000137C6 /* Shell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shell.swift; sourceTree = "<group>"; };
 		E95511C2293A45E6000137C6 /* GeometryComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryComponent.swift; sourceTree = "<group>"; };
@@ -158,6 +158,7 @@
 		E96D79FC2966F98F00D47A57 /* Extensions */ = {
 			isa = PBXGroup;
 			children = (
+				E9356FFE295B83D2005BC143 /* Constants.swift */,
 			);
 			path = Extensions;
 			sourceTree = "<group>";
@@ -199,7 +200,6 @@
 				E95511C8293A7340000137C6 /* Assets.xcassets */,
 				E9873F832939344600302524 /* LaunchScreen.storyboard */,
 				E95511C7293A71EF000137C6 /* MyPlayground.playground */,
-				E9356FFE295B83D2005BC143 /* Constants.swift */,
 			);
 			path = PVOGame;
 			sourceTree = "<group>";
