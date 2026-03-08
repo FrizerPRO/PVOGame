@@ -4,3 +4,5 @@ DerivedData/
 # Xcode user-specific data
 xcuserdata/
 *.xcuserdatad/
+.codex_dd_sim_run/
+.codex*

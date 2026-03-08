@@ -78,12 +78,16 @@ class BulletEntity: GKEntity, Shell{
 class RocketEntity: BulletEntity {
     let spec: Constants.GameBalance.RocketSpec
     var blastRadius: CGFloat { spec.blastRadius }
+    var detonatesOnDirectImpact: Bool { blastRadius <= 0.01 }
+    var guidanceTargetPointForDisplay: CGPoint { targetPoint }
+    var shouldShowGuidanceMarker: Bool { isGuided && !isCoastingAfterFuelExhaustion }
     private(set) var currentSpeed: CGFloat = 0
     private(set) var isCoastingAfterFuelExhaustion = false
     private var targetPoint = CGPoint.zero
     private var isGuided = false
     private var smokeSpawnAccumulator: TimeInterval = 0
     private var retargetAccumulator: TimeInterval = 0
+    private var climbsWhenNoTargets = true
     private var travelledDistance: CGFloat = 0
     private var previousTrackedPosition: CGPoint?
 
@@ -116,7 +120,8 @@ class RocketEntity: BulletEntity {
             retargetInterval: defaultSpec.retargetInterval,
             cooldown: defaultSpec.cooldown,
             defaultAmmo: defaultSpec.defaultAmmo,
-            ammoPerWave: defaultSpec.ammoPerWave
+            ammoPerWave: defaultSpec.ammoPerWave,
+            visualScale: defaultSpec.visualScale
         )
         super.init(damage: damage, startImpact: startImpact, imageName: imageName)
         configureRocketPhysicsAndTrail()
@@ -135,7 +140,8 @@ class RocketEntity: BulletEntity {
 
     override func detonateWithAnimation() {
         if let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene,
-           let position = component(ofType: SpriteComponent.self)?.spriteNode.position {
+           let position = component(ofType: SpriteComponent.self)?.spriteNode.position,
+           blastRadius > 0.01 {
             scene.spawnRocketBlast(at: position, radius: blastRadius)
         }
         silentDetonate()
@@ -145,12 +151,17 @@ class RocketEntity: BulletEntity {
         RocketEntity(spec: spec)
     }
 
-    func configureFlight(targetPoint: CGPoint, initialSpeed: CGFloat) {
+    func configureFlight(
+        targetPoint: CGPoint,
+        initialSpeed: CGFloat,
+        climbsWhenNoTargets: Bool = true
+    ) {
         self.targetPoint = targetPoint
         self.currentSpeed = max(0, initialSpeed)
         self.travelledDistance = 0
         self.previousTrackedPosition = nil
         self.isCoastingAfterFuelExhaustion = false
+        self.climbsWhenNoTargets = climbsWhenNoTargets
         isGuided = true
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
         spriteNode.physicsBody?.affectedByGravity = false
@@ -215,7 +226,11 @@ class RocketEntity: BulletEntity {
     private func configureRocketPhysicsAndTrail() {
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
-        spriteNode.size = CGSize(width: 12, height: 18)
+        let baseSize = CGSize(width: 12, height: 18)
+        spriteNode.size = CGSize(
+            width: baseSize.width * spec.visualScale,
+            height: baseSize.height * spec.visualScale
+        )
         spriteNode.physicsBody?.linearDamping = 0
         spriteNode.physicsBody?.angularDamping = 0
         spriteNode.physicsBody?.allowsRotation = false
@@ -257,12 +272,22 @@ class RocketEntity: BulletEntity {
         retargetAccumulator += spec.retargetInterval
 
         guard let scene = spriteNode.scene as? InPlaySKScene else { return true }
+        let remainingFlightDistance = max(0, spec.maxFlightDistance - travelledDistance)
         if let updatedTarget = scene.bestRocketTargetPoint(
             preferredPoint: targetPoint,
             origin: spriteNode.position,
-            radius: spec.maxFlightDistance
+            radius: remainingFlightDistance,
+            influenceRadius: spec.blastRadius,
+            reservingActiveRocketImpacts: true,
+            excludingRocket: self
         ) {
             targetPoint = updatedTarget
+            scene.updateRocketReservation(for: self, targetPoint: updatedTarget)
+            return true
+        }
+
+        guard climbsWhenNoTargets else {
+            // Gameplay-launched rockets keep their latest target instead of climbing into empty sky.
             return true
         }
 
@@ -303,4 +328,81 @@ class RocketEntity: BulletEntity {
         spriteNode.physicsBody?.affectedByGravity = true
     }
 
+}
+
+final class MineBombEntity: GKEntity {
+    private(set) var isFromCrashedMineLayer = false
+    private weak var sourceDrone: AttackDroneEntity?
+
+    override init() {
+        super.init()
+        let spriteComponent = SpriteComponent(imageName: "Bullet")
+        spriteComponent.spriteNode.size = CGSize(width: 12, height: 12)
+        addComponent(spriteComponent)
+        addComponent(
+            GeometryComponent(
+                spriteNode: spriteComponent.spriteNode,
+                categoryBitMask: Constants.mineBombBitMask,
+                contactTestBitMask: Constants.bulletBitMask | Constants.groundBitMask,
+                collisionBitMask: 0
+            )
+        )
+        if let body = spriteComponent.spriteNode.physicsBody {
+            body.affectedByGravity = true
+            body.linearDamping = 0
+            body.angularDamping = 0
+            body.allowsRotation = true
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func place(at position: CGPoint) {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+        spriteNode.position = position
+        spriteNode.zRotation = 0
+        if let body = spriteNode.physicsBody {
+            body.velocity = .zero
+            body.angularVelocity = 0
+            body.isResting = false
+        }
+    }
+
+    func configureOrigin(
+        isFromCrashedDrone: Bool,
+        sourceDrone: AttackDroneEntity? = nil
+    ) {
+        isFromCrashedMineLayer = isFromCrashedDrone
+        self.sourceDrone = sourceDrone
+        if let body = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
+            var contactMask = Constants.groundBitMask
+            if !isFromCrashedDrone {
+                contactMask |= Constants.bulletBitMask
+            }
+            if isFromCrashedDrone {
+                contactMask |= Constants.droneBitMask
+            }
+            body.contactTestBitMask = contactMask
+        }
+    }
+
+    func configureOrigin(isFromCrashedDrone: Bool) {
+        configureOrigin(isFromCrashedDrone: isFromCrashedDrone, sourceDrone: nil)
+    }
+
+    func canHitDrone(_ drone: AttackDroneEntity) -> Bool {
+        !(isFromCrashedMineLayer && sourceDrone === drone)
+    }
+
+    func silentDetonate() {
+        if let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene {
+            scene.removeEntity(self)
+        }
+    }
+
+    func reachedDestination() {
+        silentDetonate()
+    }
 }
