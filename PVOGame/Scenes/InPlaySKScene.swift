@@ -33,9 +33,28 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     private static let interceptorColumnSpacing: CGFloat = 3.8
     private static let interceptorRowDepthXOffset: CGFloat = 2.4
     private static let interceptorRowDepthYOffset: CGFloat = 6.2
+    private static let blastTexture: SKTexture = {
+        let d: CGFloat = 64
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: d, height: d))
+        let image = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: d, height: d))
+        }
+        return SKTexture(image: image)
+    }()
+    private static let rocketBlastScaleDuration: TimeInterval = 0.1
+    private static let rocketBlastFadeDuration: TimeInterval = 0.15
+    private static let rocketImpactLockSafetyMargin: TimeInterval = 0.06
+    private static var rocketImpactLockDuration: TimeInterval {
+        max(rocketBlastScaleDuration, rocketBlastFadeDuration) + rocketImpactLockSafetyMargin
+    }
     private static let singleTargetReservationSnapDistance: CGFloat = 72
     private static let singleTargetReservationCoverageRadius: CGFloat = 18
     var entities = [GKEntity]()
+    private var entityIdentifiers = Set<ObjectIdentifier>()
+    private var activeRockets = [RocketEntity]()
+    private var bulletPool = [BulletEntity]()
+    private static let bulletPoolMaxSize = 200
     var graphs = [String: GKGraph]()
     var lastUpdateTime: TimeInterval = 0
     var lastTap = Constants.noTapPoint
@@ -74,11 +93,13 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     private var reroutedDroneIDs = Set<ObjectIdentifier>()
     private var isRegularDroneFeatureEnabled = Constants.GameBalance.isRegularDroneEnabled
     private var isMineLayerFeatureEnabled = Constants.GameBalance.isMineLayerEnabled
+    private var isRocketLauncherEnabled = Constants.GameBalance.isRocketLauncherEnabled
+    private var isInterceptorLauncherEnabled = Constants.GameBalance.isInterceptorLauncherEnabled
     private var mineLayerRearmTickets = [MineLayerRearmTicket]()
     private var pendingMineLayerBonusForNextWave = 0
     private var elapsedGameplayTime: TimeInterval = 0
     private(set) var mineBombsDropped = 0
-    private var rocketReservedDroneIDs = [ObjectIdentifier: Set<ObjectIdentifier>]()
+    private var fireControl = FireControlState()
 
     private struct MineLayerRearmTicket {
         let drone: MineLayerDroneEntity
@@ -123,6 +144,14 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
 
     func setRegularDronesEnabledForTests(_ isEnabled: Bool) {
         isRegularDroneFeatureEnabled = isEnabled
+    }
+
+    func setRocketLauncherEnabledForTests(_ isEnabled: Bool) {
+        isRocketLauncherEnabled = isEnabled
+    }
+
+    func setInterceptorLauncherEnabledForTests(_ isEnabled: Bool) {
+        isInterceptorLauncherEnabled = isEnabled
     }
 
     func setGunAimForTests(point: CGPoint, isTouching: Bool = true) {
@@ -276,6 +305,7 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     }
 
     private func setupRocketLauncher() {
+        guard isRocketLauncherEnabled else { return }
         let launcher = SKNode()
         launcher.zPosition = 97
         launcher.position = CGPoint(
@@ -290,6 +320,7 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     }
 
     private func setupInterceptorLauncher() {
+        guard isInterceptorLauncherEnabled else { return }
         let launcher = SKNode()
         launcher.zPosition = 97
         launcher.position = CGPoint(
@@ -335,14 +366,18 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     }
 
     private func rebuildRocketAmmoStack() {
-        for rocketVisual in rocketAmmoVisuals {
-            rocketVisual.removeFromParent()
+        guard let rocketLauncherNode else {
+            rocketAmmoVisuals.forEach { $0.removeFromParent() }
+            rocketAmmoVisuals.removeAll()
+            return
         }
-        rocketAmmoVisuals.removeAll()
-
-        guard let rocketLauncherNode else { return }
-        guard rocketAmmo > 0 else { return }
-        for index in 0..<rocketAmmo {
+        // Remove excess
+        while rocketAmmoVisuals.count > rocketAmmo {
+            rocketAmmoVisuals.removeLast().removeFromParent()
+        }
+        // Add missing
+        while rocketAmmoVisuals.count < rocketAmmo {
+            let index = rocketAmmoVisuals.count
             let rocketVisual = SKSpriteNode(color: .yellow, size: Self.rocketVisualSize)
             let row = index / Self.rocketColumnsPerRow
             let column = index % Self.rocketColumnsPerRow
@@ -359,14 +394,18 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     }
 
     private func rebuildInterceptorAmmoStack() {
-        for rocketVisual in interceptorAmmoVisuals {
-            rocketVisual.removeFromParent()
+        guard let interceptorLauncherNode else {
+            interceptorAmmoVisuals.forEach { $0.removeFromParent() }
+            interceptorAmmoVisuals.removeAll()
+            return
         }
-        interceptorAmmoVisuals.removeAll()
-
-        guard let interceptorLauncherNode else { return }
-        guard interceptorAmmo > 0 else { return }
-        for index in 0..<interceptorAmmo {
+        // Remove excess
+        while interceptorAmmoVisuals.count > interceptorAmmo {
+            interceptorAmmoVisuals.removeLast().removeFromParent()
+        }
+        // Add missing
+        while interceptorAmmoVisuals.count < interceptorAmmo {
+            let index = interceptorAmmoVisuals.count
             let rocketVisual = SKSpriteNode(color: .cyan, size: Self.interceptorVisualSize)
             let row = index / Self.interceptorColumnsPerRow
             let column = index % Self.interceptorColumnsPerRow
@@ -401,7 +440,7 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     func setRocketType(_ type: Constants.GameBalance.RocketType, resetAmmo: Bool = true) {
         rocketType = type
         if resetAmmo {
-            rocketAmmo = rocketSpec.defaultAmmo
+            rocketAmmo = isRocketLauncherEnabled ? rocketSpec.defaultAmmo : 0
             rocketCooldownRemaining = 0
             resetRocketAutoFireState()
         }
@@ -415,22 +454,26 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         else {
             return false
         }
-        return resolveRocketLaunchTarget(
+        return resolveRocketLaunchPlan(
             preferredPoint: nil,
             launchPosition: currentRocketLaunchPosition()
         ) != nil
     }
 
-    private func resolveRocketLaunchTarget(
+    private func resolveRocketLaunchPlan(
         preferredPoint: CGPoint?,
         launchPosition: CGPoint?
-    ) -> CGPoint? {
-        bestRocketTargetPoint(
+    ) -> FireControlState.LaunchPlan? {
+        plannedRocketLaunch(
             preferredPoint: preferredPoint,
             origin: launchPosition,
+            reservingActiveRocketImpacts: true,
+            excludingRocket: nil,
             radius: rocketSpec.maxFlightDistance,
             influenceRadius: rocketSpec.blastRadius,
-            reservingActiveRocketImpacts: true
+            projectileSpeed: rocketSpec.initialSpeed,
+            acceleration: rocketSpec.acceleration,
+            maxSpeed: rocketSpec.maxSpeed
         )
     }
 
@@ -442,30 +485,46 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         else {
             return false
         }
-        return bestRocketTargetPoint(
+        return resolveInterceptorLaunchPlan(
+            preferredPoint: nil,
+            launchPosition: launchPosition
+        ) != nil
+    }
+
+    private func resolveInterceptorLaunchPlan(
+        preferredPoint: CGPoint?,
+        launchPosition: CGPoint?
+    ) -> FireControlState.LaunchPlan? {
+        plannedRocketLaunch(
+            preferredPoint: preferredPoint,
             origin: launchPosition,
+            reservingActiveRocketImpacts: true,
+            excludingRocket: nil,
             radius: interceptorRocketSpec.maxFlightDistance,
             influenceRadius: 0,
-            reservingActiveRocketImpacts: true
-        ) != nil
+            projectileSpeed: interceptorRocketSpec.initialSpeed,
+            acceleration: interceptorRocketSpec.acceleration,
+            maxSpeed: interceptorRocketSpec.maxSpeed
+        )
     }
 
     @discardableResult
     func triggerRocketLauncher(targetOverride: CGPoint? = nil) -> Bool {
-        guard gameState == .playing,
+        guard isRocketLauncherEnabled,
+              gameState == .playing,
               rocketAmmo > 0,
               rocketCooldownRemaining <= 0.01
         else {
             return false
         }
         let launchPosition = currentRocketLaunchPosition()
-        guard let preferredTarget = resolveRocketLaunchTarget(
+        guard let launchPlan = resolveRocketLaunchPlan(
             preferredPoint: targetOverride,
             launchPosition: launchPosition
         ) else {
             return false
         }
-        launchRocket(preferredTarget: preferredTarget, startPosition: launchPosition, spec: rocketSpec)
+        launchRocket(launchPlan: launchPlan, startPosition: launchPosition, spec: rocketSpec)
         rocketAmmo = max(0, rocketAmmo - 1)
         rocketCooldownRemaining = rocketSpec.cooldown
         updateRocketLauncherUI()
@@ -474,19 +533,16 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
 
     @discardableResult
     func triggerInterceptorLauncher(targetOverride: CGPoint? = nil) -> Bool {
-        guard canFireInterceptor() else { return false }
+        guard isInterceptorLauncherEnabled, canFireInterceptor() else { return false }
         let launchPosition = currentInterceptorLaunchPosition()
-        guard let preferredTarget = bestRocketTargetPoint(
+        guard let launchPlan = resolveInterceptorLaunchPlan(
             preferredPoint: targetOverride,
-            origin: launchPosition,
-            radius: interceptorRocketSpec.maxFlightDistance,
-            influenceRadius: 0,
-            reservingActiveRocketImpacts: true
+            launchPosition: launchPosition
         ) else {
             return false
         }
         launchRocket(
-            preferredTarget: preferredTarget,
+            launchPlan: launchPlan,
             startPosition: launchPosition,
             spec: interceptorRocketSpec
         )
@@ -518,8 +574,8 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
             if position.y <= halfScreenY {
                 if !crossedHalfScreenDroneIDs.contains(droneID) {
                     crossedHalfScreenDroneIDs.insert(droneID)
-                    pendingAutoRocketTargets.append(position)
-                    pendingAutoInterceptorTargets.append(position)
+                    if isRocketLauncherEnabled { pendingAutoRocketTargets.append(position) }
+                    if isInterceptorLauncherEnabled { pendingAutoInterceptorTargets.append(position) }
                 }
             } else {
                 crossedHalfScreenDroneIDs.remove(droneID)
@@ -531,20 +587,20 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     }
 
     private func fireAutoRocketIfNeeded() {
-        guard canFireRocket(), !pendingAutoRocketTargets.isEmpty else { return }
+        guard isRocketLauncherEnabled, canFireRocket(), !pendingAutoRocketTargets.isEmpty else { return }
         while !pendingAutoRocketTargets.isEmpty {
-            let target = pendingAutoRocketTargets.removeFirst()
-            if triggerRocketLauncher(targetOverride: target) {
+            pendingAutoRocketTargets.removeFirst()
+            if triggerRocketLauncher() {
                 return
             }
         }
     }
 
     private func fireAutoInterceptorIfNeeded() {
-        guard canFireInterceptor(), !pendingAutoInterceptorTargets.isEmpty else { return }
+        guard isInterceptorLauncherEnabled, canFireInterceptor(), !pendingAutoInterceptorTargets.isEmpty else { return }
         while !pendingAutoInterceptorTargets.isEmpty {
-            let target = pendingAutoInterceptorTargets.removeFirst()
-            if triggerInterceptorLauncher(targetOverride: target) {
+            pendingAutoInterceptorTargets.removeFirst()
+            if triggerInterceptorLauncher() {
                 return
             }
         }
@@ -560,6 +616,611 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         fireAutoInterceptorIfNeeded()
     }
 
+    private struct FireControlState {
+        struct PlanningProfile {
+            let blastRadius: CGFloat
+            let maxRange: CGFloat?
+            let nominalSpeed: CGFloat
+            let acceleration: CGFloat
+            let maxSpeed: CGFloat
+        }
+
+        struct LaunchPlan {
+            let targetPoint: CGPoint
+            let claimedTrackIDs: Set<ObjectIdentifier>
+            let eta: TimeInterval
+            let score: CGFloat
+        }
+
+        private struct TrackState {
+            let id: ObjectIdentifier
+            var position: CGPoint
+            var velocity: CGVector
+            var lastUpdateTime: TimeInterval
+            var threatWeight: CGFloat
+        }
+
+        private struct Assignment {
+            enum Phase {
+                case inFlight
+                case impactLock(expiresAt: TimeInterval)
+            }
+
+            let assignmentID: UUID
+            let rocketID: ObjectIdentifier
+            let spec: Constants.GameBalance.RocketSpec
+            var targetPoint: CGPoint
+            var claimedTrackIDs: Set<ObjectIdentifier>
+            var eta: TimeInterval
+            var createdAt: TimeInterval
+            var updatedAt: TimeInterval
+            var phase: Phase
+        }
+
+        private var tracks = [ObjectIdentifier: TrackState]()
+        private var assignments = [ObjectIdentifier: Assignment]()
+        private(set) var decisionLog = [String]()
+
+        mutating func reset() {
+            tracks.removeAll()
+            assignments.removeAll()
+            decisionLog.removeAll()
+        }
+
+        mutating func syncTracks(
+            with drones: [AttackDroneEntity],
+            currentTime: TimeInterval,
+            sceneHeight: CGFloat
+        ) {
+            let safeHeight = max(sceneHeight, 1)
+            var observedIDs = Set<ObjectIdentifier>()
+            for drone in drones {
+                guard let point = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else {
+                    continue
+                }
+                let id = ObjectIdentifier(drone)
+                observedIDs.insert(id)
+                let previous = tracks[id]
+                let velocity: CGVector
+                if let previous {
+                    let dt = currentTime - previous.lastUpdateTime
+                    if dt > 0.0001 {
+                        velocity = CGVector(
+                            dx: (point.x - previous.position.x) / dt,
+                            dy: (point.y - previous.position.y) / dt
+                        )
+                    } else {
+                        // Keep previous estimate when the planner syncs multiple times within one frame.
+                        velocity = previous.velocity
+                    }
+                } else {
+                    velocity = CGVector(
+                        dx: 0,
+                        dy: 0
+                    )
+                }
+                let yNormalized = min(1, max(0, point.y / safeHeight))
+                let threatWeight = 1 + (1 - yNormalized) * 1.75
+                tracks[id] = TrackState(
+                    id: id,
+                    position: point,
+                    velocity: velocity,
+                    lastUpdateTime: currentTime,
+                    threatWeight: threatWeight
+                )
+            }
+            tracks = tracks.filter { observedIDs.contains($0.key) }
+        }
+
+        mutating func syncAssignments(
+            withActiveRocketIDs activeRocketIDs: Set<ObjectIdentifier>,
+            currentTime: TimeInterval
+        ) {
+            pruneExpiredImpactLocks(currentTime: currentTime)
+            assignments = assignments.filter { _, assignment in
+                switch assignment.phase {
+                case .inFlight:
+                    return activeRocketIDs.contains(assignment.rocketID)
+                case .impactLock:
+                    return true
+                }
+            }
+        }
+
+        mutating func handleRocketRemoved(_ rocketID: ObjectIdentifier) {
+            guard let assignment = assignments[rocketID] else { return }
+            guard case .inFlight = assignment.phase else { return }
+            assignments.removeValue(forKey: rocketID)
+        }
+
+        mutating func lockAssignmentForImpact(
+            rocketID: ObjectIdentifier,
+            impactPoint: CGPoint,
+            impactRadius: CGFloat,
+            currentTime: TimeInterval,
+            lockDuration: TimeInterval
+        ) {
+            guard var assignment = assignments[rocketID] else { return }
+            guard impactRadius > 0.01 else {
+                assignments.removeValue(forKey: rocketID)
+                return
+            }
+            assignment.targetPoint = impactPoint
+            assignment.claimedTrackIDs.removeAll()
+            assignment.eta = 0
+            assignment.updatedAt = currentTime
+            assignment.phase = .impactLock(expiresAt: currentTime + max(lockDuration, 0.01))
+            assignments[rocketID] = assignment
+        }
+
+        mutating func upsertAssignment(
+            rocketID: ObjectIdentifier,
+            spec: Constants.GameBalance.RocketSpec,
+            targetPoint: CGPoint,
+            launchOrigin: CGPoint?,
+            currentTime: TimeInterval,
+            forcedClaimedTrackIDs: Set<ObjectIdentifier>? = nil
+        ) {
+            let speed = max(120, spec.initialSpeed)
+            let eta = estimatedETA(origin: launchOrigin, target: targetPoint, speed: speed, acceleration: spec.acceleration, maxSpeed: spec.maxSpeed)
+            let claimedIDs = forcedClaimedTrackIDs ?? claimedTrackIDs(
+                around: targetPoint,
+                blastRadius: spec.blastRadius,
+                eta: eta
+            )
+            if var existing = assignments[rocketID] {
+                existing.targetPoint = targetPoint
+                existing.claimedTrackIDs = claimedIDs
+                existing.eta = eta
+                existing.updatedAt = currentTime
+                existing.phase = .inFlight
+                assignments[rocketID] = existing
+                return
+            }
+            assignments[rocketID] = Assignment(
+                assignmentID: UUID(),
+                rocketID: rocketID,
+                spec: spec,
+                targetPoint: targetPoint,
+                claimedTrackIDs: claimedIDs,
+                eta: eta,
+                createdAt: currentTime,
+                updatedAt: currentTime,
+                phase: .inFlight
+            )
+        }
+
+        mutating func planLaunch(
+            preferredPoint: CGPoint?,
+            origin: CGPoint?,
+            reservingAssignments: Bool,
+            excludingRocketID: ObjectIdentifier?,
+            profile: PlanningProfile
+        ) -> LaunchPlan? {
+            guard !tracks.isEmpty else {
+                appendLog("No tracks: planner has nothing to target.")
+                return nil
+            }
+
+            let speed = max(120, profile.nominalSpeed)
+            let accel = profile.acceleration
+            let vMax = profile.maxSpeed
+            let blastRadius = max(0, profile.blastRadius)
+            let assignmentSnapshot = assignments.values.filter { assignment in
+                if let excludingRocketID {
+                    return assignment.rocketID != excludingRocketID
+                }
+                return true
+            }
+
+            let candidateTracks = tracks.values.filter { track in
+                guard let origin, let maxRange = profile.maxRange else { return true }
+                return Self.squaredDistance(track.position, origin) <= maxRange * maxRange
+            }
+            guard !candidateTracks.isEmpty else {
+                appendLog("No reachable tracks in launch range.")
+                return nil
+            }
+
+            var candidatePointsByKey = [String: CGPoint]()
+            for track in candidateTracks {
+                let baseETA = estimatedETA(origin: origin, target: track.position, speed: speed, acceleration: accel, maxSpeed: vMax)
+                let projected0 = predictedPosition(for: track, after: baseETA)
+                let refinedETA = estimatedETA(origin: origin, target: projected0, speed: speed, acceleration: accel, maxSpeed: vMax)
+                let projectedSeed = predictedPosition(for: track, after: refinedETA)
+                if let origin, let maxRange = profile.maxRange,
+                   Self.squaredDistance(projectedSeed, origin) > maxRange * maxRange {
+                    continue
+                }
+                let candidatePoint: CGPoint
+                if blastRadius > 0.01 {
+                    let neighbors = candidateTracks.filter { otherTrack in
+                        let otherProjected = predictedPosition(for: otherTrack, after: baseETA)
+                        return Self.squaredDistance(otherProjected, projectedSeed) <= blastRadius * blastRadius
+                    }
+                    let centroidSources: [TrackState]
+                    if reservingAssignments {
+                        centroidSources = neighbors.filter { neighbor in
+                            let predicted = predictedPosition(for: neighbor, after: baseETA)
+                            return !isTrackReserved(
+                                hitID: neighbor.id,
+                                predictedPosition: predicted,
+                                by: assignmentSnapshot
+                            )
+                        }
+                    } else {
+                        centroidSources = neighbors
+                    }
+                    if centroidSources.isEmpty {
+                        if reservingAssignments {
+                            continue
+                        }
+                        candidatePoint = projectedSeed
+                    } else {
+                        let centroidX = centroidSources.map { predictedPosition(for: $0, after: baseETA).x }.reduce(0, +)
+                        let centroidY = centroidSources.map { predictedPosition(for: $0, after: baseETA).y }.reduce(0, +)
+                        candidatePoint = CGPoint(
+                            x: centroidX / CGFloat(centroidSources.count),
+                            y: centroidY / CGFloat(centroidSources.count)
+                        )
+                    }
+                } else {
+                    candidatePoint = projectedSeed
+                }
+                let key = "\(Int((candidatePoint.x * 2).rounded())):\(Int((candidatePoint.y * 2).rounded()))"
+                candidatePointsByKey[key] = candidatePoint
+            }
+
+            if let preferredPoint {
+                let key = "\(Int((preferredPoint.x * 2).rounded())):\(Int((preferredPoint.y * 2).rounded()))"
+                candidatePointsByKey[key] = preferredPoint
+            }
+
+            let candidatePoints = candidatePointsByKey.values.sorted { lhs, rhs in
+                if lhs.x == rhs.x { return lhs.y < rhs.y }
+                return lhs.x < rhs.x
+            }
+            guard !candidatePoints.isEmpty else {
+                appendLog("Planner produced no candidate points.")
+                return nil
+            }
+
+            var bestPlan: LaunchPlan?
+            var bestNewCoverage = -1
+            var bestPreferredDistance = CGFloat.greatestFiniteMagnitude
+            var bestSeparatedPlan: LaunchPlan?
+            var bestSeparatedNewCoverage = -1
+            var bestSeparatedPreferredDistance = CGFloat.greatestFiniteMagnitude
+
+            func shouldReplacePlan(
+                _ currentPlan: LaunchPlan?,
+                currentCoverage: Int,
+                currentPreferredDistance: CGFloat,
+                candidatePoint: CGPoint,
+                candidateScore: CGFloat,
+                candidateCoverage: Int,
+                candidatePreferredDistance: CGFloat
+            ) -> Bool {
+                guard let currentPlan else { return true }
+                let scoreDelta = candidateScore - currentPlan.score
+                if scoreDelta > 0.0001 {
+                    return true
+                }
+                if abs(scoreDelta) <= 0.0001, candidateCoverage > currentCoverage {
+                    return true
+                }
+                if abs(scoreDelta) <= 0.0001,
+                   candidateCoverage == currentCoverage,
+                   candidatePreferredDistance < currentPreferredDistance {
+                    return true
+                }
+                if abs(scoreDelta) <= 0.0001,
+                   candidateCoverage == currentCoverage,
+                   abs(candidatePreferredDistance - currentPreferredDistance) <= 0.0001 {
+                    if candidatePoint.x == currentPlan.targetPoint.x {
+                        return candidatePoint.y < currentPlan.targetPoint.y
+                    }
+                    return candidatePoint.x < currentPlan.targetPoint.x
+                }
+                return false
+            }
+
+            for point in candidatePoints {
+                if let origin, let maxRange = profile.maxRange,
+                   Self.squaredDistance(point, origin) > maxRange * maxRange {
+                    continue
+                }
+
+                let eta = estimatedETA(origin: origin, target: point, speed: speed, acceleration: accel, maxSpeed: vMax)
+                let hits = impactedTrackIDs(
+                    around: point,
+                    blastRadius: blastRadius,
+                    eta: eta
+                )
+                guard !hits.isEmpty else { continue }
+
+                var newHits = Set<ObjectIdentifier>()
+                var overlapCount = 0
+                var weightedThreat: CGFloat = 0
+                for hitID in hits {
+                    guard let track = tracks[hitID] else { continue }
+                    let predicted = predictedPosition(for: track, after: eta)
+                    if isTrackReserved(
+                        hitID: hitID,
+                        predictedPosition: predicted,
+                        by: assignmentSnapshot
+                    ) {
+                        overlapCount += 1
+                    } else {
+                        newHits.insert(hitID)
+                        weightedThreat += track.threatWeight
+                    }
+                }
+
+                if reservingAssignments && newHits.isEmpty {
+                    continue
+                }
+
+                var geometricProximityPenalty: CGFloat = 0
+                for assignment in assignmentSnapshot {
+                    let avoidanceRadius = softAvoidanceRadius(
+                        for: assignment,
+                        candidateBlastRadius: blastRadius
+                    )
+                    guard avoidanceRadius > 0.01 else { continue }
+                    let distanceSquared = Self.squaredDistance(point, assignment.targetPoint)
+                    guard distanceSquared < avoidanceRadius * avoidanceRadius else { continue }
+                    let distance = sqrt(distanceSquared)
+                    let normalized = 1 - min(1, distance / avoidanceRadius)
+                    geometricProximityPenalty += normalized
+                }
+                let preferredDistance: CGFloat
+                if let preferredPoint {
+                    preferredDistance = sqrt(Self.squaredDistance(point, preferredPoint))
+                } else {
+                    preferredDistance = 0
+                }
+                let etaPenalty = CGFloat(eta) * 0.9
+                let overlapPenalty = CGFloat(overlapCount) * 8
+                let geometricPenalty = geometricProximityPenalty * (reservingAssignments ? 42 : 18)
+                let preferredPenalty = preferredDistance * 0.015
+                let score =
+                    weightedThreat * 12 +
+                    CGFloat(newHits.count) * 5 -
+                    overlapPenalty -
+                    geometricPenalty -
+                    etaPenalty -
+                    preferredPenalty
+
+                let claimed = newHits.isEmpty ? hits : newHits
+                if shouldReplacePlan(
+                    bestPlan,
+                    currentCoverage: bestNewCoverage,
+                    currentPreferredDistance: bestPreferredDistance,
+                    candidatePoint: point,
+                    candidateScore: score,
+                    candidateCoverage: newHits.count,
+                    candidatePreferredDistance: preferredDistance
+                ) {
+                    bestPlan = LaunchPlan(
+                        targetPoint: point,
+                        claimedTrackIDs: claimed,
+                        eta: eta,
+                        score: score
+                    )
+                    bestNewCoverage = newHits.count
+                    bestPreferredDistance = preferredDistance
+                }
+
+                let isSeparatedFromAssignments = assignmentSnapshot.allSatisfy { assignment in
+                    isBlastSeparated(
+                        candidatePoint: point,
+                        candidateBlastRadius: blastRadius,
+                        from: assignment
+                    )
+                }
+                if isSeparatedFromAssignments,
+                   shouldReplacePlan(
+                    bestSeparatedPlan,
+                    currentCoverage: bestSeparatedNewCoverage,
+                    currentPreferredDistance: bestSeparatedPreferredDistance,
+                    candidatePoint: point,
+                    candidateScore: score,
+                    candidateCoverage: newHits.count,
+                    candidatePreferredDistance: preferredDistance
+                   ) {
+                    bestSeparatedPlan = LaunchPlan(
+                        targetPoint: point,
+                        claimedTrackIDs: claimed,
+                        eta: eta,
+                        score: score
+                    )
+                    bestSeparatedNewCoverage = newHits.count
+                    bestSeparatedPreferredDistance = preferredDistance
+                }
+            }
+
+            let selectedPlan: LaunchPlan?
+            if reservingAssignments, let bestSeparatedPlan {
+                selectedPlan = bestSeparatedPlan
+                appendLog("Using non-overlapping impact plan.")
+            } else {
+                selectedPlan = bestPlan
+            }
+
+            if let selectedPlan {
+                appendLog(
+                    "Selected point (\(Int(selectedPlan.targetPoint.x)), \(Int(selectedPlan.targetPoint.y))) " +
+                    "score=\(String(format: "%.2f", selectedPlan.score)) " +
+                    "claimed=\(selectedPlan.claimedTrackIDs.count)"
+                )
+            } else {
+                appendLog("No launch plan survived overlap/range constraints.")
+            }
+            return selectedPlan
+        }
+
+        private func impactedTrackIDs(
+            around point: CGPoint,
+            blastRadius: CGFloat,
+            eta: TimeInterval
+        ) -> Set<ObjectIdentifier> {
+            if blastRadius > 0.01 {
+                let radiusSquared = blastRadius * blastRadius
+                let hits = tracks.values.filter { track in
+                    let predicted = predictedPosition(for: track, after: eta)
+                    return Self.squaredDistance(predicted, point) <= radiusSquared
+                }
+                return Set(hits.map(\.id))
+            }
+
+            var nearestID: ObjectIdentifier?
+            var nearestDistanceSquared = CGFloat.greatestFiniteMagnitude
+            for track in tracks.values {
+                let predicted = predictedPosition(for: track, after: eta)
+                let distanceSquared = Self.squaredDistance(predicted, point)
+                if distanceSquared < nearestDistanceSquared {
+                    nearestDistanceSquared = distanceSquared
+                    nearestID = track.id
+                }
+            }
+            guard let nearestID else { return [] }
+            let maxSnapDistanceSquared =
+                InPlaySKScene.singleTargetReservationSnapDistance * InPlaySKScene.singleTargetReservationSnapDistance
+            guard nearestDistanceSquared <= maxSnapDistanceSquared else {
+                return []
+            }
+            return [nearestID]
+        }
+
+        private func claimedTrackIDs(
+            around point: CGPoint,
+            blastRadius: CGFloat,
+            eta: TimeInterval
+        ) -> Set<ObjectIdentifier> {
+            impactedTrackIDs(around: point, blastRadius: blastRadius, eta: eta)
+        }
+
+        private func isTrackReserved(
+            hitID: ObjectIdentifier,
+            predictedPosition: CGPoint,
+            by assignments: [Assignment]
+        ) -> Bool {
+            for assignment in assignments {
+                if !assignment.claimedTrackIDs.isEmpty {
+                    if assignment.claimedTrackIDs.contains(hitID) { return true }
+                    continue
+                }
+                if isPointCovered(predictedPosition, by: assignment) { return true }
+            }
+            return false
+        }
+
+        private func isPointCovered(_ point: CGPoint, by assignment: Assignment) -> Bool {
+            let coverageRadius: CGFloat = assignment.spec.blastRadius > 0.01
+                ? assignment.spec.blastRadius
+                : InPlaySKScene.singleTargetReservationCoverageRadius
+            return Self.squaredDistance(point, assignment.targetPoint) <= coverageRadius * coverageRadius
+        }
+
+        private func softAvoidanceRadius(
+            for assignment: Assignment,
+            candidateBlastRadius: CGFloat
+        ) -> CGFloat {
+            let assignmentCoverage: CGFloat = assignment.spec.blastRadius > 0.01
+                ? assignment.spec.blastRadius
+                : InPlaySKScene.singleTargetReservationCoverageRadius * 2.2
+            let candidateCoverage: CGFloat = candidateBlastRadius > 0.01
+                ? candidateBlastRadius
+                : InPlaySKScene.singleTargetReservationCoverageRadius * 1.6
+            return max(assignmentCoverage, candidateCoverage)
+        }
+
+        private func isBlastSeparated(
+            candidatePoint: CGPoint,
+            candidateBlastRadius: CGFloat,
+            from assignment: Assignment
+        ) -> Bool {
+            let minimumDistance = blastConflictDistance(
+                candidateBlastRadius: candidateBlastRadius,
+                assignment: assignment
+            )
+            return Self.squaredDistance(candidatePoint, assignment.targetPoint) >= minimumDistance * minimumDistance
+        }
+
+        private func blastConflictDistance(
+            candidateBlastRadius: CGFloat,
+            assignment: Assignment
+        ) -> CGFloat {
+            let assignmentCoverage: CGFloat = assignment.spec.blastRadius > 0.01
+                ? assignment.spec.blastRadius
+                : InPlaySKScene.singleTargetReservationCoverageRadius
+            let candidateCoverage: CGFloat = candidateBlastRadius > 0.01
+                ? candidateBlastRadius
+                : InPlaySKScene.singleTargetReservationCoverageRadius
+            return assignmentCoverage + candidateCoverage
+        }
+
+        private mutating func pruneExpiredImpactLocks(currentTime: TimeInterval) {
+            assignments = assignments.filter { _, assignment in
+                switch assignment.phase {
+                case .inFlight:
+                    return true
+                case let .impactLock(expiresAt):
+                    return expiresAt > currentTime
+                }
+            }
+        }
+
+        private func predictedPosition(for track: TrackState, after delta: TimeInterval) -> CGPoint {
+            CGPoint(
+                x: track.position.x + track.velocity.dx * delta,
+                y: track.position.y + track.velocity.dy * delta
+            )
+        }
+
+        private func estimatedETA(
+            origin: CGPoint?,
+            target: CGPoint,
+            speed: CGFloat,
+            acceleration: CGFloat = 0,
+            maxSpeed: CGFloat = .greatestFiniteMagnitude
+        ) -> TimeInterval {
+            guard let origin else { return 0 }
+            let distance = sqrt(Self.squaredDistance(origin, target))
+            let v0 = max(speed, 1)
+            guard distance > 0.0001 else { return 0 }
+            guard acceleration > 0.0001, v0 < maxSpeed else {
+                return TimeInterval(distance / v0)
+            }
+            let vMax = maxSpeed
+            let a = acceleration
+            let tAccel = (vMax - v0) / a
+            let dAccel = v0 * tAccel + 0.5 * a * tAccel * tAccel
+            if dAccel >= distance {
+                // Rocket is still accelerating when it reaches target
+                let t = (-v0 + sqrt(v0 * v0 + 2 * a * distance)) / a
+                return TimeInterval(t)
+            }
+            // Accelerate to max, then cruise
+            return TimeInterval(tAccel + (distance - dAccel) / vMax)
+        }
+
+        private static func squaredDistance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+            let dx = lhs.x - rhs.x
+            let dy = lhs.y - rhs.y
+            return dx * dx + dy * dy
+        }
+
+        private mutating func appendLog(_ line: String) {
+            decisionLog.append(line)
+            let maxEntries = 60
+            if decisionLog.count > maxEntries {
+                decisionLog.removeFirst(decisionLog.count - maxEntries)
+            }
+        }
+    }
+
     private func aliveThreatDrones() -> [AttackDroneEntity] {
         let halfScreenY = frame.height * 0.5
         return activeDrones.filter { drone in
@@ -567,6 +1228,62 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
             guard let position = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else { return false }
             return position.y <= halfScreenY
         }
+    }
+
+    private func syncFireControlState() {
+        let rocketsInFlightIDs = Set(activeRockets.map { ObjectIdentifier($0) })
+        fireControl.syncAssignments(
+            withActiveRocketIDs: rocketsInFlightIDs,
+            currentTime: elapsedGameplayTime
+        )
+        fireControl.syncTracks(
+            with: aliveThreatDrones(),
+            currentTime: elapsedGameplayTime,
+            sceneHeight: frame.height
+        )
+    }
+
+    private func fireControlProfile(
+        radius: CGFloat?,
+        influenceRadius: CGFloat?,
+        projectileSpeed: CGFloat?,
+        acceleration: CGFloat? = nil,
+        maxSpeed: CGFloat? = nil
+    ) -> FireControlState.PlanningProfile {
+        FireControlState.PlanningProfile(
+            blastRadius: max(0, influenceRadius ?? rocketSpec.blastRadius),
+            maxRange: radius,
+            nominalSpeed: max(120, projectileSpeed ?? rocketSpec.initialSpeed),
+            acceleration: acceleration ?? rocketSpec.acceleration,
+            maxSpeed: maxSpeed ?? rocketSpec.maxSpeed
+        )
+    }
+
+    private func plannedRocketLaunch(
+        preferredPoint: CGPoint?,
+        origin: CGPoint?,
+        reservingActiveRocketImpacts: Bool,
+        excludingRocket: RocketEntity?,
+        radius: CGFloat?,
+        influenceRadius: CGFloat?,
+        projectileSpeed: CGFloat?,
+        acceleration: CGFloat? = nil,
+        maxSpeed: CGFloat? = nil
+    ) -> FireControlState.LaunchPlan? {
+        syncFireControlState()
+        return fireControl.planLaunch(
+            preferredPoint: preferredPoint,
+            origin: origin,
+            reservingAssignments: reservingActiveRocketImpacts,
+            excludingRocketID: excludingRocket.map { ObjectIdentifier($0) },
+            profile: fireControlProfile(
+                radius: radius,
+                influenceRadius: influenceRadius,
+                projectileSpeed: projectileSpeed,
+                acceleration: acceleration,
+                maxSpeed: maxSpeed
+            )
+        )
     }
 
     func bestRocketTargetPoint(
@@ -577,326 +1294,76 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         reservingActiveRocketImpacts: Bool = false,
         excludingRocket: RocketEntity? = nil
     ) -> CGPoint? {
-        var aliveDrones = filteredThreatDrones(origin: origin, radius: radius)
-        let activeReservations: [RocketImpactReservation]
-        if reservingActiveRocketImpacts {
-            activeReservations = activeRocketImpactReservations(excludingRocket: excludingRocket)
-            aliveDrones = applyActiveRocketReservations(
-                to: aliveDrones,
-                reservations: activeReservations
-            )
-        } else {
-            activeReservations = []
-        }
-
-        guard !aliveDrones.isEmpty else { return nil }
-        let influence = max(0, influenceRadius ?? rocketSpec.blastRadius)
-        return bestRocketTargetPoint(
-            from: aliveDrones,
+        plannedRocketLaunch(
             preferredPoint: preferredPoint,
-            influenceRadius: influence,
-            reservedImpacts: activeReservations
-        )
+            origin: origin,
+            reservingActiveRocketImpacts: reservingActiveRocketImpacts,
+            excludingRocket: excludingRocket,
+            radius: radius,
+            influenceRadius: influenceRadius,
+            projectileSpeed: rocketSpec.initialSpeed,
+            acceleration: rocketSpec.acceleration,
+            maxSpeed: rocketSpec.maxSpeed
+        )?.targetPoint
     }
 
-    private func filteredThreatDrones(origin: CGPoint?, radius: CGFloat?) -> [AttackDroneEntity] {
-        var aliveDrones = aliveThreatDrones()
-        if let origin, let radius {
-            let radiusSquared = radius * radius
-            aliveDrones = aliveDrones.filter { drone in
-                guard let candidatePosition = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else {
-                    return false
-                }
-                let dx = candidatePosition.x - origin.x
-                let dy = candidatePosition.y - origin.y
-                return dx * dx + dy * dy <= radiusSquared
-            }
-        }
-        return aliveDrones
-    }
-
-    private struct RocketImpactReservation {
-        let spec: Constants.GameBalance.RocketSpec
-        let targetPoint: CGPoint
-        let reservedDroneIDs: Set<ObjectIdentifier>
-    }
-
-    private func activeRocketImpactReservations(
-        excludingRocket: RocketEntity? = nil
-    ) -> [RocketImpactReservation] {
-        let rocketsInFlight = entities.compactMap { $0 as? RocketEntity }.filter { rocket in
-            guard rocket.shouldShowGuidanceMarker else { return false }
-            if let excludingRocket {
-                return rocket !== excludingRocket
-            }
-            return true
-        }
-        return rocketsInFlight.map { rocket in
-            let rocketID = ObjectIdentifier(rocket)
-            if rocketReservedDroneIDs[rocketID] == nil {
-                updateRocketReservation(for: rocket)
-            }
-            return RocketImpactReservation(
-                spec: rocket.spec,
-                targetPoint: rocket.guidanceTargetPointForDisplay,
-                reservedDroneIDs: rocketReservedDroneIDs[rocketID] ?? []
-            )
-        }
-    }
-
-    private func applyActiveRocketReservations(
-        to drones: [AttackDroneEntity],
-        reservations: [RocketImpactReservation]
-    ) -> [AttackDroneEntity] {
-        var remainingDrones = drones
-        for reservation in reservations {
-            if !reservation.reservedDroneIDs.isEmpty {
-                remainingDrones.removeAll { drone in
-                    reservation.reservedDroneIDs.contains(ObjectIdentifier(drone))
-                }
-                if remainingDrones.isEmpty {
-                    return remainingDrones
-                }
-                continue
-            }
-            reserveProjectedRocketImpact(
-                spec: reservation.spec,
-                targetPoint: reservation.targetPoint,
-                remainingDrones: &remainingDrones
-            )
-            if remainingDrones.isEmpty {
-                return remainingDrones
-            }
-        }
-        return remainingDrones
-    }
-
-    private func reserveProjectedRocketImpact(
-        spec: Constants.GameBalance.RocketSpec,
-        targetPoint: CGPoint,
-        remainingDrones: inout [AttackDroneEntity]
-    ) {
-        guard !remainingDrones.isEmpty else { return }
-        if spec.blastRadius > 0.01 {
-            let radiusSquared = spec.blastRadius * spec.blastRadius
-            remainingDrones.removeAll { drone in
-                guard let dronePoint = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else {
-                    return false
-                }
-                let dx = dronePoint.x - targetPoint.x
-                let dy = dronePoint.y - targetPoint.y
-                return dx * dx + dy * dy <= radiusSquared
-            }
-            return
-        }
-
-        var nearestIndex: Int?
-        var nearestDistance = CGFloat.greatestFiniteMagnitude
-        for (index, drone) in remainingDrones.enumerated() {
-            guard let dronePoint = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else {
-                continue
-            }
-            let dx = dronePoint.x - targetPoint.x
-            let dy = dronePoint.y - targetPoint.y
-            let distanceSquared = dx * dx + dy * dy
-            if distanceSquared < nearestDistance {
-                nearestDistance = distanceSquared
-                nearestIndex = index
-            }
-        }
-
-        guard let nearestIndex else { return }
-        let maxSnapDistanceSquared =
-            Self.singleTargetReservationSnapDistance * Self.singleTargetReservationSnapDistance
-        if nearestDistance <= maxSnapDistanceSquared {
-            remainingDrones.remove(at: nearestIndex)
-        }
-    }
-
-    private func bestRocketTargetPoint(
-        from drones: [AttackDroneEntity],
-        preferredPoint: CGPoint?,
-        influenceRadius: CGFloat,
-        reservedImpacts: [RocketImpactReservation]
+    func bestRocketTargetPoint(
+        preferredPoint: CGPoint? = nil,
+        origin: CGPoint? = nil,
+        radius: CGFloat? = nil,
+        influenceRadius: CGFloat? = nil,
+        reservingActiveRocketImpacts: Bool = false,
+        excludingRocket: RocketEntity? = nil,
+        projectileSpeed: CGFloat,
+        projectileAcceleration: CGFloat? = nil,
+        projectileMaxSpeed: CGFloat? = nil
     ) -> CGPoint? {
-        let positionedDrones = drones.compactMap { drone -> CGPoint? in
-            drone.component(ofType: SpriteComponent.self)?.spriteNode.position
-        }
-        guard !positionedDrones.isEmpty else { return nil }
-
-        let influenceRadiusSquared = influenceRadius * influenceRadius
-        let useClusterCentroid = influenceRadius > 0.01
-        let geometricReservations = reservedImpacts.filter { $0.reservedDroneIDs.isEmpty }
-        var bestPoint: CGPoint?
-        var bestNewCoverage = -1
-        var bestCoverage = -1
-        var bestPreferredDistance = CGFloat.greatestFiniteMagnitude
-
-        for candidatePosition in positionedDrones {
-            var clusterCount = 0
-            var centroidX: CGFloat = 0
-            var centroidY: CGFloat = 0
-
-            for otherPosition in positionedDrones {
-                let dx = candidatePosition.x - otherPosition.x
-                let dy = candidatePosition.y - otherPosition.y
-                if dx * dx + dy * dy <= influenceRadiusSquared {
-                    clusterCount += 1
-                    centroidX += otherPosition.x
-                    centroidY += otherPosition.y
-                }
-            }
-
-            guard clusterCount > 0 else { continue }
-            let candidateTargetPoint: CGPoint
-            if useClusterCentroid {
-                let centroidTarget = CGPoint(
-                    x: centroidX / CGFloat(clusterCount),
-                    y: centroidY / CGFloat(clusterCount)
-                )
-                if isPointCoveredByReservations(centroidTarget, reservations: geometricReservations) {
-                    candidateTargetPoint = candidatePosition
-                } else {
-                    candidateTargetPoint = centroidTarget
-                }
-            } else {
-                // Single-target rockets keep locking a concrete drone position.
-                candidateTargetPoint = candidatePosition
-            }
-
-            var coverage = 0
-            var newCoverage = 0
-            for otherPosition in positionedDrones {
-                let dx = candidateTargetPoint.x - otherPosition.x
-                let dy = candidateTargetPoint.y - otherPosition.y
-                let isCovered: Bool
-                if useClusterCentroid {
-                    isCovered = dx * dx + dy * dy <= influenceRadiusSquared
-                } else {
-                    isCovered = dx * dx + dy * dy <= 1
-                }
-                guard isCovered else { continue }
-                coverage += 1
-                if !isPointCoveredByReservations(otherPosition, reservations: geometricReservations) {
-                    newCoverage += 1
-                }
-            }
-
-            guard coverage > 0 else { continue }
-            if !reservedImpacts.isEmpty && newCoverage == 0 {
-                continue
-            }
-
-            let preferredDistance: CGFloat
-            if let preferredPoint {
-                let px = candidateTargetPoint.x - preferredPoint.x
-                let py = candidateTargetPoint.y - preferredPoint.y
-                preferredDistance = px * px + py * py
-            } else {
-                preferredDistance = 0
-            }
-
-            if newCoverage > bestNewCoverage
-                || (newCoverage == bestNewCoverage && coverage > bestCoverage)
-                || (newCoverage == bestNewCoverage
-                    && coverage == bestCoverage
-                    && preferredDistance < bestPreferredDistance) {
-                bestNewCoverage = newCoverage
-                bestCoverage = coverage
-                bestPoint = candidateTargetPoint
-                bestPreferredDistance = preferredDistance
-            }
-        }
-
-        return bestPoint
-    }
-
-    private func isPointCoveredByReservations(
-        _ point: CGPoint,
-        reservations: [RocketImpactReservation]
-    ) -> Bool {
-        for reservation in reservations where isPointCoveredByReservation(point, reservation: reservation) {
-            return true
-        }
-        return false
-    }
-
-    private func isPointCoveredByReservation(
-        _ point: CGPoint,
-        reservation: RocketImpactReservation
-    ) -> Bool {
-        let coverageRadius: CGFloat = reservation.spec.blastRadius > 0.01
-            ? reservation.spec.blastRadius
-            : Self.singleTargetReservationCoverageRadius
-        let dx = point.x - reservation.targetPoint.x
-        let dy = point.y - reservation.targetPoint.y
-        return dx * dx + dy * dy <= coverageRadius * coverageRadius
+        plannedRocketLaunch(
+            preferredPoint: preferredPoint,
+            origin: origin,
+            reservingActiveRocketImpacts: reservingActiveRocketImpacts,
+            excludingRocket: excludingRocket,
+            radius: radius,
+            influenceRadius: influenceRadius,
+            projectileSpeed: projectileSpeed,
+            acceleration: projectileAcceleration,
+            maxSpeed: projectileMaxSpeed
+        )?.targetPoint
     }
 
     func updateRocketReservation(
         for rocket: RocketEntity,
         targetPoint overrideTargetPoint: CGPoint? = nil
     ) {
+        syncFireControlState()
         let rocketID = ObjectIdentifier(rocket)
         let targetPoint = overrideTargetPoint ?? rocket.guidanceTargetPointForDisplay
-        let reservedIDs = reserveThreatDroneIDs(for: rocket.spec, around: targetPoint)
-        if reservedIDs.isEmpty {
-            rocketReservedDroneIDs.removeValue(forKey: rocketID)
-        } else {
-            rocketReservedDroneIDs[rocketID] = reservedIDs
-        }
+        let launchOrigin = rocket.component(ofType: SpriteComponent.self)?.spriteNode.position
+        fireControl.upsertAssignment(
+            rocketID: rocketID,
+            spec: rocket.spec,
+            targetPoint: targetPoint,
+            launchOrigin: launchOrigin,
+            currentTime: elapsedGameplayTime
+        )
     }
 
-    private func reserveThreatDroneIDs(
-        for spec: Constants.GameBalance.RocketSpec,
-        around targetPoint: CGPoint
-    ) -> Set<ObjectIdentifier> {
-        let threatPoints: [(id: ObjectIdentifier, position: CGPoint)] = aliveThreatDrones().compactMap { drone in
-            guard let position = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else {
-                return nil
-            }
-            return (ObjectIdentifier(drone), position)
-        }
-        guard !threatPoints.isEmpty else { return [] }
-
-        if spec.blastRadius > 0.01 {
-            let radiusSquared = spec.blastRadius * spec.blastRadius
-            let inBlast = threatPoints
-                .filter { threat in
-                    let dx = threat.position.x - targetPoint.x
-                    let dy = threat.position.y - targetPoint.y
-                    return dx * dx + dy * dy <= radiusSquared
-                }
-                .map(\.id)
-            if !inBlast.isEmpty {
-                return Set(inBlast)
-            }
-        }
-
-        var nearestID: ObjectIdentifier?
-        var nearestDistanceSquared = CGFloat.greatestFiniteMagnitude
-        for threat in threatPoints {
-            let dx = threat.position.x - targetPoint.x
-            let dy = threat.position.y - targetPoint.y
-            let distanceSquared = dx * dx + dy * dy
-            if distanceSquared < nearestDistanceSquared {
-                nearestDistanceSquared = distanceSquared
-                nearestID = threat.id
-            }
-        }
-        guard let nearestID else { return [] }
-        if spec.blastRadius <= 0.01 {
-            let snapDistanceSquared =
-                Self.singleTargetReservationSnapDistance * Self.singleTargetReservationSnapDistance
-            guard nearestDistanceSquared <= snapDistanceSquared else {
-                return []
-            }
-        }
-        return [nearestID]
+    func onRocketDetonated(
+        _ rocket: RocketEntity,
+        at position: CGPoint,
+        blastRadius: CGFloat
+    ) {
+        fireControl.lockAssignmentForImpact(
+            rocketID: ObjectIdentifier(rocket),
+            impactPoint: position,
+            impactRadius: blastRadius,
+            currentTime: elapsedGameplayTime,
+            lockDuration: Self.rocketImpactLockDuration
+        )
     }
 
     private func launchRocket(
-        preferredTarget: CGPoint,
+        launchPlan: FireControlState.LaunchPlan,
         startPosition: CGPoint?,
         spec: Constants.GameBalance.RocketSpec
     ) {
@@ -907,12 +1374,19 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         rocketSprite.position = start
         rocketSprite.zRotation = 0
         rocket.configureFlight(
-            targetPoint: preferredTarget,
+            targetPoint: launchPlan.targetPoint,
             initialSpeed: spec.initialSpeed,
             climbsWhenNoTargets: false
         )
         addEntity(rocket)
-        updateRocketReservation(for: rocket, targetPoint: preferredTarget)
+        fireControl.upsertAssignment(
+            rocketID: ObjectIdentifier(rocket),
+            spec: spec,
+            targetPoint: launchPlan.targetPoint,
+            launchOrigin: start,
+            currentTime: elapsedGameplayTime,
+            forcedClaimedTrackIDs: launchPlan.claimedTrackIDs
+        )
         ensureRocketAimMarker(for: rocket)
     }
 
@@ -953,7 +1427,6 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     }
 
     private func syncRocketAimMarkers() {
-        let activeRockets = entities.compactMap { $0 as? RocketEntity }
         let activeIDs = Set(activeRockets.map { ObjectIdentifier($0) })
 
         let staleIDs = rocketAimMarkers.keys.filter { !activeIDs.contains($0) }
@@ -1258,13 +1731,13 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         fillColor: UIColor,
         strokeColor: UIColor
     ) {
-        let blast = SKShapeNode(circleOfRadius: radius)
+        let blast = SKSpriteNode(texture: Self.blastTexture)
+        blast.size = CGSize(width: radius * 2, height: radius * 2)
         blast.name = name
         blast.position = position
         blast.zPosition = 90
-        blast.fillColor = fillColor
-        blast.strokeColor = strokeColor
-        blast.lineWidth = 2
+        blast.color = fillColor
+        blast.colorBlendFactor = 1.0
         blast.physicsBody = SKPhysicsBody(circleOfRadius: radius)
         blast.physicsBody?.isDynamic = false
         blast.physicsBody?.categoryBitMask = Constants.rocketBlastBitMask
@@ -1272,8 +1745,8 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         blast.physicsBody?.collisionBitMask = 0
         addChild(blast)
 
-        let scale = SKAction.scale(to: 1.2, duration: 0.1)
-        let fade = SKAction.fadeOut(withDuration: 0.15)
+        let scale = SKAction.scale(to: 1.2, duration: Self.rocketBlastScaleDuration)
+        let fade = SKAction.fadeOut(withDuration: Self.rocketBlastFadeDuration)
         let remove = SKAction.removeFromParent()
         blast.run(SKAction.sequence([SKAction.group([scale, fade]), remove]))
     }
@@ -1407,8 +1880,8 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         currentWave += 1
         if currentWave > 1 {
             showWaveAnnouncement(wave: currentWave)
-            rocketAmmo += rocketSpec.ammoPerWave
-            interceptorAmmo += interceptorRocketSpec.ammoPerWave
+            if isRocketLauncherEnabled { rocketAmmo += rocketSpec.ammoPerWave }
+            if isInterceptorLauncherEnabled { interceptorAmmo += interceptorRocketSpec.ammoPerWave }
         }
         spawnWave()
         updateHUD()
@@ -1545,8 +2018,14 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         for entity in transientEntities {
             removeEntity(entity)
         }
+        bulletPool.removeAll()
+        activeRockets.removeAll()
+        entityIdentifiers.removeAll()
         clearRocketAimMarkers()
-        rocketReservedDroneIDs.removeAll()
+        fireControl.reset()
+        for entity in entities {
+            entityIdentifiers.insert(ObjectIdentifier(entity))
+        }
 
         score = 0
         lives = Constants.GameBalance.defaultLives
@@ -1554,9 +2033,9 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         dronesDestroyed = 0
         currentWave = 0
         isWaveInProgress = false
-        rocketAmmo = rocketSpec.defaultAmmo
+        rocketAmmo = isRocketLauncherEnabled ? rocketSpec.defaultAmmo : 0
         rocketCooldownRemaining = 0
-        interceptorAmmo = interceptorRocketSpec.defaultAmmo
+        interceptorAmmo = isInterceptorLauncherEnabled ? interceptorRocketSpec.defaultAmmo : 0
         interceptorCooldownRemaining = 0
         elapsedGameplayTime = 0
         mineBombsDropped = 0
@@ -1617,15 +2096,15 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         shotsFired = 0
         dronesDestroyed = 0
         currentWave = 0
-        rocketAmmo = rocketSpec.defaultAmmo
+        rocketAmmo = isRocketLauncherEnabled ? rocketSpec.defaultAmmo : 0
         rocketCooldownRemaining = 0
-        interceptorAmmo = interceptorRocketSpec.defaultAmmo
+        interceptorAmmo = isInterceptorLauncherEnabled ? interceptorRocketSpec.defaultAmmo : 0
         interceptorCooldownRemaining = 0
         elapsedGameplayTime = 0
         mineBombsDropped = 0
         mineLayerRearmTickets.removeAll()
         pendingMineLayerBonusForNextWave = 0
-        rocketReservedDroneIDs.removeAll()
+        fireControl.reset()
         resetRocketAutoFireState()
         resetDroneRecoveryState()
 
@@ -1652,14 +2131,14 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         lastUpdateTime = 0
         lastTap = Constants.noTapPoint
         rocketCooldownRemaining = 0
-        rocketAmmo = rocketSpec.defaultAmmo
+        rocketAmmo = isRocketLauncherEnabled ? rocketSpec.defaultAmmo : 0
         interceptorCooldownRemaining = 0
-        interceptorAmmo = interceptorRocketSpec.defaultAmmo
+        interceptorAmmo = isInterceptorLauncherEnabled ? interceptorRocketSpec.defaultAmmo : 0
         elapsedGameplayTime = 0
         mineBombsDropped = 0
         mineLayerRearmTickets.removeAll()
         pendingMineLayerBonusForNextWave = 0
-        rocketReservedDroneIDs.removeAll()
+        fireControl.reset()
         resetRocketAutoFireState()
         resetDroneRecoveryState()
 
@@ -1710,14 +2189,15 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     // MARK: - Entity Management
 
     public func addEntity(_ entity: GKEntity) {
-        if entities.contains(entity) {
-            return
-        }
+        let id = ObjectIdentifier(entity)
+        guard !entityIdentifiers.contains(id) else { return }
         if gameState == .playing && entity is Shell {
             shotsFired += 1
         }
         entities.append(entity)
+        entityIdentifiers.insert(id)
         if let rocket = entity as? RocketEntity {
+            activeRockets.append(rocket)
             ensureRocketAimMarker(for: rocket)
         }
         if let node = entity.component(ofType: SpriteComponent.self)?.spriteNode, node.parent == nil {
@@ -1726,9 +2206,13 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
     }
 
     public func removeEntity(_ entity: GKEntity) {
+        entityIdentifiers.remove(ObjectIdentifier(entity))
         if let rocket = entity as? RocketEntity {
             removeRocketAimMarker(for: rocket)
-            rocketReservedDroneIDs.removeValue(forKey: ObjectIdentifier(rocket))
+            fireControl.handleRocketRemoved(ObjectIdentifier(rocket))
+            if let idx = activeRockets.firstIndex(where: { $0 === rocket }) {
+                activeRockets.remove(at: idx)
+            }
         }
         if let node = entity.component(ofType: SpriteComponent.self)?.spriteNode {
             node.removeFromParent()
@@ -1744,6 +2228,26 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
                 availableDrones.append(drone)
             }
         }
+    }
+
+    // MARK: - Bullet Pool
+
+    func dequeueBullet(matching template: BulletEntity) -> BulletEntity? {
+        guard !(template is RocketEntity) else { return nil }
+        guard let index = bulletPool.lastIndex(where: { $0.imageName == template.imageName }) else {
+            return nil
+        }
+        let bullet = bulletPool.remove(at: index)
+        bullet.reset()
+        bullet.damage = template.damage
+        return bullet
+    }
+
+    func returnBulletToPool(_ bullet: BulletEntity) {
+        guard !(bullet is RocketEntity),
+              bulletPool.count < Self.bulletPoolMaxSize else { return }
+        bullet.reset()
+        bulletPool.append(bullet)
     }
 
     // MARK: - Touch Handling
@@ -1822,17 +2326,14 @@ class InPlaySKScene: SKScene, MineLayerDroneDelegate {
         }
         for entity in entities {
             entity.update(deltaTime: dt)
-            if lastTap.equalTo(Constants.noTapPoint) {
-                continue
-            }
-            if let playerControlled = entity.component(ofType: PlayerControlComponent.self) {
-                playerControlled.changedFingerPosition(deltaTime: dt, lastTap: lastTap)
-                if isTouched {
-                    playerControlled.newTap(deltaTime: dt, lastTap: lastTap)
-                }
-            }
+        }
+        if !lastTap.equalTo(Constants.noTapPoint),
+           let playerControlled = mainGun?.component(ofType: PlayerControlComponent.self) {
+            playerControlled.changedFingerPosition(deltaTime: dt, lastTap: lastTap)
+            if isTouched { playerControlled.newTap(deltaTime: dt, lastTap: lastTap) }
         }
         cleanupStrayDrones()
+        syncFireControlState()
         processMineLayerRearm()
         registerThreatDroneCrossings()
         fireAutoRocketIfNeeded()

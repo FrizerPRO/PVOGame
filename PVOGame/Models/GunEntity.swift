@@ -47,23 +47,32 @@ class GunEntity: GKEntity {
         guard timeSinceLastShot >= 60/CGFloat(shootingSpeed) else{
             return
         }
-        if let shell = shell.copy() as? Shell{
-            if let gunSprite = component(ofType: SpriteComponent.self){
-                if let shellSprite = shell.component(ofType: SpriteComponent.self){
-                    if let scene = gunSprite.spriteNode.scene as? InPlaySKScene{
-                        scene.addEntity(shell)
-                    }
-                    let randHeight = Int.random(in: 0...30)
+        let newShell: Shell
+        if let bulletTemplate = shell as? BulletEntity,
+           let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene,
+           let pooled = scene.dequeueBullet(matching: bulletTemplate) {
+            newShell = pooled
+        } else if let copied = shell.copy() as? Shell {
+            newShell = copied
+        } else {
+            timeSinceLastShot -= 60/CGFloat(shootingSpeed)
+            return
+        }
+        if let gunSprite = component(ofType: SpriteComponent.self){
+            if let shellSprite = newShell.component(ofType: SpriteComponent.self){
+                if let scene = gunSprite.spriteNode.scene as? InPlaySKScene{
+                    scene.addEntity(newShell)
+                }
+                let randHeight = Int.random(in: 0...30)
 
-                    shellSprite.setPosition(position: CGPoint(x: gunSprite.spriteNode.position.x + (CGFloat(randHeight) +
-                                                              gunSprite.spriteNode.frame.width) * cos(gunSprite.spriteNode.zRotation + .pi/2),
-                                                              y: gunSprite.spriteNode.position.y + (CGFloat(randHeight) +
-                                                              gunSprite.spriteNode.frame.height) * sin(gunSprite.spriteNode.zRotation + .pi/2)))
-                    shellSprite.spriteNode.zRotation = gunSprite.spriteNode.zRotation
-                    if let shell = shell.component(ofType: ShootComponent.self){
-                        shell.shoot(vector: CGVector(dx: cos(gunSprite.spriteNode.zRotation + .pi/2),
-                                                     dy: sin(gunSprite.spriteNode.zRotation + .pi/2)))
-                    }
+                shellSprite.setPosition(position: CGPoint(x: gunSprite.spriteNode.position.x + (CGFloat(randHeight) +
+                                                          gunSprite.spriteNode.frame.width) * cos(gunSprite.spriteNode.zRotation + .pi/2),
+                                                          y: gunSprite.spriteNode.position.y + (CGFloat(randHeight) +
+                                                          gunSprite.spriteNode.frame.height) * sin(gunSprite.spriteNode.zRotation + .pi/2)))
+                shellSprite.spriteNode.zRotation = gunSprite.spriteNode.zRotation
+                if let shootComp = newShell.component(ofType: ShootComponent.self){
+                    shootComp.shoot(vector: CGVector(dx: cos(gunSprite.spriteNode.zRotation + .pi/2),
+                                                 dy: sin(gunSprite.spriteNode.zRotation + .pi/2)))
                 }
             }
         }

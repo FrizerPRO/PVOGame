@@ -46,12 +46,26 @@ class BulletEntity: GKEntity, Shell{
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+    func reset() {
+        previousPosition = CGPoint(x: -1, y: -1)
+        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+            spriteNode.removeAllActions()
+            spriteNode.alpha = 1; spriteNode.xScale = 1; spriteNode.yScale = 1
+            spriteNode.zRotation = 0; spriteNode.position = .zero
+            spriteNode.physicsBody?.velocity = .zero
+            spriteNode.physicsBody?.angularVelocity = 0
+        }
+    }
+
     public func detonateWithAnimation(){
         silentDetonate()
     }
     public func silentDetonate(){
         if let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene{
             scene.removeEntity(self)
+            if !(self is RocketEntity) {
+                scene.returnBulletToPool(self)
+            }
         }
     }
     
@@ -76,11 +90,29 @@ class BulletEntity: GKEntity, Shell{
 }
 
 class RocketEntity: BulletEntity {
+    private static let smokePuffTexture: SKTexture = {
+        let diameter: CGFloat = 18
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: diameter, height: diameter))
+        let image = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: diameter, height: diameter))
+        }
+        return SKTexture(image: image)
+    }()
+
+    enum GuidancePhase {
+        case boost
+        case midcourse
+        case terminal
+        case coast
+    }
+
     let spec: Constants.GameBalance.RocketSpec
     var blastRadius: CGFloat { spec.blastRadius }
     var detonatesOnDirectImpact: Bool { blastRadius <= 0.01 }
     var guidanceTargetPointForDisplay: CGPoint { targetPoint }
     var shouldShowGuidanceMarker: Bool { isGuided && !isCoastingAfterFuelExhaustion }
+    private(set) var guidancePhase: GuidancePhase = .boost
     private(set) var currentSpeed: CGFloat = 0
     private(set) var isCoastingAfterFuelExhaustion = false
     private var targetPoint = CGPoint.zero
@@ -90,6 +122,7 @@ class RocketEntity: BulletEntity {
     private var climbsWhenNoTargets = true
     private var travelledDistance: CGFloat = 0
     private var previousTrackedPosition: CGPoint?
+    private var guidedFlightTime: TimeInterval = 0
 
     init(
         spec: Constants.GameBalance.RocketSpec
@@ -140,9 +173,11 @@ class RocketEntity: BulletEntity {
 
     override func detonateWithAnimation() {
         if let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene,
-           let position = component(ofType: SpriteComponent.self)?.spriteNode.position,
-           blastRadius > 0.01 {
-            scene.spawnRocketBlast(at: position, radius: blastRadius)
+           let position = component(ofType: SpriteComponent.self)?.spriteNode.position {
+            scene.onRocketDetonated(self, at: position, blastRadius: blastRadius)
+            if blastRadius > 0.01 {
+                scene.spawnRocketBlast(at: position, radius: blastRadius)
+            }
         }
         silentDetonate()
     }
@@ -162,6 +197,9 @@ class RocketEntity: BulletEntity {
         self.previousTrackedPosition = nil
         self.isCoastingAfterFuelExhaustion = false
         self.climbsWhenNoTargets = climbsWhenNoTargets
+        self.guidancePhase = .boost
+        self.guidedFlightTime = 0
+        self.retargetAccumulator = 0
         isGuided = true
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
         spriteNode.physicsBody?.affectedByGravity = false
@@ -193,6 +231,13 @@ class RocketEntity: BulletEntity {
             return
         }
 
+        guidedFlightTime += seconds
+        let preRetargetDistance = hypot(
+            targetPoint.x - spriteNode.position.x,
+            targetPoint.y - spriteNode.position.y
+        )
+        updateGuidancePhase(distanceToTarget: preRetargetDistance)
+
         emitSmokeIfNeeded(from: spriteNode, deltaTime: seconds)
         if !retargetIfNeeded(from: spriteNode, deltaTime: seconds) {
             return
@@ -201,10 +246,13 @@ class RocketEntity: BulletEntity {
         let dx = targetPoint.x - spriteNode.position.x
         let dy = targetPoint.y - spriteNode.position.y
         let distance = sqrt(dx * dx + dy * dy)
-        let detonationDistance = max(10, blastRadius * 0.2)
-        if distance <= detonationDistance {
-            detonateWithAnimation()
-            return
+        updateGuidancePhase(distanceToTarget: distance)
+        if !detonatesOnDirectImpact {
+            let detonationDistance = max(10, blastRadius * 0.2)
+            if distance <= detonationDistance {
+                detonateWithAnimation()
+                return
+            }
         }
         guard distance > 0.0001 else { return }
 
@@ -244,46 +292,60 @@ class RocketEntity: BulletEntity {
 
         smokeSpawnAccumulator -= seconds
         guard smokeSpawnAccumulator <= 0 else { return }
-        smokeSpawnAccumulator += 0.025
+        smokeSpawnAccumulator += 0.05
 
         var tailPoint = spriteNode.convert(CGPoint(x: 0, y: -spriteNode.size.height * 0.55), to: scene)
         tailPoint.x += CGFloat.random(in: -2...2)
         tailPoint.y += CGFloat.random(in: -2...2)
 
-        let puff = SKShapeNode(circleOfRadius: CGFloat.random(in: 2.5...4.5))
+        let baseRadius = CGFloat.random(in: 2.5...4.5)
+        let puff = SKSpriteNode(texture: Self.smokePuffTexture)
+        puff.size = CGSize(width: baseRadius * 2, height: baseRadius * 2)
         puff.position = tailPoint
         puff.zPosition = 40
-        puff.fillColor = UIColor(white: 1, alpha: 0.95)
-        puff.strokeColor = .clear
+        puff.color = UIColor(white: 1, alpha: 0.95)
+        puff.colorBlendFactor = 1.0
         puff.alpha = 0.75
         puff.xScale = 0.75
         puff.yScale = 0.75
         scene.addChild(puff)
 
-        let wait = SKAction.wait(forDuration: 1.1)
-        let expand = SKAction.scale(to: 3.6, duration: 1.35)
-        let fade = SKAction.fadeOut(withDuration: 1.35)
+        let wait = SKAction.wait(forDuration: 0.5)
+        let expand = SKAction.scale(to: 3.0, duration: 1.0)
+        let fade = SKAction.fadeOut(withDuration: 1.0)
         puff.run(SKAction.sequence([wait, SKAction.group([expand, fade]), SKAction.removeFromParent()]))
     }
 
     private func retargetIfNeeded(from spriteNode: SKSpriteNode, deltaTime seconds: TimeInterval) -> Bool {
+        if guidancePhase == .coast {
+            return true
+        }
+        if guidancePhase == .terminal && !detonatesOnDirectImpact {
+            return true
+        }
+        let canRetargetThreats = guidancePhase == .midcourse || guidancePhase == .terminal
         retargetAccumulator -= seconds
         guard retargetAccumulator <= 0 else { return true }
         retargetAccumulator += spec.retargetInterval
 
         guard let scene = spriteNode.scene as? InPlaySKScene else { return true }
         let remainingFlightDistance = max(0, spec.maxFlightDistance - travelledDistance)
-        if let updatedTarget = scene.bestRocketTargetPoint(
-            preferredPoint: targetPoint,
-            origin: spriteNode.position,
-            radius: remainingFlightDistance,
-            influenceRadius: spec.blastRadius,
-            reservingActiveRocketImpacts: true,
-            excludingRocket: self
-        ) {
-            targetPoint = updatedTarget
-            scene.updateRocketReservation(for: self, targetPoint: updatedTarget)
-            return true
+        if canRetargetThreats {
+            if let updatedTarget = scene.bestRocketTargetPoint(
+                preferredPoint: targetPoint,
+                origin: spriteNode.position,
+                radius: remainingFlightDistance,
+                influenceRadius: spec.blastRadius,
+                reservingActiveRocketImpacts: true,
+                excludingRocket: self,
+                projectileSpeed: currentSpeed,
+                projectileAcceleration: spec.acceleration,
+                projectileMaxSpeed: spec.maxSpeed
+            ) {
+                targetPoint = updatedTarget
+                scene.updateRocketReservation(for: self, targetPoint: updatedTarget)
+                return true
+            }
         }
 
         guard climbsWhenNoTargets else {
@@ -324,8 +386,22 @@ class RocketEntity: BulletEntity {
     private func switchToInertialFlight(from spriteNode: SKSpriteNode) {
         guard !isCoastingAfterFuelExhaustion else { return }
         isCoastingAfterFuelExhaustion = true
+        guidancePhase = .coast
         isGuided = false
         spriteNode.physicsBody?.affectedByGravity = true
+    }
+
+    private func updateGuidancePhase(distanceToTarget: CGFloat) {
+        guard !isCoastingAfterFuelExhaustion else {
+            guidancePhase = .coast
+            return
+        }
+        let terminalDistance = max(28, max(blastRadius * 0.8, spec.maxFlightDistance * 0.12))
+        if distanceToTarget <= terminalDistance {
+            guidancePhase = .terminal
+            return
+        }
+        guidancePhase = guidedFlightTime < 0.18 ? .boost : .midcourse
     }
 
 }

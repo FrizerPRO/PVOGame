@@ -68,7 +68,9 @@ class Constants{
         static let waveSpeedIncrease: CGFloat = 25
         static let waveDroneIncrease = 10
         static let isRegularDroneEnabled = true
-        static let isMineLayerEnabled = true
+        static let isMineLayerEnabled = false
+        static let isRocketLauncherEnabled = false
+        static let isInterceptorLauncherEnabled = true
         static let mineLayerBasePerWave = 1
         static let mineLayerFirstWave = 2
         static let mineBombsPerCycle = 5
@@ -149,7 +151,7 @@ class Constants{
             turnSpeed: .pi * 2.2,
             retargetInterval: 0.045,
             cooldown: 0.32,
-            defaultAmmo: 28,
+            defaultAmmo: 100,
             ammoPerWave: 14,
             visualScale: 0.62
         )

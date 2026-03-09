@@ -746,6 +746,49 @@ final class PVOGameTests: XCTestCase {
         })
     }
 
+    func testInterceptorDetonationClearsReservationImmediately() {
+        let (scene, view) = makeScene()
+        scene.startGame()
+
+        let drones = scene.entities.compactMap { $0 as? AttackDroneEntity }
+        guard let targetDrone = drones.first else {
+            XCTFail("Expected active drone in scene")
+            return
+        }
+        for drone in drones where drone !== targetDrone {
+            scene.removeEntity(drone)
+        }
+        setDronePosition(targetDrone, to: CGPoint(x: 95, y: view.frame.height * 0.28))
+
+        XCTAssertTrue(scene.triggerInterceptorLauncher())
+        guard let interceptor = scene.entities
+            .compactMap({ $0 as? RocketEntity })
+            .first(where: { $0.spec.type == .interceptor }),
+              let launchPosition = scene.interceptorLauncherPositionForTests
+        else {
+            XCTFail("Expected active interceptor rocket")
+            return
+        }
+
+        let reservedTarget = scene.bestRocketTargetPoint(
+            origin: launchPosition,
+            radius: scene.activeInterceptorSpecForTests.maxFlightDistance,
+            influenceRadius: 0,
+            reservingActiveRocketImpacts: true
+        )
+        XCTAssertNil(reservedTarget)
+
+        interceptor.detonateWithAnimation()
+
+        let availableAfterDetonation = scene.bestRocketTargetPoint(
+            origin: launchPosition,
+            radius: scene.activeInterceptorSpecForTests.maxFlightDistance,
+            influenceRadius: 0,
+            reservingActiveRocketImpacts: true
+        )
+        XCTAssertNotNil(availableAfterDetonation)
+    }
+
     func testLaunchedRocketWithoutTargetsKeepsLastGuidancePoint() {
         let (scene, view) = makeScene()
         scene.startGame()
@@ -841,6 +884,113 @@ final class PVOGameTests: XCTestCase {
 
         XCTAssertEqual(scene.rocketAmmoCount, initialAmmo - 1)
         XCTAssertTrue(scene.entities.contains { $0 is RocketEntity })
+    }
+
+    func testAutoRocketSecondLaunchAvoidsSameClusterWhenOtherClusterExists() {
+        let (scene, view) = makeScene()
+        scene.setRocketType(.standard)
+        scene.startGame()
+
+        let drones = scene.entities.compactMap { $0 as? AttackDroneEntity }
+        guard drones.count >= 5 else {
+            XCTFail("Expected at least five active drones in scene")
+            return
+        }
+
+        let clusterA = Array(drones.prefix(3))
+        let clusterB = Array(drones.dropFirst(3).prefix(2))
+        for drone in drones.dropFirst(5) {
+            scene.removeEntity(drone)
+        }
+
+        setDronePosition(clusterA[0], to: CGPoint(x: 90, y: view.frame.height * 0.32))
+        setDronePosition(clusterA[1], to: CGPoint(x: 115, y: view.frame.height * 0.30))
+        setDronePosition(clusterA[2], to: CGPoint(x: 140, y: view.frame.height * 0.31))
+        setDronePosition(clusterB[0], to: CGPoint(x: view.frame.width - 95, y: view.frame.height * 0.33))
+        setDronePosition(clusterB[1], to: CGPoint(x: view.frame.width - 125, y: view.frame.height * 0.31))
+
+        scene.evaluateAutoRocketForTests()
+        guard let firstRocket = scene.entities
+            .compactMap({ $0 as? RocketEntity })
+            .first(where: { $0.spec.type == .standard })
+        else {
+            XCTFail("Expected first auto-launched rocket")
+            return
+        }
+        let firstTarget = firstRocket.guidanceTargetPointForDisplay
+
+        var currentTime: TimeInterval = 1
+        scene.update(currentTime)
+        advanceScene(
+            scene,
+            seconds: scene.rocketCooldownRemainingForTests + 0.05,
+            currentTime: &currentTime,
+            step: 0.05
+        )
+        scene.evaluateAutoRocketForTests()
+
+        let standardRockets = scene.entities.compactMap { $0 as? RocketEntity }
+            .filter { $0.spec.type == .standard }
+        guard standardRockets.count >= 2 else {
+            XCTFail("Expected second auto-launched rocket")
+            return
+        }
+
+        let newestRocket = standardRockets.last!
+        let secondTarget = newestRocket.guidanceTargetPointForDisplay
+        let distance = hypot(secondTarget.x - firstTarget.x, secondTarget.y - firstTarget.y)
+        XCTAssertGreaterThan(distance, scene.activeRocketSpecForTests.blastRadius * 0.75)
+    }
+
+    func testDetonatedRocketKeepsImpactLockBeforeBlastContactsResolve() {
+        let (scene, view) = makeScene()
+        scene.setRocketType(.standard)
+        scene.startGame()
+
+        let drones = scene.entities.compactMap { $0 as? AttackDroneEntity }
+        guard drones.count >= 5 else {
+            XCTFail("Expected at least five active drones in scene")
+            return
+        }
+
+        let clusterA = Array(drones.prefix(3))
+        let clusterB = Array(drones.dropFirst(3).prefix(2))
+        for drone in drones.dropFirst(5) {
+            scene.removeEntity(drone)
+        }
+
+        setDronePosition(clusterA[0], to: CGPoint(x: 92, y: view.frame.height * 0.32))
+        setDronePosition(clusterA[1], to: CGPoint(x: 118, y: view.frame.height * 0.30))
+        setDronePosition(clusterA[2], to: CGPoint(x: 144, y: view.frame.height * 0.31))
+        setDronePosition(clusterB[0], to: CGPoint(x: view.frame.width - 96, y: view.frame.height * 0.33))
+        setDronePosition(clusterB[1], to: CGPoint(x: view.frame.width - 126, y: view.frame.height * 0.31))
+
+        XCTAssertTrue(scene.triggerRocketLauncher())
+        guard let firstRocket = scene.entities
+            .compactMap({ $0 as? RocketEntity })
+            .first(where: { $0.spec.type == .standard })
+        else {
+            XCTFail("Expected first standard rocket in flight")
+            return
+        }
+        let firstTarget = firstRocket.guidanceTargetPointForDisplay
+
+        // Simulate immediate detonation in the same frame. Blast contacts have not yet updated drone hit state.
+        firstRocket.component(ofType: SpriteComponent.self)?.spriteNode.position = firstTarget
+        firstRocket.detonateWithAnimation()
+
+        guard let immediateNextTarget = scene.bestRocketTargetPoint(
+            origin: nil,
+            radius: nil,
+            influenceRadius: scene.activeRocketSpecForTests.blastRadius,
+            reservingActiveRocketImpacts: true
+        ) else {
+            XCTFail("Expected second target while first impact lock is active")
+            return
+        }
+
+        let distance = hypot(immediateNextTarget.x - firstTarget.x, immediateNextTarget.y - firstTarget.y)
+        XCTAssertGreaterThan(distance, scene.activeRocketSpecForTests.blastRadius * 0.75)
     }
 
     func testRocketDoesNotAutoFireWhenDronesAreAboveHalfScreen() {
