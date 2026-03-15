@@ -162,17 +162,6 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
                 } else {
                     bullet.silentDetonate()
                 }
-            } else if let drone = nodeB.entity as? FlyingProjectile{
-                if let rocket = bullet as? RocketEntity, !rocket.detonatesOnDirectImpact {
-                    // AoE rockets may pass through drones without direct hit confirmation.
-                } else if bullet is RocketEntity,
-                          let attackDrone = drone as? AttackDroneEntity,
-                          let alt = attackDrone.component(ofType: AltitudeComponent.self),
-                          alt.altitude == .micro {
-                    // Rockets cannot hit micro-altitude drones
-                } else {
-                    drone.takeDamage(bullet.damage)
-                }
             }
         }
         if let bullet = nodeB.entity as? Shell{
@@ -181,17 +170,6 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
                     bullet.detonateWithAnimation()
                 } else {
                     bullet.silentDetonate()
-                }
-            } else if let drone = nodeA.entity as? FlyingProjectile{
-                if let rocket = bullet as? RocketEntity, !rocket.detonatesOnDirectImpact {
-                    // AoE rockets may pass through drones without direct hit confirmation.
-                } else if bullet is RocketEntity,
-                          let attackDrone = drone as? AttackDroneEntity,
-                          let alt = attackDrone.component(ofType: AltitudeComponent.self),
-                          alt.altitude == .micro {
-                    // Rockets cannot hit micro-altitude drones
-                } else {
-                    drone.takeDamage(bullet.damage)
                 }
             }
         }

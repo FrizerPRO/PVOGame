@@ -176,7 +176,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         scene.removeEntity(self)
     }
     private func behavior(for flyingPath: FlyingPath)->GKBehavior{
-        let path = GKPath(points: flyingPath.nodes, radius: 1/*Float(max(spriteNode.frame.width,spriteNode.frame.height))*/, cyclical: false)
+        let path = GKPath(points: flyingPath.nodes, radius: 15, cyclical: false)
         
         let goal = GKGoal(toFollow: path, maxPredictionTime: 100/speed * 1.5, forward: true)
         return GKBehavior(goal: goal, weight: 100000)
@@ -249,8 +249,9 @@ final class MineLayerDroneEntity: AttackDroneEntity {
 
     // TD bomber properties
     private(set) weak var targetTower: TowerEntity?
-    private var knownTowerThreats: [ObjectIdentifier: TimeInterval] = [:]
-    private var approachWaypoint: CGPoint?
+    private var approachWaypoints: [CGPoint] = []
+    private var retargetCheckTimer: TimeInterval = 0
+    private var arcReplanCount = 0
 
     var evadeTargetPointForTests: CGPoint { evadeTargetPoint }
 
@@ -295,7 +296,8 @@ final class MineLayerDroneEntity: AttackDroneEntity {
     override func didHit() {
         phase = .inactive
         resetAimThreatTracking()
-        approachWaypoint = nil
+        approachWaypoints = []
+        arcReplanCount = 0
         super.didHit()
     }
 
@@ -331,14 +333,29 @@ final class MineLayerDroneEntity: AttackDroneEntity {
             if rerouteApproachIfNeeded(spriteNode: spriteNode) {
                 return
             }
-            // Plan route around known tower threats
-            if let scene = spriteNode.scene as? InPlaySKScene {
-                planApproachRoute(from: spriteNode.position, to: hoverPoint, in: scene)
+            // Dynamic retarget check
+            if targetTower != nil {
+                retargetCheckTimer -= seconds
+                if retargetCheckTimer <= 0 {
+                    retargetCheckTimer = Constants.GameBalance.mineLayerRetargetInterval
+                    checkForBetterTarget(spriteNode: spriteNode)
+                    if phase != .approaching && phase != .repositioning {
+                        return
+                    }
+                }
             }
-            let moveTarget = approachWaypoint ?? hoverPoint
+            // Plan arc route around gun tower zones (only when queue is empty)
+            // Limit replans to prevent infinite loop with overlapping threat zones
+            if approachWaypoints.isEmpty, arcReplanCount < 3, let scene = spriteNode.scene as? InPlaySKScene {
+                planArcRoute(from: spriteNode.position, to: hoverPoint, in: scene)
+                if !approachWaypoints.isEmpty {
+                    arcReplanCount += 1
+                }
+            }
+            let moveTarget = approachWaypoints.first ?? hoverPoint
             if move(spriteNode: spriteNode, to: moveTarget, speed: Constants.GameBalance.mineLayerApproachSpeed, deltaTime: seconds) {
-                if approachWaypoint != nil {
-                    approachWaypoint = nil
+                if !approachWaypoints.isEmpty {
+                    approachWaypoints.removeFirst()
                     // Reached waypoint, continue approaching
                 } else {
                     freezeInHover(spriteNode)
@@ -418,7 +435,8 @@ final class MineLayerDroneEntity: AttackDroneEntity {
                 deltaTime: seconds
             ) {
                 // After evading, check if target is still valid
-                approachWaypoint = nil
+                approachWaypoints = []
+                arcReplanCount = 0
                 if targetTower != nil, targetTower?.stats?.isDisabled != false {
                     retargetOrExit(spriteNode: spriteNode)
                 } else if targetTower != nil {
@@ -467,7 +485,9 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         crashVelocity = .zero
         crashBombsRemaining = 0
         crashDropCooldownRemaining = 0
-        approachWaypoint = nil
+        approachWaypoints = []
+        retargetCheckTimer = 0
+        arcReplanCount = 0
         resetAimThreatTracking()
 
         spriteNode.position = CGPoint(x: startX, y: startY)
@@ -494,7 +514,9 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         crashVelocity = .zero
         crashBombsRemaining = 0
         crashDropCooldownRemaining = 0
-        approachWaypoint = nil
+        approachWaypoints = []
+        retargetCheckTimer = 0
+        arcReplanCount = 0
         resetAimThreatTracking()
         if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
             physicsBody.velocity = .zero
@@ -515,7 +537,9 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         crashVelocity = .zero
         crashBombsRemaining = 0
         crashDropCooldownRemaining = 0
-        approachWaypoint = nil
+        approachWaypoints = []
+        retargetCheckTimer = 0
+        arcReplanCount = 0
         resetAimThreatTracking()
         if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
             physicsBody.velocity = .zero
@@ -530,7 +554,6 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
         targetTower = tower
-        knownTowerThreats.removeAll()
 
         let startX = CGFloat.random(in: 60...(sceneFrame.width - 60))
         let startY = sceneFrame.height + 90
@@ -554,7 +577,9 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         crashVelocity = .zero
         crashBombsRemaining = 0
         crashDropCooldownRemaining = 0
-        approachWaypoint = nil
+        approachWaypoints = []
+        retargetCheckTimer = 0
+        arcReplanCount = 0
         resetAimThreatTracking()
 
         spriteNode.position = CGPoint(x: startX, y: startY)
@@ -570,59 +595,9 @@ final class MineLayerDroneEntity: AttackDroneEntity {
     }
 
     private func evaluateTowerThreats(spriteNode: SKSpriteNode, deltaTime: TimeInterval) {
-        guard let scene = spriteNode.scene as? InPlaySKScene else { return }
-        let threats = scene.activeTowerThreats()
-
-        // Update known threats from currently firing towers
-        for threat in threats {
-            knownTowerThreats[threat.id] = 0
-        }
-
-        // Age all known threats and remove expired ones
-        var expiredKeys = [ObjectIdentifier]()
-        for (key, age) in knownTowerThreats {
-            let newAge = age + deltaTime
-            if newAge >= Constants.GameBalance.mineLayerThreatAwarenessTime {
-                expiredKeys.append(key)
-            } else {
-                knownTowerThreats[key] = newAge
-            }
-        }
-        for key in expiredKeys {
-            knownTowerThreats.removeValue(forKey: key)
-        }
-
-        // Check if drone is inside any known threat's range
-        let allThreats = scene.allTowerThreatZones()
-        for threat in allThreats {
-            guard knownTowerThreats[threat.id] != nil else { continue }
-            let dx = spriteNode.position.x - threat.position.x
-            let dy = spriteNode.position.y - threat.position.y
-            let distSq = dx * dx + dy * dy
-            let dangerRange = threat.range + 20
-            if distSq <= dangerRange * dangerRange {
-                // Inside danger zone — evade
-                let dist = sqrt(distSq)
-                let escapeRange = threat.range + 40
-                let evadeX: CGFloat
-                let evadeY: CGFloat
-                if dist > 0.001 {
-                    evadeX = threat.position.x + (dx / dist) * escapeRange
-                    evadeY = threat.position.y + (dy / dist) * escapeRange
-                } else {
-                    evadeX = spriteNode.position.x + escapeRange
-                    evadeY = spriteNode.position.y
-                }
-                let sceneFrame = scene.frame
-                evadeTargetPoint = CGPoint(
-                    x: min(max(evadeX, 30), sceneFrame.width - 30),
-                    y: min(max(evadeY, 30), sceneFrame.height - 30)
-                )
-                phase = .evading
-                evadeRepathAccumulator = 0.5
-                return
-            }
-        }
+        // No-op: planArcRoute already considers all threat zones when building
+        // the route. Clearing waypoints here caused infinite replanning loops
+        // when overlapping zones kept invalidating each other's arcs.
     }
 
     // MARK: - Approach Route Planning
@@ -630,64 +605,127 @@ final class MineLayerDroneEntity: AttackDroneEntity {
     private func retargetOrExit(spriteNode: SKSpriteNode) {
         guard bombsDroppedInCurrentCycle < Constants.GameBalance.mineBombsPerCycle,
               let scene = spriteNode.scene as? InPlaySKScene,
-              let nextTarget = scene.bestBombingTarget()
+              let nextTarget = scene.bestBombingTarget(from: spriteNode.position)
         else {
             phase = .exiting
             return
         }
         targetTower = nextTarget
         hoverPoint = CGPoint(x: nextTarget.worldPosition.x, y: nextTarget.worldPosition.y)
-        approachWaypoint = nil
+        approachWaypoints = []
+        arcReplanCount = 0
+        retargetCheckTimer = Constants.GameBalance.mineLayerRetargetInterval
         phase = .approaching
     }
 
-    private func planApproachRoute(from start: CGPoint, to destination: CGPoint, in scene: InPlaySKScene) {
+    private func planArcRoute(from start: CGPoint, to destination: CGPoint, in scene: InPlaySKScene) {
         let allThreats = scene.allTowerThreatZones()
-        let margin: CGFloat = 40
+        let margin = Constants.GameBalance.mineLayerArcMargin
+        let stepAngle = Constants.GameBalance.mineLayerArcStepAngle
+        let sceneFrame = scene.frame
+        let yMin = scene.gridMap?.origin.y ?? 0
+        let yMax = sceneFrame.height + 100
 
+        var waypoints = [CGPoint]()
+        var current = start
+
+        // Process each threat zone that blocks the path from current to destination
         for threat in allThreats {
-            guard knownTowerThreats[threat.id] != nil else { continue }
             let dangerRadius = threat.range + margin
 
-            guard segmentIntersectsCircle(from: start, to: destination, center: threat.position, radius: dangerRadius) else { continue }
+            // Destination inside this threat's arc zone — drone must reach it, skip
+            let dxDest = destination.x - threat.position.x
+            let dyDest = destination.y - threat.position.y
+            if dxDest * dxDest + dyDest * dyDest <= dangerRadius * dangerRadius {
+                continue
+            }
 
-            // Perpendicular to path direction
-            let pathDx = destination.x - start.x
-            let pathDy = destination.y - start.y
-            let pathLen = sqrt(pathDx * pathDx + pathDy * pathDy)
-            guard pathLen > 0.001 else { continue }
+            guard segmentIntersectsCircle(from: current, to: destination, center: threat.position, radius: dangerRadius) else { continue }
 
-            let perpX = -pathDy / pathLen
-            let perpY = pathDx / pathLen
+            // Entry angle: from threat center toward drone (project to circle if inside)
+            let dxEntry = current.x - threat.position.x
+            let dyEntry = current.y - threat.position.y
+            let distEntry = sqrt(dxEntry * dxEntry + dyEntry * dyEntry)
+            let entryAngle: CGFloat
+            if distEntry > 0.001 {
+                entryAngle = atan2(dyEntry, dxEntry)
+            } else {
+                entryAngle = atan2(destination.y - threat.position.y, destination.x - threat.position.x) + .pi
+            }
 
-            // Two bypass options on either side of the threat
-            let bypass1 = CGPoint(
-                x: threat.position.x + perpX * dangerRadius,
-                y: threat.position.y + perpY * dangerRadius
-            )
-            let bypass2 = CGPoint(
-                x: threat.position.x - perpX * dangerRadius,
-                y: threat.position.y - perpY * dangerRadius
-            )
+            // Exit angle: from threat center toward destination (projected to circle boundary)
+            let dxExit = destination.x - threat.position.x
+            let dyExit = destination.y - threat.position.y
+            let exitAngle = atan2(dyExit, dxExit)
 
-            // Choose the shorter total path
-            let totalDist1 = distance(from: start, to: bypass1) + distance(from: bypass1, to: destination)
-            let totalDist2 = distance(from: start, to: bypass2) + distance(from: bypass2, to: destination)
+            // Choose shorter arc direction (CW vs CCW)
+            var delta = exitAngle - entryAngle
+            // Normalize to [-pi, pi]
+            while delta > .pi { delta -= 2 * .pi }
+            while delta < -.pi { delta += 2 * .pi }
 
-            var chosen = totalDist1 <= totalDist2 ? bypass1 : bypass2
+            let arcDirection: CGFloat = delta >= 0 ? 1 : -1
+            let totalArcAngle = abs(delta)
+            let steps = max(1, Int(ceil(totalArcAngle / stepAngle)))
 
-            // Clamp to scene bounds
-            let sceneFrame = scene.frame
-            chosen = CGPoint(
-                x: min(max(chosen.x, 30), sceneFrame.width - 30),
-                y: min(max(chosen.y, 30), sceneFrame.height - 30)
-            )
+            for i in 1...steps {
+                let t = CGFloat(i) / CGFloat(steps)
+                let angle = entryAngle + arcDirection * totalArcAngle * t
+                var wp = CGPoint(
+                    x: threat.position.x + cos(angle) * dangerRadius,
+                    y: threat.position.y + sin(angle) * dangerRadius
+                )
+                // Soft Y clamp only — no X clamping (allow off-screen)
+                wp.y = min(max(wp.y, yMin), yMax)
+                waypoints.append(wp)
+            }
 
-            approachWaypoint = chosen
+            // Update current to last arc point for chaining around next threat
+            if let lastWp = waypoints.last {
+                current = lastWp
+            }
+        }
+
+        approachWaypoints = waypoints
+    }
+
+    // MARK: - Dynamic Retargeting
+
+    private func checkForBetterTarget(spriteNode: SKSpriteNode) {
+        guard let scene = spriteNode.scene as? InPlaySKScene,
+              let currentTarget = targetTower
+        else { return }
+
+        // Check if current target is now covered by a gun zone
+        let coverZones = scene.allTowerThreatZones()
+        let isCovered = coverZones.contains { zone in
+            let dx = currentTarget.worldPosition.x - zone.position.x
+            let dy = currentTarget.worldPosition.y - zone.position.y
+            return dx * dx + dy * dy <= zone.range * zone.range
+        }
+        if isCovered {
+            retargetOrExit(spriteNode: spriteNode)
             return
         }
 
-        approachWaypoint = nil
+        // Check for higher-priority target
+        guard let newTarget = scene.bestBombingTarget(from: spriteNode.position) else { return }
+        if towerPriority(newTarget) < towerPriority(currentTarget) {
+            targetTower = newTarget
+            hoverPoint = CGPoint(x: newTarget.worldPosition.x, y: newTarget.worldPosition.y)
+            approachWaypoints = []
+            arcReplanCount = 0
+        }
+    }
+
+    private func towerPriority(_ tower: TowerEntity) -> Int {
+        switch tower.towerType {
+        case .samLauncher: return 0
+        case .interceptor: return 1
+        case .radar:       return 2
+        case .ciws:        return 3
+        case .autocannon:  return 4
+        }
     }
 
     private func segmentIntersectsCircle(from start: CGPoint, to end: CGPoint, center: CGPoint, radius: CGFloat) -> Bool {

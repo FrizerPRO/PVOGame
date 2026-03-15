@@ -43,6 +43,10 @@ class InPlaySKScene: SKScene {
     private var activeDrones = [AttackDroneEntity]()
     private var activeRockets = [RocketEntity]()
     private var elapsedGameplayTime: TimeInterval = 0
+    private var interWaveCountdown: TimeInterval = 0
+    private let firstWaveCountdown: TimeInterval = 15.0
+    private let normalWaveCountdown: TimeInterval = 3.0
+    private var gameSpeed: CGFloat = 1.0
 
     var activeDroneCount: Int { activeDrones.count }
     var activeDronesForTowers: [AttackDroneEntity] { activeDrones }
@@ -77,6 +81,13 @@ class InPlaySKScene: SKScene {
     // Settings
     private var settingsButton: SettingsButton?
     private var settingsMenu: InGameSettingsMenu?
+
+    // Speed toggle
+    private var speedButton: SKSpriteNode?
+    private var speedLabel: SKLabelNode?
+
+    // Off-screen miner drone indicator
+    private var offscreenIndicator: SKNode?
 
     // MARK: - Scene Setup
 
@@ -225,7 +236,7 @@ class InPlaySKScene: SKScene {
         livesLabel = lLabel
 
         // Start Wave button
-        let btnWidth: CGFloat = 160
+        let btnWidth: CGFloat = 240
         let btnHeight: CGFloat = 40
         let btn = SKSpriteNode(color: UIColor.systemGreen.withAlphaComponent(0.8), size: CGSize(width: btnWidth, height: btnHeight))
         btn.position = CGPoint(x: frame.width / 2, y: yPos - 40)
@@ -243,6 +254,25 @@ class InPlaySKScene: SKScene {
         btnLabel.name = "startWaveButton"
         btn.addChild(btnLabel)
         startWaveLabel = btnLabel
+
+        // Speed toggle button
+        let speedBtnSize: CGFloat = 32
+        let speedBtn = SKSpriteNode(color: UIColor.darkGray.withAlphaComponent(0.8), size: CGSize(width: speedBtnSize, height: speedBtnSize))
+        speedBtn.position = CGPoint(x: frame.width - 40, y: yPos - 40)
+        speedBtn.zPosition = 96
+        speedBtn.name = "speedButton"
+        speedBtn.isHidden = true
+        addChild(speedBtn)
+        speedButton = speedBtn
+
+        let spdLabel = SKLabelNode(fontNamed: fontName)
+        spdLabel.text = "\u{25B6}"
+        spdLabel.fontSize = 14
+        spdLabel.fontColor = .white
+        spdLabel.verticalAlignmentMode = .center
+        spdLabel.name = "speedButton"
+        speedBtn.addChild(spdLabel)
+        speedLabel = spdLabel
     }
 
     private func updateHUD() {
@@ -371,6 +401,7 @@ class InPlaySKScene: SKScene {
         hudNode?.isHidden = true
         paletteNode?.isHidden = true
         startWaveButton?.isHidden = true
+        speedButton?.isHidden = true
         settingsButton?.isHidden = true
 
         // Show a simple start overlay
@@ -430,12 +461,23 @@ class InPlaySKScene: SKScene {
         hudNode?.isHidden = false
         paletteNode?.isHidden = false
         startWaveButton?.isHidden = false
+        speedButton?.isHidden = false
         settingsButton?.isHidden = false
+
+        gameSpeed = 1.0
+        speedLabel?.text = "\u{25B6}"
+        self.speed = gameSpeed
+        physicsWorld.speed = gameSpeed
+
+        interWaveCountdown = firstWaveCountdown
+        updateStartWaveButton()
+        showWaveAnnouncement(wave: waveManager.nextWaveNumber())
         updateHUD()
     }
 
     func stopGame() {
         currentPhase = .mainMenu
+        cleanupOffscreenIndicator()
 
         for drone in activeDrones {
             removeEntity(drone)
@@ -458,14 +500,18 @@ class InPlaySKScene: SKScene {
         hudNode?.isHidden = true
         paletteNode?.isHidden = true
         startWaveButton?.isHidden = true
+        speedButton?.isHidden = true
         settingsButton?.isHidden = true
+
+        gameSpeed = 1.0
+        speedLabel?.text = "\u{25B6}"
+        self.speed = 1.0
+        physicsWorld.speed = 1.0
     }
 
     private func startCombatPhase() {
         currentPhase = .combat
         startWaveButton?.isHidden = true
-        towerPlacement.selectTowerType(nil)
-        updatePaletteHighlight()
 
         // Repair all towers at wave start
         towerPlacement.towers.forEach { $0.fullRepair() }
@@ -476,9 +522,50 @@ class InPlaySKScene: SKScene {
 
     private func onWaveComplete() {
         currentPhase = .build
+        cleanupOffscreenIndicator()
         economyManager.earn(Constants.TowerDefense.waveCompletionBonus)
+        interWaveCountdown = normalWaveCountdown
         startWaveButton?.isHidden = false
+        updateStartWaveButton()
+        showWaveAnnouncement(wave: waveManager.nextWaveNumber())
         updateHUD()
+    }
+
+    private func updateStartWaveButton() {
+        let bonus = Int(interWaveCountdown * 2)
+        startWaveLabel?.text = bonus > 0 ? "EARLY START (+\(bonus) DP)" : "START WAVE"
+    }
+
+    private func showWaveAnnouncement(wave: Int) {
+        let label = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+        label.text = "Wave \(wave)"
+        label.fontSize = 36
+        label.fontColor = .white
+        label.position = CGPoint(x: frame.width / 2, y: frame.height / 2)
+        label.zPosition = 96
+        label.alpha = 0
+        addChild(label)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        let wait = SKAction.wait(forDuration: 1.0)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let remove = SKAction.removeFromParent()
+        label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
+    }
+
+    private func toggleGameSpeed() {
+        switch gameSpeed {
+        case 1.0:  gameSpeed = 2.0
+        case 2.0:  gameSpeed = 4.0
+        default:   gameSpeed = 1.0
+        }
+        switch gameSpeed {
+        case 2.0:  speedLabel?.text = "\u{25B6}\u{25B6}"
+        case 4.0:  speedLabel?.text = "\u{25B6}\u{25B6}\u{25B6}"
+        default:   speedLabel?.text = "\u{25B6}"
+        }
+        self.speed = gameSpeed
+        physicsWorld.speed = gameSpeed
     }
 
     // MARK: - Drone Spawning
@@ -568,8 +655,10 @@ class InPlaySKScene: SKScene {
 
     private func triggerGameOver() {
         currentPhase = .gameOver
+        cleanupOffscreenIndicator()
         settingsButton?.isHidden = true
         startWaveButton?.isHidden = true
+        speedButton?.isHidden = true
         showGameOverOverlay()
     }
 
@@ -668,8 +757,10 @@ class InPlaySKScene: SKScene {
         addEntity(mineLayer)
     }
 
-    func bestBombingTarget() -> TowerEntity? {
+    func bestBombingTarget(from dronePosition: CGPoint? = nil) -> TowerEntity? {
         guard let towerPlacement else { return nil }
+
+        let from = dronePosition ?? CGPoint(x: frame.midX, y: frame.maxY)
 
         // Anti-micro gun towers: effective close-range defence against mine layers
         let antiMicroTypes: Set<TowerType> = [.autocannon, .ciws]
@@ -683,31 +774,44 @@ class InPlaySKScene: SKScene {
             return (position: tower.worldPosition, rangeSq: stats.range * stats.range)
         }
 
+        func isEligible(_ candidate: TowerEntity, ofType type: TowerType) -> Bool {
+            guard candidate.towerType == type,
+                  !(candidate.stats?.isDisabled ?? true)
+            else { return false }
+
+            let pos = candidate.worldPosition
+            for zone in coverZones {
+                let dx = pos.x - zone.position.x
+                let dy = pos.y - zone.position.y
+                if dx * dx + dy * dy <= zone.rangeSq {
+                    return false
+                }
+            }
+            return true
+        }
+
         let priorityOrder: [TowerType] = [.samLauncher, .interceptor, .radar, .ciws, .autocannon]
         for type in priorityOrder {
-            // Filter 1: skip gun towers that are effective against micro
+            // Skip gun towers that are effective against micro
             guard !antiMicroTypes.contains(type) else { continue }
 
-            if let tower = towerPlacement.towers.first(where: { candidate in
-                guard candidate.towerType == type,
-                      !(candidate.stats?.isDisabled ?? true)
-                else { return false }
+            let eligible = towerPlacement.towers.filter { isEligible($0, ofType: type) }
+            guard !eligible.isEmpty else { continue }
 
-                // Filter 2: skip targets covered by anti-micro gun towers
-                let pos = candidate.worldPosition
-                for zone in coverZones {
-                    let dx = pos.x - zone.position.x
-                    let dy = pos.y - zone.position.y
-                    if dx * dx + dy * dy <= zone.rangeSq {
-                        return false
-                    }
-                }
-                return true
-            }) {
-                return tower
-            }
+            // Among same-type towers pick the closest to the drone
+            return eligible.min(by: { a, b in
+                let da = squaredDistance(a.worldPosition, from)
+                let db = squaredDistance(b.worldPosition, from)
+                return da < db
+            })
         }
         return nil
+    }
+
+    private func squaredDistance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        return dx * dx + dy * dy
     }
 
     func activeTowerThreats() -> [MineLayerDroneEntity.TowerThreatInfo] {
@@ -807,6 +911,85 @@ class InPlaySKScene: SKScene {
         }
     }
 
+    private func updateMineLayerOffscreenIndicator() {
+        // Find first active mine layer that is off-screen
+        let offscreenMiner = activeDrones.compactMap { $0 as? MineLayerDroneEntity }.first { miner in
+            guard !miner.isHit,
+                  let pos = miner.component(ofType: SpriteComponent.self)?.spriteNode.position
+            else { return false }
+            return pos.x < 0 || pos.x > frame.width
+        }
+
+        guard let miner = offscreenMiner,
+              let dronePos = miner.component(ofType: SpriteComponent.self)?.spriteNode.position
+        else {
+            offscreenIndicator?.removeFromParent()
+            offscreenIndicator = nil
+            return
+        }
+
+        // Create indicator if needed
+        if offscreenIndicator == nil {
+            let node = SKNode()
+            node.zPosition = 98
+
+            let label = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+            label.text = "!"
+            label.fontSize = 20
+            label.fontColor = .yellow
+            label.verticalAlignmentMode = .center
+            label.name = "offscreenLabel"
+            node.addChild(label)
+
+            // Triangle arrow
+            let arrow = SKShapeNode()
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: 0, y: 8))
+            path.addLine(to: CGPoint(x: -6, y: -4))
+            path.addLine(to: CGPoint(x: 6, y: -4))
+            path.closeSubpath()
+            arrow.path = path
+            arrow.fillColor = .yellow
+            arrow.strokeColor = .clear
+            arrow.name = "offscreenArrow"
+            arrow.position = CGPoint(x: 0, y: -16)
+            node.addChild(arrow)
+
+            // Pulse animation
+            let scaleUp = SKAction.scale(to: 1.15, duration: 0.4)
+            let scaleDown = SKAction.scale(to: 0.9, duration: 0.4)
+            node.run(SKAction.repeatForever(SKAction.sequence([scaleUp, scaleDown])))
+
+            addChild(node)
+            offscreenIndicator = node
+        }
+
+        guard let indicator = offscreenIndicator else { return }
+
+        // Position at screen edge, clamped Y
+        let edgeMargin: CGFloat = 20
+        let clampedY = min(max(dronePos.y, safeBottom + 30), frame.height - safeTop - 30)
+
+        if dronePos.x < 0 {
+            indicator.position = CGPoint(x: edgeMargin, y: clampedY)
+            // Arrow points left
+            if let arrow = indicator.childNode(withName: "offscreenArrow") {
+                arrow.zRotation = .pi / 2
+            }
+        } else {
+            indicator.position = CGPoint(x: frame.width - edgeMargin, y: clampedY)
+            // Arrow points right
+            if let arrow = indicator.childNode(withName: "offscreenArrow") {
+                arrow.zRotation = -.pi / 2
+            }
+        }
+    }
+
+    private func cleanupOffscreenIndicator() {
+        offscreenIndicator?.removeFromParent()
+        offscreenIndicator = nil
+    }
+
     // MARK: - Entity Management
 
     public func addEntity(_ entity: GKEntity) {
@@ -896,6 +1079,11 @@ class InPlaySKScene: SKScene {
         return fireControl.isDroneReservedByRocket(ObjectIdentifier(drone))
     }
 
+    func isDroneOverkilled(_ drone: AttackDroneEntity) -> Bool {
+        syncFireControlState()
+        return fireControl.isDroneOverkilled(ObjectIdentifier(drone))
+    }
+
     func onRocketDetonated(_ rocket: RocketEntity, at position: CGPoint, blastRadius: CGFloat) {
         fireControl.lockAssignmentForImpact(
             rocketID: ObjectIdentifier(rocket),
@@ -977,69 +1165,20 @@ class InPlaySKScene: SKScene {
             }
 
         case .build:
-            // Check start wave button
+            // Check start wave button (build phase only)
             if touchedNode.name == "startWaveButton" {
+                let earlyBonus = Int(interWaveCountdown * 2)
+                if earlyBonus > 0 {
+                    economyManager.earn(earlyBonus)
+                }
+                interWaveCountdown = 0
                 startCombatPhase()
                 return
             }
-
-            // Check upgrade/sell buttons
-            if touchedNode.name == "upgradeButton" || touchedNode.parent?.name == "upgradeButton" {
-                if let tower = selectedTower {
-                    if towerPlacement.upgradeTower(tower, economy: economyManager) {
-                        tower.hideRangeIndicator()
-                        tower.showRangeIndicator()
-                        dismissTowerActionPanel()
-                        updateHUD()
-                    }
-                }
-                return
-            }
-            if touchedNode.name == "sellButton" || touchedNode.parent?.name == "sellButton" {
-                if let tower = selectedTower {
-                    towerPlacement.sellTower(tower, economy: economyManager)
-                    selectedTower = nil
-                    dismissTowerActionPanel()
-                    updateHUD()
-                }
-                return
-            }
-
-            // Check tower palette
-            for (type, node) in paletteButtons {
-                if touchedNode === node || touchedNode.parent === node || touchedNode.parent?.parent === node {
-                    if towerPlacement.selectedTowerType == type {
-                        towerPlacement.selectTowerType(nil)
-                    } else {
-                        towerPlacement.selectTowerType(type)
-                    }
-                    updatePaletteHighlight()
-                    towerPlacement.clearPreview()
-                    return
-                }
-            }
-
-            // Check grid tap for tower placement
-            if let gridPos = gridMap.gridPosition(for: location) {
-                if towerPlacement.selectedTowerType != nil {
-                    if gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col) {
-                        towerPlacement.placeTower(at: gridPos, economy: economyManager)
-                        updateHUD()
-                    }
-                } else {
-                    // Tap existing tower to show info / sell / upgrade
-                    if let tower = towerPlacement.towerAt(gridPos: gridPos) {
-                        handleTowerTap(tower)
-                    }
-                }
-            }
+            handleTowerInteraction(touchedNode: touchedNode, location: location)
 
         case .combat:
-            // During combat, tap tower to see range
-            if let gridPos = gridMap.gridPosition(for: location),
-               let tower = towerPlacement.towerAt(gridPos: gridPos) {
-                handleTowerTap(tower)
-            }
+            handleTowerInteraction(touchedNode: touchedNode, location: location)
 
         case .waveComplete:
             break
@@ -1048,9 +1187,68 @@ class InPlaySKScene: SKScene {
 
     private var selectedTower: TowerEntity?
 
+    private func handleTowerInteraction(touchedNode: SKNode, location: CGPoint) {
+        // Speed button
+        if touchedNode.name == "speedButton" || touchedNode.parent?.name == "speedButton" {
+            toggleGameSpeed()
+            return
+        }
+
+        // Upgrade/sell buttons
+        if touchedNode.name == "upgradeButton" || touchedNode.parent?.name == "upgradeButton" {
+            if let tower = selectedTower {
+                if towerPlacement.upgradeTower(tower, economy: economyManager) {
+                    tower.hideRangeIndicator()
+                    tower.showRangeIndicator()
+                    dismissTowerActionPanel()
+                    updateHUD()
+                }
+            }
+            return
+        }
+        if touchedNode.name == "sellButton" || touchedNode.parent?.name == "sellButton" {
+            if let tower = selectedTower {
+                towerPlacement.sellTower(tower, economy: economyManager)
+                selectedTower = nil
+                dismissTowerActionPanel()
+                updateHUD()
+            }
+            return
+        }
+
+        // Tower palette
+        for (type, node) in paletteButtons {
+            if touchedNode === node || touchedNode.parent === node || touchedNode.parent?.parent === node {
+                if towerPlacement.selectedTowerType == type {
+                    towerPlacement.selectTowerType(nil)
+                } else {
+                    towerPlacement.selectTowerType(type)
+                }
+                updatePaletteHighlight()
+                towerPlacement.clearPreview()
+                return
+            }
+        }
+
+        // Grid tap for tower placement or tower info
+        if let gridPos = gridMap.gridPosition(for: location) {
+            if towerPlacement.selectedTowerType != nil {
+                if gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col) {
+                    towerPlacement.placeTower(at: gridPos, economy: economyManager)
+                    updateHUD()
+                }
+            } else {
+                if let tower = towerPlacement.towerAt(gridPos: gridPos) {
+                    handleTowerTap(tower)
+                }
+            }
+        }
+    }
+
     private func handleTowerTap(_ tower: TowerEntity) {
         // Deselect previous
         selectedTower?.hideRangeIndicator()
+        dismissTowerActionPanel()
 
         if selectedTower === tower {
             selectedTower = nil
@@ -1059,11 +1257,7 @@ class InPlaySKScene: SKScene {
 
         selectedTower = tower
         tower.showRangeIndicator()
-
-        // In build phase, show sell/upgrade options
-        if currentPhase == .build {
-            showTowerActions(tower)
-        }
+        showTowerActions(tower)
     }
 
     private func showTowerActions(_ tower: TowerEntity) {
@@ -1138,19 +1332,33 @@ class InPlaySKScene: SKScene {
 
         guard currentPhase == .combat || currentPhase == .build else { return }
 
+        let scaledDt = dt * Double(gameSpeed)
+
+        // Inter-wave countdown (always real-time, not affected by speed)
+        if currentPhase == .build && interWaveCountdown > 0 {
+            interWaveCountdown -= dt
+            if interWaveCountdown <= 0 {
+                interWaveCountdown = 0
+                startCombatPhase()
+            } else {
+                updateStartWaveButton()
+            }
+        }
+
         if currentPhase == .combat {
-            elapsedGameplayTime += dt
+            elapsedGameplayTime += scaledDt
         }
 
         // Update all entities
         for entity in entities {
-            entity.update(deltaTime: dt)
+            entity.update(deltaTime: scaledDt)
         }
 
         if currentPhase == .combat {
-            waveManager.update(deltaTime: dt)
+            waveManager.update(deltaTime: scaledDt)
             cleanupDrones()
             updateShadows()
+            updateMineLayerOffscreenIndicator()
             syncFireControlState()
 
             // Check wave completion

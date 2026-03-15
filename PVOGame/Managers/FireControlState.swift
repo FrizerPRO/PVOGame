@@ -31,6 +31,7 @@ struct FireControlState {
         var velocity: CGVector
         var lastUpdateTime: TimeInterval
         var threatWeight: CGFloat
+        var health: Int
     }
 
     private struct Assignment {
@@ -95,7 +96,8 @@ struct FireControlState {
                 position: point,
                 velocity: velocity,
                 lastUpdateTime: currentTime,
-                threatWeight: threatWeight
+                threatWeight: threatWeight,
+                health: drone.health
             )
         }
         tracks = tracks.filter { observedIDs.contains($0.key) }
@@ -121,6 +123,21 @@ struct FireControlState {
             if assignment.claimedTrackIDs.contains(droneID) { return true }
         }
         return false
+    }
+
+    func totalIncomingDamage(for droneID: ObjectIdentifier) -> Int {
+        var total = 0
+        for assignment in assignments.values {
+            if assignment.claimedTrackIDs.contains(droneID) {
+                total += assignment.spec.damage
+            }
+        }
+        return total
+    }
+
+    func isDroneOverkilled(_ droneID: ObjectIdentifier) -> Bool {
+        guard let track = tracks[droneID] else { return false }
+        return totalIncomingDamage(for: droneID) >= track.health
     }
 
     mutating func handleRocketRemoved(_ rocketID: ObjectIdentifier) {

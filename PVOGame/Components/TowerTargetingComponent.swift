@@ -82,8 +82,10 @@ class TowerTargetingComponent: GKComponent {
             // Score: prefer drones closer to base (lower Y = closer to HQ at bottom)
             var score = -dronePos.y
 
-            // Rocket towers: strongly deprioritize drones already reserved by other rockets
-            if isRocketTower && scene.isDroneReservedByRocket(drone) {
+            // All towers: deprioritize drones that already have enough incoming damage
+            if scene.isDroneOverkilled(drone) {
+                score -= 20000
+            } else if isRocketTower && scene.isDroneReservedByRocket(drone) {
                 score -= 10000
             }
 
@@ -200,10 +202,10 @@ class TowerTargetingComponent: GKComponent {
             projectileMaxSpeed: spec.maxSpeed
         )
 
-        // Fallback: if deconfliction rejected all targets (e.g. last drone is
-        // reserved by another in-flight rocket), retry without reservations so
-        // multiple rockets can converge on a high-HP drone.
-        if finalTarget == nil {
+        // Fallback: retry without reservations, but only if the target drone
+        // is NOT overkilled (i.e. existing rockets aren't enough to kill it).
+        if finalTarget == nil,
+           currentTarget != nil {
             finalTarget = scene.bestRocketTargetPoint(
                 preferredPoint: target,
                 origin: origin,

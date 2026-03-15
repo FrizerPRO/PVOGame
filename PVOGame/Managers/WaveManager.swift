@@ -33,6 +33,8 @@ class WaveManager {
         mineLayerTimer = 0
     }
 
+    func nextWaveNumber() -> Int { currentWave + 1 }
+
     func startNextWave() {
         currentWave += 1
         isWaveInProgress = true
@@ -48,8 +50,6 @@ class WaveManager {
             waveDef = WaveDefinition.defaultWave(number: currentWave)
         }
         currentWaveDef = waveDef
-
-        showWaveAnnouncement(wave: currentWave)
     }
 
     func update(deltaTime: TimeInterval) {
@@ -140,21 +140,4 @@ class WaveManager {
         dronesSpawnedThisWave += 1
     }
 
-    private func showWaveAnnouncement(wave: Int) {
-        guard let scene else { return }
-        let label = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        label.text = "Wave \(wave)"
-        label.fontSize = 36
-        label.fontColor = .white
-        label.position = CGPoint(x: scene.frame.width / 2, y: scene.frame.height / 2)
-        label.zPosition = 96
-        label.alpha = 0
-        scene.addChild(label)
-
-        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
-        let wait = SKAction.wait(forDuration: 1.0)
-        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
-        let remove = SKAction.removeFromParent()
-        label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove]))
-    }
 }

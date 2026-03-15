@@ -31,6 +31,18 @@ class FlyingProjectileComponent: GKAgent2D {
     }
     
     
+    override func update(deltaTime seconds: TimeInterval) {
+        let maxStep: TimeInterval = 1.0 / 60.0
+        var remaining = seconds
+        while remaining > maxStep {
+            super.update(deltaTime: maxStep)
+            remaining -= maxStep
+        }
+        if remaining > 0 {
+            super.update(deltaTime: remaining)
+        }
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

@@ -105,6 +105,9 @@ class TowerPlacementManager {
 
     func removeAllTowers() {
         for tower in towers {
+            if let gridPos = tower.component(ofType: GridPositionComponent.self) {
+                scene?.gridMap.removeTower(atRow: gridPos.row, col: gridPos.col)
+            }
             tower.component(ofType: SpriteComponent.self)?.spriteNode.removeFromParent()
             tower.hideRangeIndicator()
         }

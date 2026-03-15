@@ -96,6 +96,9 @@ class Constants{
         static let mineLayerCrashVerticalSpeed: CGFloat = 36
         static let mineLayerCrashDropInterval: TimeInterval = mineBombDropInterval * 0.5
         static let mineLayerCrashOutOfBoundsMargin: CGFloat = 90
+        static let mineLayerArcMargin: CGFloat = 40
+        static let mineLayerArcStepAngle: CGFloat = .pi / 6  // 30°
+        static let mineLayerRetargetInterval: TimeInterval = 1.5
         static let interceptorRangeScreenHeightRatio: CGFloat = 0.25
         static let hudFontName = "Menlo-Bold"
         static let hudFontSize: CGFloat = 18
