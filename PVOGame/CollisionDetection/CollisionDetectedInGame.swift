@@ -20,24 +20,47 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             shell.silentDetonate()
             return
         }
-        droneProjectile.didHit()
+        // Rockets cannot hit micro-altitude drones (mine layers)
+        if shell is RocketEntity,
+           let drone = droneProjectile as? AttackDroneEntity,
+           let alt = drone.component(ofType: AltitudeComponent.self),
+           alt.altitude == .micro {
+            return
+        }
+        droneProjectile.takeDamage(shell.damage)
         shell.detonateWithAnimation()
-        gameScene?.onDroneDestroyed(drone: droneProjectile as? AttackDroneEntity)
+        if let drone = droneProjectile as? AttackDroneEntity, drone.isHit {
+            gameScene?.onDroneDestroyed(drone: drone)
+        }
     }
 
     private func handleBlastHitsDrone(nodeA: SKNode, nodeB: SKNode) -> Bool {
         if (nodeA.name == Self.rocketBlastNodeName || nodeA.name == Self.mineBombBlastNodeName),
            let drone = nodeB.entity as? AttackDroneEntity {
             if drone.isHit { return true }
-            drone.didHit()
-            gameScene?.onDroneDestroyed(drone: drone)
+            // Rocket blasts cannot hit micro-altitude drones
+            if nodeA.name == Self.rocketBlastNodeName,
+               let alt = drone.component(ofType: AltitudeComponent.self),
+               alt.altitude == .micro { return true }
+            let blastDamage = (nodeA.userData?["damage"] as? Int) ?? 1
+            drone.takeDamage(blastDamage)
+            if drone.isHit {
+                gameScene?.onDroneDestroyed(drone: drone)
+            }
             return true
         }
         if (nodeB.name == Self.rocketBlastNodeName || nodeB.name == Self.mineBombBlastNodeName),
            let drone = nodeA.entity as? AttackDroneEntity {
             if drone.isHit { return true }
-            drone.didHit()
-            gameScene?.onDroneDestroyed(drone: drone)
+            // Rocket blasts cannot hit micro-altitude drones
+            if nodeB.name == Self.rocketBlastNodeName,
+               let alt = drone.component(ofType: AltitudeComponent.self),
+               alt.altitude == .micro { return true }
+            let blastDamage = (nodeB.userData?["damage"] as? Int) ?? 1
+            drone.takeDamage(blastDamage)
+            if drone.isHit {
+                gameScene?.onDroneDestroyed(drone: drone)
+            }
             return true
         }
         return false
@@ -57,17 +80,52 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
     }
 
     private func handleMineHitsGround(nodeA: SKNode, nodeB: SKNode) -> Bool {
-        if let mine = nodeA.entity as? MineBombEntity, nodeB.name == Constants.groundName {
+        if let mine = nodeA.entity as? MineBombEntity,
+           nodeB.name == Constants.groundName || nodeB.name == Constants.hqName {
             gameScene?.onMineReachedGround(mine)
             mine.reachedDestination()
             return true
         }
-        if let mine = nodeB.entity as? MineBombEntity, nodeA.name == Constants.groundName {
+        if let mine = nodeB.entity as? MineBombEntity,
+           nodeA.name == Constants.groundName || nodeA.name == Constants.hqName {
             gameScene?.onMineReachedGround(mine)
             mine.reachedDestination()
             return true
         }
         return false
+    }
+
+    private func handleBombHitsTower(nodeA: SKNode, nodeB: SKNode) -> Bool {
+        if let mine = nodeA.entity as? MineBombEntity,
+           nodeB.physicsBody?.categoryBitMask == Constants.towerBitMask {
+            if let tower = findTowerForNode(nodeB) {
+                // Skip towers that are not the intended target
+                if let intended = mine.targetTower, intended !== tower { return false }
+                gameScene?.onBombHitTower(mine, tower: tower)
+            }
+            return true
+        }
+        if let mine = nodeB.entity as? MineBombEntity,
+           nodeA.physicsBody?.categoryBitMask == Constants.towerBitMask {
+            if let tower = findTowerForNode(nodeA) {
+                if let intended = mine.targetTower, intended !== tower { return false }
+                gameScene?.onBombHitTower(mine, tower: tower)
+            }
+            return true
+        }
+        return false
+    }
+
+    private func findTowerForNode(_ node: SKNode) -> TowerEntity? {
+        guard let scene = gameScene else { return nil }
+        for entity in scene.entities {
+            guard let tower = entity as? TowerEntity,
+                  let spriteNode = tower.component(ofType: SpriteComponent.self)?.spriteNode,
+                  spriteNode === node
+            else { continue }
+            return tower
+        }
+        return nil
     }
 
     private func handleMineHitsDrone(nodeA: SKNode, nodeB: SKNode) -> Bool {
@@ -107,8 +165,13 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             } else if let drone = nodeB.entity as? FlyingProjectile{
                 if let rocket = bullet as? RocketEntity, !rocket.detonatesOnDirectImpact {
                     // AoE rockets may pass through drones without direct hit confirmation.
+                } else if bullet is RocketEntity,
+                          let attackDrone = drone as? AttackDroneEntity,
+                          let alt = attackDrone.component(ofType: AltitudeComponent.self),
+                          alt.altitude == .micro {
+                    // Rockets cannot hit micro-altitude drones
                 } else {
-                    drone.didHit()
+                    drone.takeDamage(bullet.damage)
                 }
             }
         }
@@ -122,8 +185,13 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             } else if let drone = nodeA.entity as? FlyingProjectile{
                 if let rocket = bullet as? RocketEntity, !rocket.detonatesOnDirectImpact {
                     // AoE rockets may pass through drones without direct hit confirmation.
+                } else if bullet is RocketEntity,
+                          let attackDrone = drone as? AttackDroneEntity,
+                          let alt = attackDrone.component(ofType: AltitudeComponent.self),
+                          alt.altitude == .micro {
+                    // Rockets cannot hit micro-altitude drones
                 } else {
-                    drone.didHit()
+                    drone.takeDamage(bullet.damage)
                 }
             }
         }
@@ -148,6 +216,9 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             return
         }
         if handleBlastHitsDrone(nodeA: nodeA, nodeB: nodeB) {
+            return
+        }
+        if handleBombHitsTower(nodeA: nodeA, nodeB: nodeB) {
             return
         }
         if handleMineHitsGround(nodeA: nodeA, nodeB: nodeB) {
@@ -177,14 +248,14 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             }
         }
         if let drone = nodeA.entity as? FlyingProjectile{
-            if nodeB.name == Constants.groundName{
-                gameScene?.onDroneReachedGround(drone: drone as? AttackDroneEntity)
+            if nodeB.name == Constants.groundName || nodeB.name == Constants.hqName {
+                gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
                 drone.reachedDestination()
             }
         }
         if let drone = nodeB.entity as? FlyingProjectile{
-            if nodeA.name == Constants.groundName{
-                gameScene?.onDroneReachedGround(drone: drone as? AttackDroneEntity)
+            if nodeA.name == Constants.groundName || nodeA.name == Constants.hqName {
+                gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
                 drone.reachedDestination()
             }
         }

@@ -68,7 +68,7 @@ class Constants{
         static let waveSpeedIncrease: CGFloat = 25
         static let waveDroneIncrease = 10
         static let isRegularDroneEnabled = true
-        static let isMineLayerEnabled = false
+        static let isMineLayerEnabled = true
         static let isRocketLauncherEnabled = false
         static let isInterceptorLauncherEnabled = true
         static let mineLayerBasePerWave = 1
@@ -195,6 +195,10 @@ class Constants{
         static let rocketStartImpact = standardRocketSpec.startImpact
         static let rocketBlastRadius: CGFloat = standardRocketSpec.blastRadius
         static let mineBombBlastRadius: CGFloat = 55
+        static let bombFallSpeed: CGFloat = 150
+        static let mineLayerSpawnDelay: TimeInterval = 5.0
+        static let mineLayerSpawnInterval: TimeInterval = 8.0
+        static let mineLayerThreatAwarenessTime: TimeInterval = 3.0
         static let rocketInitialSpeed: CGFloat = standardRocketSpec.initialSpeed
         static let rocketAcceleration: CGFloat = standardRocketSpec.acceleration
         static let rocketMaxSpeed: CGFloat = standardRocketSpec.maxSpeed
@@ -202,4 +206,28 @@ class Constants{
         static let rocketTurnSpeed: CGFloat = standardRocketSpec.turnSpeed
         static let rocketRetargetInterval: TimeInterval = standardRocketSpec.retargetInterval
     }
+
+    // MARK: - Tower Defense Constants
+    struct TowerDefense {
+        static let gridRows = 16
+        static let gridCols = 10
+
+        static let startingResources = 500
+        static let resourcesPerDroneKill = 20
+        static let resourcesPerMineLayerKill = 50
+        static let waveCompletionBonus = 100
+        static let sellRefundPercent: CGFloat = 0.6
+
+        static let autocannonCost = 100
+        static let ciwsCost = 200
+        static let samCost = 350
+        static let interceptorCost = 250
+        static let radarCost = 150
+        static let upgradeCostMultiplier: CGFloat = 1.5
+
+        static let hqLives = 20
+    }
+
+    static let hqName = "headquarters"
+    static let towerBitMask: UInt32 = 0x1 << 7
 }

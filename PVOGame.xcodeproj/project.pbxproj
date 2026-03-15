@@ -7,6 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		289E3B90C2A401CE1D3EF51A /* EconomyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC46726178361CF293B37DD /* EconomyManager.swift */; };
+		34D036294A4909BB181B2C9A /* TowerPlacementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84BE006ABDF7265596BBC8C0 /* TowerPlacementManager.swift */; };
+		667541F865B7F961E067D0A0 /* GridPositionComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F78C1EF5EB59582A3C456C5 /* GridPositionComponent.swift */; };
+		691A771BFF5CE50294B49148 /* TowerStatsComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDE79B0995E5C5B5360EFADA /* TowerStatsComponent.swift */; };
+		848313676039A5C56B482EC4 /* GridMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5370C041DACB6C0053E400B /* GridMap.swift */; };
+		9975FDC0B5DDD3587194E9FB /* AltitudeComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B16310071E0D99CD242F3D4C /* AltitudeComponent.swift */; };
+		B582FAB6E050507D4C495DFA /* WaveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C075363E2C5B5B7E074DCF6C /* WaveManager.swift */; };
+		C9F3E25E7990769E95E0D64C /* TowerTargetingComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 685BEF6E407B503488D8EA60 /* TowerTargetingComponent.swift */; };
+		CCBCB79DCEA1327FF0B9562B /* TowerRotationComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 325D875BD641413BA6D78230 /* TowerRotationComponent.swift */; };
+		D34B8009409421E985CD36E3 /* LevelDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B1839A1A1701FB46CA5B4B /* LevelDefinition.swift */; };
+		DA730FEE84881832C0360DFC /* TowerEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30119FBCFF5EA73AE60E8F3A /* TowerEntity.swift */; };
+		DE827CD0133C20631EE5ECB5 /* DroneFlightPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483A5CB80C901133E62EF9CB /* DroneFlightPath.swift */; };
 		E9356F7C2948A6A6005BC143 /* Direction.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9356F7B2948A6A6005BC143 /* Direction.swift */; };
 		E9356FFD2959A564005BC143 /* ShootComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9356FFC2959A564005BC143 /* ShootComponent.swift */; };
 		E95511BD293A05FD000137C6 /* BulletEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95511BC293A05FD000137C6 /* BulletEntity.swift */; };
@@ -42,6 +54,8 @@
 		E9873F9B2939344600302524 /* PVOGameUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9873F9A2939344600302524 /* PVOGameUITestsLaunchTests.swift */; };
 		E9873FA82939E98900302524 /* UIView_Pin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9873FA72939E98900302524 /* UIView_Pin.swift */; };
 		E9BC12B229C0D93200BAC76F /* DickGun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC12B129C0D93200BAC76F /* DickGun.swift */; };
+		EE3C41F0087C21F639F74984 /* ShadowComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 730B3560840256CE1DCC1AB5 /* ShadowComponent.swift */; };
+		FFF5B111B75E8D0D686450BB /* FireControlState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DB3F8BACC96B363350118D /* FireControlState.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +76,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0AC46726178361CF293B37DD /* EconomyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EconomyManager.swift; sourceTree = "<group>"; };
+		30119FBCFF5EA73AE60E8F3A /* TowerEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerEntity.swift; sourceTree = "<group>"; };
+		30DB3F8BACC96B363350118D /* FireControlState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FireControlState.swift; sourceTree = "<group>"; };
+		325D875BD641413BA6D78230 /* TowerRotationComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerRotationComponent.swift; sourceTree = "<group>"; };
+		483A5CB80C901133E62EF9CB /* DroneFlightPath.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DroneFlightPath.swift; sourceTree = "<group>"; };
+		4F78C1EF5EB59582A3C456C5 /* GridPositionComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GridPositionComponent.swift; sourceTree = "<group>"; };
+		685BEF6E407B503488D8EA60 /* TowerTargetingComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerTargetingComponent.swift; sourceTree = "<group>"; };
+		72B1839A1A1701FB46CA5B4B /* LevelDefinition.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LevelDefinition.swift; sourceTree = "<group>"; };
+		730B3560840256CE1DCC1AB5 /* ShadowComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShadowComponent.swift; sourceTree = "<group>"; };
+		84BE006ABDF7265596BBC8C0 /* TowerPlacementManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerPlacementManager.swift; sourceTree = "<group>"; };
+		B16310071E0D99CD242F3D4C /* AltitudeComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AltitudeComponent.swift; sourceTree = "<group>"; };
+		C075363E2C5B5B7E074DCF6C /* WaveManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaveManager.swift; sourceTree = "<group>"; };
 		E9356F7B2948A6A6005BC143 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
 		E9356FFC2959A564005BC143 /* ShootComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShootComponent.swift; sourceTree = "<group>"; };
 		E95511BC293A05FD000137C6 /* BulletEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulletEntity.swift; sourceTree = "<group>"; };
@@ -100,6 +126,8 @@
 		E9873F9A2939344600302524 /* PVOGameUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PVOGameUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		E9873FA72939E98900302524 /* UIView_Pin.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UIView_Pin.swift; sourceTree = "<group>"; };
 		E9BC12B129C0D93200BAC76F /* DickGun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DickGun.swift; sourceTree = "<group>"; };
+		EDE79B0995E5C5B5360EFADA /* TowerStatsComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerStatsComponent.swift; sourceTree = "<group>"; };
+		F5370C041DACB6C0053E400B /* GridMap.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GridMap.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +155,60 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		118C5CCA54EF4FE7B3CAFF5E /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				30119FBCFF5EA73AE60E8F3A /* TowerEntity.swift */,
+			);
+			name = Models;
+			path = Models;
+			sourceTree = "<group>";
+		};
+		19F5AD15B93876136C5BD5EF /* Managers */ = {
+			isa = PBXGroup;
+			children = (
+				30DB3F8BACC96B363350118D /* FireControlState.swift */,
+				0AC46726178361CF293B37DD /* EconomyManager.swift */,
+				C075363E2C5B5B7E074DCF6C /* WaveManager.swift */,
+				84BE006ABDF7265596BBC8C0 /* TowerPlacementManager.swift */,
+			);
+			name = Managers;
+			path = Managers;
+			sourceTree = "<group>";
+		};
+		25CB9F7F12441AC2425B2751 /* Levels */ = {
+			isa = PBXGroup;
+			children = (
+				72B1839A1A1701FB46CA5B4B /* LevelDefinition.swift */,
+			);
+			name = Levels;
+			path = Levels;
+			sourceTree = "<group>";
+		};
+		502369391CC0F9FFC3520774 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				B16310071E0D99CD242F3D4C /* AltitudeComponent.swift */,
+				730B3560840256CE1DCC1AB5 /* ShadowComponent.swift */,
+				4F78C1EF5EB59582A3C456C5 /* GridPositionComponent.swift */,
+				EDE79B0995E5C5B5360EFADA /* TowerStatsComponent.swift */,
+				685BEF6E407B503488D8EA60 /* TowerTargetingComponent.swift */,
+				325D875BD641413BA6D78230 /* TowerRotationComponent.swift */,
+			);
+			name = Components;
+			path = Components;
+			sourceTree = "<group>";
+		};
+		59E8E05C95CD2C2F6837D10D /* Grid */ = {
+			isa = PBXGroup;
+			children = (
+				F5370C041DACB6C0053E400B /* GridMap.swift */,
+				483A5CB80C901133E62EF9CB /* DroneFlightPath.swift */,
+			);
+			name = Grid;
+			path = Grid;
+			sourceTree = "<group>";
+		};
 		E9356F7A2948A68E005BC143 /* Enums */ = {
 			isa = PBXGroup;
 			children = (
@@ -254,6 +336,11 @@
 				E9873F7C2939344500302524 /* GameViewController.swift */,
 				E95511C8293A7340000137C6 /* Assets.xcassets */,
 				E9731FEB29BDC96100BD198A /* Constants.swift */,
+				59E8E05C95CD2C2F6837D10D /* Grid */,
+				25CB9F7F12441AC2425B2751 /* Levels */,
+				19F5AD15B93876136C5BD5EF /* Managers */,
+				502369391CC0F9FFC3520774 /* Components */,
+				118C5CCA54EF4FE7B3CAFF5E /* Models */,
 			);
 			path = PVOGame;
 			sourceTree = "<group>";
@@ -435,6 +522,20 @@
 				E9873F752939344500302524 /* AppDelegate.swift in Sources */,
 				E9BC12B229C0D93200BAC76F /* DickGun.swift in Sources */,
 				E95511D4293D0E72000137C6 /* InPlaySKScene.swift in Sources */,
+				848313676039A5C56B482EC4 /* GridMap.swift in Sources */,
+				DE827CD0133C20631EE5ECB5 /* DroneFlightPath.swift in Sources */,
+				D34B8009409421E985CD36E3 /* LevelDefinition.swift in Sources */,
+				FFF5B111B75E8D0D686450BB /* FireControlState.swift in Sources */,
+				289E3B90C2A401CE1D3EF51A /* EconomyManager.swift in Sources */,
+				B582FAB6E050507D4C495DFA /* WaveManager.swift in Sources */,
+				34D036294A4909BB181B2C9A /* TowerPlacementManager.swift in Sources */,
+				9975FDC0B5DDD3587194E9FB /* AltitudeComponent.swift in Sources */,
+				EE3C41F0087C21F639F74984 /* ShadowComponent.swift in Sources */,
+				667541F865B7F961E067D0A0 /* GridPositionComponent.swift in Sources */,
+				691A771BFF5CE50294B49148 /* TowerStatsComponent.swift in Sources */,
+				C9F3E25E7990769E95E0D64C /* TowerTargetingComponent.swift in Sources */,
+				CCBCB79DCEA1327FF0B9562B /* TowerRotationComponent.swift in Sources */,
+				DA730FEE84881832C0360DFC /* TowerEntity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -590,9 +691,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "";
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -647,9 +748,9 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_IDENTITY = "";
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -687,9 +788,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_IDENTITY = "";
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;

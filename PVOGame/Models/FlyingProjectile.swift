@@ -22,6 +22,7 @@ public protocol FlyingProjectile: GKEntity, GKAgentDelegate{
     }
     init(damage: CGFloat,speed: CGFloat,imageName: String,flyingPath: FlyingPath)
     func didHit()
+    func takeDamage(_ amount: Int)
     func removeFromParent()
     func reachedDestination()
 }

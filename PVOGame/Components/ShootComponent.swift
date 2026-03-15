@@ -15,7 +15,7 @@ class ShootComponent: GKComponent {
             var newVector = vector
             if let bullet = entity as? BulletEntity{
                 newVector.dx = CGFloat(bullet.startImpact) * newVector.dx
-                newVector.dy = CGFloat(bullet.startImpact) * abs(newVector.dy)
+                newVector.dy = CGFloat(bullet.startImpact) * newVector.dy
             }
             bullet.applyImpulse(newVector)
         }

@@ -63,9 +63,6 @@ class BulletEntity: GKEntity, Shell{
     public func silentDetonate(){
         if let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene{
             scene.removeEntity(self)
-            if !(self is RocketEntity) {
-                scene.returnBulletToPool(self)
-            }
         }
     }
     
@@ -74,11 +71,25 @@ class BulletEntity: GKEntity, Shell{
         return result
     }
     fileprivate func autoDetonation() {
-        if let position = component(ofType: SpriteComponent.self)?.spriteNode.position{
-            if self.previousPosition.y - position.y > 0{
-                detonateWithAnimation()
-            } else if  self.previousPosition.y < position.y{
-                self.previousPosition = position
+        guard let position = component(ofType: SpriteComponent.self)?.spriteNode.position else { return }
+        if previousPosition.x < -0.5 && previousPosition.y < -0.5 {
+            previousPosition = position
+            return
+        }
+        let dx = position.x - previousPosition.x
+        let dy = position.y - previousPosition.y
+        let distSq = dx * dx + dy * dy
+        if distSq < 0.25 && previousPosition.x >= 0 {
+            detonateWithAnimation()
+            return
+        }
+        previousPosition = position
+        // Range-based detonation: check if out of scene bounds
+        if let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene {
+            let margin: CGFloat = 50
+            if position.x < -margin || position.x > scene.frame.width + margin ||
+               position.y < -margin || position.y > scene.frame.height + margin {
+                silentDetonate()
             }
         }
     }
@@ -176,7 +187,7 @@ class RocketEntity: BulletEntity {
            let position = component(ofType: SpriteComponent.self)?.spriteNode.position {
             scene.onRocketDetonated(self, at: position, blastRadius: blastRadius)
             if blastRadius > 0.01 {
-                scene.spawnRocketBlast(at: position, radius: blastRadius)
+                scene.spawnRocketBlast(at: position, radius: blastRadius, damage: spec.damage)
             }
         }
         silentDetonate()
@@ -409,6 +420,7 @@ class RocketEntity: BulletEntity {
 final class MineBombEntity: GKEntity {
     private(set) var isFromCrashedMineLayer = false
     private weak var sourceDrone: AttackDroneEntity?
+    weak var targetTower: TowerEntity?
 
     override init() {
         super.init()
@@ -480,5 +492,38 @@ final class MineBombEntity: GKEntity {
 
     func reachedDestination() {
         silentDetonate()
+    }
+
+    func configureForTDBombing(target: TowerEntity? = nil) {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
+              let body = spriteNode.physicsBody else { return }
+
+        // Visual: bomb sized like a drone, between drone (z61+) and tower (z25)
+        spriteNode.size = CGSize(width: 40, height: 40)
+        spriteNode.zPosition = 45
+
+        // Physics: bomb stays in place (no Y velocity), but bullets can still shoot it down
+        body.affectedByGravity = false
+        body.velocity = .zero
+        // No towerBitMask — damage delivered via animation callback, not physics contact
+
+        targetTower = target
+
+        // Fall animation: bomb shrinks (simulates falling away from camera toward ground)
+        let fallDuration: TimeInterval = 0.45
+        let scaleDown = SKAction.scale(to: 0.3, duration: fallDuration)
+        scaleDown.timingMode = .easeIn
+        spriteNode.run(SKAction.sequence([
+            scaleDown,
+            SKAction.run { [weak self] in
+                guard let self else { return }
+                if let target = self.targetTower,
+                   let scene = spriteNode.scene as? InPlaySKScene {
+                    scene.onBombHitTower(self, tower: target)
+                } else {
+                    self.silentDetonate()
+                }
+            }
+        ]))
     }
 }

@@ -48,11 +48,7 @@ class GunEntity: GKEntity {
             return
         }
         let newShell: Shell
-        if let bulletTemplate = shell as? BulletEntity,
-           let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene,
-           let pooled = scene.dequeueBullet(matching: bulletTemplate) {
-            newShell = pooled
-        } else if let copied = shell.copy() as? Shell {
+        if let copied = shell.copy() as? Shell {
             newShell = copied
         } else {
             timeSinceLastShot -= 60/CGFloat(shootingSpeed)

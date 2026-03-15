@@ -19,14 +19,24 @@ protocol MineLayerDroneDelegate: AnyObject {
 
 public class AttackDroneEntity: GKEntity, FlyingProjectile{
     public var flyingPath: FlyingPath
-    
+
     public var damage: CGFloat
-    
+
     public var speed: CGFloat
-    
+
     public var imageName: String
     public var isHit = false
+
+    public var health: Int
+    public var maxHealth: Int
+
+    private var hpBarBackground: SKSpriteNode?
+    private var hpBarFill: SKSpriteNode?
+    private var hpBarContainer: SKNode?
+
     public required init(damage: CGFloat, speed: CGFloat, imageName: String, flyingPath: FlyingPath) {
+        self.health = 1
+        self.maxHealth = 1
         self.damage = damage
         self.speed = speed
         self.imageName = imageName
@@ -37,13 +47,82 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         addComponent(spriteComponent)
         addComponent(setupGeometryComponent(spriteComponent: spriteComponent))
         addComponent(FlyingProjectileComponent(speed: speed, behavior: behavior(for: flyingPath),position: flyingPath.nodes.first ?? vector_float2()))
+        setupHPBar(on: spriteComponent.spriteNode)
+    }
 
+    func configureHealth(_ hp: Int) {
+        self.health = hp
+        self.maxHealth = hp
+        hpBarContainer?.isHidden = true
+        updateHPBar()
+    }
+
+    public func takeDamage(_ amount: Int) {
+        guard !isHit else { return }
+        health = max(0, health - amount)
+        if health <= 0 {
+            didHit()
+        } else {
+            // Red flash on hit
+            if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+                let colorize = SKAction.colorize(with: .red, colorBlendFactor: 0.8, duration: 0.05)
+                let revert = SKAction.colorize(withColorBlendFactor: 0, duration: 0.1)
+                spriteNode.run(SKAction.sequence([colorize, revert]))
+            }
+        }
+        updateHPBar()
+    }
+
+    private func setupHPBar(on spriteNode: SKSpriteNode) {
+        let container = SKNode()
+        container.zPosition = 10
+        container.position = CGPoint(x: 0, y: spriteNode.size.height / 2 + 4)
+        container.isHidden = true
+
+        let barWidth: CGFloat = 24
+        let barHeight: CGFloat = 3
+
+        let bg = SKSpriteNode(color: UIColor.black.withAlphaComponent(0.6), size: CGSize(width: barWidth, height: barHeight))
+        bg.anchorPoint = CGPoint(x: 0, y: 0.5)
+        bg.position = CGPoint(x: -barWidth / 2, y: 0)
+        container.addChild(bg)
+        hpBarBackground = bg
+
+        let fill = SKSpriteNode(color: .green, size: CGSize(width: barWidth, height: barHeight))
+        fill.anchorPoint = CGPoint(x: 0, y: 0.5)
+        fill.position = CGPoint(x: -barWidth / 2, y: 0)
+        fill.zPosition = 1
+        container.addChild(fill)
+        hpBarFill = fill
+
+        spriteNode.addChild(container)
+        hpBarContainer = container
+    }
+
+    func updateHPBar() {
+        guard maxHealth > 0 else { return }
+        let ratio = CGFloat(health) / CGFloat(maxHealth)
+        let barWidth: CGFloat = 24
+        hpBarFill?.size.width = barWidth * ratio
+
+        if ratio > 0.5 {
+            hpBarFill?.color = .green
+        } else if ratio > 0.25 {
+            hpBarFill?.color = .yellow
+        } else {
+            hpBarFill?.color = .red
+        }
+
+        // Show bar only when damaged
+        hpBarContainer?.isHidden = (health >= maxHealth)
     }
 
     public func resetFlight(flyingPath: FlyingPath, speed: CGFloat) {
         self.flyingPath = flyingPath
         self.speed = speed
         isHit = false
+        health = maxHealth
+        updateHPBar()
         let startPosition = flyingPath.nodes.first ?? vector_float2()
 
         if let flight = component(ofType: FlyingProjectileComponent.self) {
@@ -70,8 +149,23 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         isHit = true
         component(ofType: FlyingProjectileComponent.self)?.behavior?.removeAllGoals()
         let physicBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody
-        physicBody?.affectedByGravity = true
-        physicBody?.contactTestBitMask = Constants.boundsBitMask
+        physicBody?.affectedByGravity = false
+        physicBody?.velocity = .zero
+        physicBody?.angularVelocity = 0
+        physicBody?.contactTestBitMask = 0
+        physicBody?.categoryBitMask = 0
+
+        // Animate fall + fade, then remove
+        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+            let spin = SKAction.rotate(byAngle: .pi * 2, duration: 0.6)
+            let fall = SKAction.moveBy(x: 0, y: -120, duration: 0.6)
+            fall.timingMode = .easeIn
+            let fade = SKAction.fadeOut(withDuration: 0.6)
+            let group = SKAction.group([spin, fall, fade])
+            spriteNode.run(group) { [weak self] in
+                self?.removeFromParent()
+            }
+        }
     }
     public func reachedDestination(){
         removeFromParent()
@@ -122,6 +216,12 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         let leftPerpendicular: CGVector
     }
 
+    struct TowerThreatInfo {
+        let position: CGPoint
+        let range: CGFloat
+        let id: ObjectIdentifier
+    }
+
     enum Phase {
         case inactive
         case approaching
@@ -146,6 +246,11 @@ final class MineLayerDroneEntity: AttackDroneEntity {
     private var crashVelocity = CGVector.zero
     private var crashBombsRemaining = 0
     private var crashDropCooldownRemaining: TimeInterval = 0
+
+    // TD bomber properties
+    private(set) weak var targetTower: TowerEntity?
+    private var knownTowerThreats: [ObjectIdentifier: TimeInterval] = [:]
+    private var approachWaypoint: CGPoint?
 
     var evadeTargetPointForTests: CGPoint { evadeTargetPoint }
 
@@ -188,24 +293,10 @@ final class MineLayerDroneEntity: AttackDroneEntity {
     }
 
     override func didHit() {
-        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else {
-            phase = .inactive
-            super.didHit()
-            return
-        }
-        isHit = true
-        phase = .crashRun
+        phase = .inactive
         resetAimThreatTracking()
-        evadeRepathAccumulator = 0
-        component(ofType: FlyingProjectileComponent.self)?.behavior?.removeAllGoals()
-        if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
-            physicsBody.affectedByGravity = false
-            physicsBody.velocity = .zero
-            physicsBody.angularVelocity = 0
-            physicsBody.contactTestBitMask = Constants.bulletBitMask | Constants.groundBitMask
-            physicsBody.collisionBitMask = 0
-        }
-        startCrashRun(from: spriteNode)
+        approachWaypoint = nil
+        super.didHit()
     }
 
     override func update(deltaTime seconds: TimeInterval) {
@@ -214,33 +305,63 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         if !isHit {
             evaluateGunAimThreatIfNeeded(spriteNode: spriteNode, deltaTime: seconds)
         }
-        if isHit && phase != .crashRun {
+        if isHit {
             return
+        }
+
+        // TD tower threat evaluation
+        if !isHit {
+            switch phase {
+            case .approaching, .waitingForDrop, .repositioning:
+                evaluateTowerThreats(spriteNode: spriteNode, deltaTime: seconds)
+            default:
+                break
+            }
         }
 
         switch phase {
         case .inactive:
             return
         case .approaching, .repositioning:
+            // Check if target tower is still worth approaching
+            if targetTower != nil, targetTower?.stats?.isDisabled != false {
+                retargetOrExit(spriteNode: spriteNode)
+                return
+            }
             if rerouteApproachIfNeeded(spriteNode: spriteNode) {
                 return
             }
-            if move(spriteNode: spriteNode, to: hoverPoint, speed: Constants.GameBalance.mineLayerApproachSpeed, deltaTime: seconds) {
-                freezeInHover(spriteNode)
-                phase = .waitingForDrop
-                dropCooldownRemaining = max(
-                    dropCooldownRemaining,
-                    Constants.GameBalance.mineBombDropInterval
-                )
+            // Plan route around known tower threats
+            if let scene = spriteNode.scene as? InPlaySKScene {
+                planApproachRoute(from: spriteNode.position, to: hoverPoint, in: scene)
+            }
+            let moveTarget = approachWaypoint ?? hoverPoint
+            if move(spriteNode: spriteNode, to: moveTarget, speed: Constants.GameBalance.mineLayerApproachSpeed, deltaTime: seconds) {
+                if approachWaypoint != nil {
+                    approachWaypoint = nil
+                    // Reached waypoint, continue approaching
+                } else {
+                    freezeInHover(spriteNode)
+                    phase = .waitingForDrop
+                    dropCooldownRemaining = max(
+                        dropCooldownRemaining,
+                        Constants.GameBalance.mineBombDropInterval
+                    )
+                }
             }
         case .waitingForDrop:
             freezeInHover(spriteNode)
+            // If target tower is disabled or gone, conserve bombs and switch target
+            if targetTower != nil, targetTower?.stats?.isDisabled != false {
+                retargetOrExit(spriteNode: spriteNode)
+                return
+            }
             guard bombsDroppedInCurrentCycle < Constants.GameBalance.mineBombsPerCycle else {
                 phase = .exiting
                 return
             }
             dropCooldownRemaining -= seconds
-            while dropCooldownRemaining <= 0 {
+            if dropCooldownRemaining <= 0 {
                 mineLayerDelegate?.mineLayer(
                     self,
                     spawnBombAt: bombSpawnPoint(from: spriteNode),
@@ -251,9 +372,10 @@ final class MineLayerDroneEntity: AttackDroneEntity {
                     phase = .exiting
                     return
                 }
-                dropCooldownRemaining += Constants.GameBalance.mineBombDropInterval
+                dropCooldownRemaining = Constants.GameBalance.mineBombDropInterval
             }
         case .evading:
+            // Gun-based evasion (legacy)
             if let scene = spriteNode.scene as? InPlaySKScene,
                let aimSnapshot = makeGunAimSnapshot(in: scene) {
                 evadeRepathAccumulator -= seconds
@@ -295,9 +417,17 @@ final class MineLayerDroneEntity: AttackDroneEntity {
                 speed: Constants.GameBalance.mineLayerEvadeSpeed,
                 deltaTime: seconds
             ) {
-                hoverPoint = evadeTargetPoint
-                freezeInHover(spriteNode)
-                phase = .waitingForDrop
+                // After evading, check if target is still valid
+                approachWaypoint = nil
+                if targetTower != nil, targetTower?.stats?.isDisabled != false {
+                    retargetOrExit(spriteNode: spriteNode)
+                } else if targetTower != nil {
+                    phase = .approaching
+                } else {
+                    hoverPoint = evadeTargetPoint
+                    freezeInHover(spriteNode)
+                    phase = .waitingForDrop
+                }
                 dropCooldownRemaining = max(
                     dropCooldownRemaining,
                     Constants.GameBalance.mineBombDropInterval
@@ -330,11 +460,14 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         dropCooldownRemaining = Constants.GameBalance.mineBombDropInterval
         phase = .approaching
         isHit = false
+        health = maxHealth
+        updateHPBar()
         evadeTargetPoint = .zero
         evadeRepathAccumulator = 0
         crashVelocity = .zero
         crashBombsRemaining = 0
         crashDropCooldownRemaining = 0
+        approachWaypoint = nil
         resetAimThreatTracking()
 
         spriteNode.position = CGPoint(x: startX, y: startY)
@@ -361,6 +494,7 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         crashVelocity = .zero
         crashBombsRemaining = 0
         crashDropCooldownRemaining = 0
+        approachWaypoint = nil
         resetAimThreatTracking()
         if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
             physicsBody.velocity = .zero
@@ -381,12 +515,202 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         crashVelocity = .zero
         crashBombsRemaining = 0
         crashDropCooldownRemaining = 0
+        approachWaypoint = nil
         resetAimThreatTracking()
         if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
             physicsBody.velocity = .zero
             physicsBody.angularVelocity = 0
             physicsBody.affectedByGravity = false
         }
+    }
+
+    // MARK: - TD Bomber
+
+    func beginCycleTD(in sceneFrame: CGRect, targetingTower tower: TowerEntity) {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+
+        targetTower = tower
+        knownTowerThreats.removeAll()
+
+        let startX = CGFloat.random(in: 60...(sceneFrame.width - 60))
+        let startY = sceneFrame.height + 90
+        hoverPoint = CGPoint(x: tower.worldPosition.x, y: tower.worldPosition.y)
+
+        let exitsLeft = Bool.random()
+        exitPoint = CGPoint(
+            x: exitsLeft ? -140 : sceneFrame.width + 140,
+            y: CGFloat.random(
+                in: sceneFrame.height * Constants.GameBalance.mineLayerHoverMinHeightRatio...sceneFrame.height * 0.97
+            )
+        )
+        bombsDroppedInCurrentCycle = 0
+        dropCooldownRemaining = Constants.GameBalance.mineBombDropInterval
+        phase = .approaching
+        isHit = false
+        health = maxHealth
+        updateHPBar()
+        evadeTargetPoint = .zero
+        evadeRepathAccumulator = 0
+        crashVelocity = .zero
+        crashBombsRemaining = 0
+        crashDropCooldownRemaining = 0
+        approachWaypoint = nil
+        resetAimThreatTracking()
+
+        spriteNode.position = CGPoint(x: startX, y: startY)
+        spriteNode.zRotation = 0
+        if let physicsBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
+            physicsBody.affectedByGravity = false
+            physicsBody.contactTestBitMask = Constants.bulletBitMask | Constants.groundBitMask
+            physicsBody.collisionBitMask = 0
+            physicsBody.velocity = .zero
+            physicsBody.angularVelocity = 0
+            physicsBody.isResting = false
+        }
+    }
+
+    private func evaluateTowerThreats(spriteNode: SKSpriteNode, deltaTime: TimeInterval) {
+        guard let scene = spriteNode.scene as? InPlaySKScene else { return }
+        let threats = scene.activeTowerThreats()
+
+        // Update known threats from currently firing towers
+        for threat in threats {
+            knownTowerThreats[threat.id] = 0
+        }
+
+        // Age all known threats and remove expired ones
+        var expiredKeys = [ObjectIdentifier]()
+        for (key, age) in knownTowerThreats {
+            let newAge = age + deltaTime
+            if newAge >= Constants.GameBalance.mineLayerThreatAwarenessTime {
+                expiredKeys.append(key)
+            } else {
+                knownTowerThreats[key] = newAge
+            }
+        }
+        for key in expiredKeys {
+            knownTowerThreats.removeValue(forKey: key)
+        }
+
+        // Check if drone is inside any known threat's range
+        let allThreats = scene.allTowerThreatZones()
+        for threat in allThreats {
+            guard knownTowerThreats[threat.id] != nil else { continue }
+            let dx = spriteNode.position.x - threat.position.x
+            let dy = spriteNode.position.y - threat.position.y
+            let distSq = dx * dx + dy * dy
+            let dangerRange = threat.range + 20
+            if distSq <= dangerRange * dangerRange {
+                // Inside danger zone — evade
+                let dist = sqrt(distSq)
+                let escapeRange = threat.range + 40
+                let evadeX: CGFloat
+                let evadeY: CGFloat
+                if dist > 0.001 {
+                    evadeX = threat.position.x + (dx / dist) * escapeRange
+                    evadeY = threat.position.y + (dy / dist) * escapeRange
+                } else {
+                    evadeX = spriteNode.position.x + escapeRange
+                    evadeY = spriteNode.position.y
+                }
+                let sceneFrame = scene.frame
+                evadeTargetPoint = CGPoint(
+                    x: min(max(evadeX, 30), sceneFrame.width - 30),
+                    y: min(max(evadeY, 30), sceneFrame.height - 30)
+                )
+                phase = .evading
+                evadeRepathAccumulator = 0.5
+                return
+            }
+        }
+    }
+
+    // MARK: - Approach Route Planning
+
+    private func retargetOrExit(spriteNode: SKSpriteNode) {
+        guard bombsDroppedInCurrentCycle < Constants.GameBalance.mineBombsPerCycle,
+              let scene = spriteNode.scene as? InPlaySKScene,
+              let nextTarget = scene.bestBombingTarget()
+        else {
+            phase = .exiting
+            return
+        }
+        targetTower = nextTarget
+        hoverPoint = CGPoint(x: nextTarget.worldPosition.x, y: nextTarget.worldPosition.y)
+        approachWaypoint = nil
+        phase = .approaching
+    }
+
+    private func planApproachRoute(from start: CGPoint, to destination: CGPoint, in scene: InPlaySKScene) {
+        let allThreats = scene.allTowerThreatZones()
+        let margin: CGFloat = 40
+
+        for threat in allThreats {
+            guard knownTowerThreats[threat.id] != nil else { continue }
+            let dangerRadius = threat.range + margin
+
+            guard segmentIntersectsCircle(from: start, to: destination, center: threat.position, radius: dangerRadius) else { continue }
+
+            // Perpendicular to path direction
+            let pathDx = destination.x - start.x
+            let pathDy = destination.y - start.y
+            let pathLen = sqrt(pathDx * pathDx + pathDy * pathDy)
+            guard pathLen > 0.001 else { continue }
+
+            let perpX = -pathDy / pathLen
+            let perpY = pathDx / pathLen
+
+            // Two bypass options on either side of the threat
+            let bypass1 = CGPoint(
+                x: threat.position.x + perpX * dangerRadius,
+                y: threat.position.y + perpY * dangerRadius
+            )
+            let bypass2 = CGPoint(
+                x: threat.position.x - perpX * dangerRadius,
+                y: threat.position.y - perpY * dangerRadius
+            )
+
+            // Choose the shorter total path
+            let totalDist1 = distance(from: start, to: bypass1) + distance(from: bypass1, to: destination)
+            let totalDist2 = distance(from: start, to: bypass2) + distance(from: bypass2, to: destination)
+
+            var chosen = totalDist1 <= totalDist2 ? bypass1 : bypass2
+
+            // Clamp to scene bounds
+            let sceneFrame = scene.frame
+            chosen = CGPoint(
+                x: min(max(chosen.x, 30), sceneFrame.width - 30),
+                y: min(max(chosen.y, 30), sceneFrame.height - 30)
+            )
+
+            approachWaypoint = chosen
+            return
+        }
+
+        approachWaypoint = nil
+    }
+
+    private func segmentIntersectsCircle(from start: CGPoint, to end: CGPoint, center: CGPoint, radius: CGFloat) -> Bool {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let segLenSq = dx * dx + dy * dy
+        guard segLenSq > 0.001 else { return false }
+
+        let fx = start.x - center.x
+        let fy = start.y - center.y
+
+        let a = segLenSq
+        let b = 2 * (fx * dx + fy * dy)
+        let c = fx * fx + fy * fy - radius * radius
+
+        let discriminant = b * b - 4 * a * c
+        guard discriminant >= 0 else { return false }
+
+        let sqrtDisc = sqrt(discriminant)
+        let t1 = (-b - sqrtDisc) / (2 * a)
+        let t2 = (-b + sqrtDisc) / (2 * a)
+
+        return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1) || (t1 < 0 && t2 > 1)
     }
 
     private func startCrashRun(from spriteNode: SKSpriteNode) {
@@ -613,7 +937,7 @@ final class MineLayerDroneEntity: AttackDroneEntity {
     }
 
     private func bombSpawnPoint(from spriteNode: SKSpriteNode) -> CGPoint {
-        CGPoint(x: spriteNode.position.x, y: spriteNode.position.y - spriteNode.size.height * 0.62)
+        CGPoint(x: spriteNode.position.x, y: spriteNode.position.y)
     }
 
     private func makeEvadePoint(

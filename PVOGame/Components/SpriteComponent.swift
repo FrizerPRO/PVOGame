@@ -13,6 +13,10 @@ class SpriteComponent: GKComponent {
         spriteNode = SKSpriteNode(imageNamed: imageName)
         super.init()
     }
+    init(color: UIColor, size: CGSize) {
+        spriteNode = SKSpriteNode(color: color, size: size)
+        super.init()
+    }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
