@@ -24,6 +24,17 @@ class TowerStatsComponent: GKComponent {
     private var repairTimer: TimeInterval = 0
     var isDisabled: Bool { durability <= 0 }
 
+    // Magazine system (S-300 only)
+    let magazineCapacity: Int?
+    let magazineReloadTime: TimeInterval?
+    private(set) var magazineAmmo: Int?
+    private var magazineReloadTimer: TimeInterval = 0
+    var isReloading: Bool { magazineAmmo != nil && magazineAmmo! <= 0 }
+    var reloadProgress: CGFloat {
+        guard let reloadTime = magazineReloadTime, reloadTime > 0, isReloading else { return 0 }
+        return CGFloat(min(magazineReloadTimer / reloadTime, 1.0))
+    }
+
     init(
         towerType: TowerType,
         range: CGFloat,
@@ -41,6 +52,9 @@ class TowerStatsComponent: GKComponent {
         self.maxDurability = towerType.baseDurability
         self.repairTime = towerType.baseRepairTime
         self.durability = towerType.baseDurability
+        self.magazineCapacity = towerType.magazineCapacity
+        self.magazineReloadTime = towerType.magazineReloadTime
+        self.magazineAmmo = towerType.magazineCapacity
         super.init()
     }
 
@@ -65,6 +79,34 @@ class TowerStatsComponent: GKComponent {
             durability = maxDurability
             repairTimer = 0
         }
+    }
+
+    // MARK: - Magazine
+
+    @discardableResult
+    func consumeAmmo() -> Bool {
+        guard var ammo = magazineAmmo, ammo > 0 else { return false }
+        ammo -= 1
+        magazineAmmo = ammo
+        if ammo <= 0 {
+            magazineReloadTimer = 0
+        }
+        return true
+    }
+
+    func updateMagazineReload(deltaTime: TimeInterval) {
+        guard isReloading, let reloadTime = magazineReloadTime else { return }
+        magazineReloadTimer += deltaTime
+        if magazineReloadTimer >= reloadTime {
+            magazineAmmo = magazineCapacity
+            magazineReloadTimer = 0
+        }
+    }
+
+    func replenishMagazine() {
+        guard magazineCapacity != nil else { return }
+        magazineAmmo = magazineCapacity
+        magazineReloadTimer = 0
     }
 
     @discardableResult
@@ -121,8 +163,8 @@ enum TowerType: String, CaseIterable {
         switch self {
         case .autocannon: return 120
         case .ciws: return 80
-        case .samLauncher: return 200
-        case .interceptor: return 150
+        case .samLauncher: return 400
+        case .interceptor: return 300
         case .radar: return 130
         }
     }
@@ -131,7 +173,7 @@ enum TowerType: String, CaseIterable {
         switch self {
         case .autocannon: return 8
         case .ciws: return 20
-        case .samLauncher: return 0.5
+        case .samLauncher: return 1.0
         case .interceptor: return 2
         case .radar: return 0
         }
@@ -150,9 +192,9 @@ enum TowerType: String, CaseIterable {
     var reachableAltitudes: Set<DroneAltitude> {
         switch self {
         case .autocannon: return [.low, .medium, .micro]
-        case .ciws: return [.low, .micro]
-        case .samLauncher: return [.low, .medium, .high]
-        case .interceptor: return [.low, .medium, .high]
+        case .ciws: return [.low, .micro, .cruise]
+        case .samLauncher: return [.low, .medium, .high, .ballistic]
+        case .interceptor: return [.low, .medium, .high, .ballistic]
         case .radar: return []
         }
     }
@@ -177,6 +219,22 @@ enum TowerType: String, CaseIterable {
         }
     }
 
+    var magazineCapacity: Int? {
+        switch self {
+        case .samLauncher: return 6
+        case .interceptor: return 8
+        default: return nil
+        }
+    }
+
+    var magazineReloadTime: TimeInterval? {
+        switch self {
+        case .samLauncher: return 8.0
+        case .interceptor: return 5.0
+        default: return nil
+        }
+    }
+
     /// Ствольные системы физически наводятся на цель.
     /// Ракетные (С-300, перехватчик) — вертикальный пуск, наведение ракетой.
     var tracksTarget: Bool {
@@ -191,7 +249,9 @@ enum TowerType: String, CaseIterable {
         case .autocannon:
             return altitude == .micro ? 0.05 : 0.70
         case .ciws:
-            return altitude == .micro ? 0.15 : 0.90
+            if altitude == .micro { return 0.15 }
+            if altitude == .cruise { return 0.30 }
+            return 0.90
         default:
             return 1.0
         }

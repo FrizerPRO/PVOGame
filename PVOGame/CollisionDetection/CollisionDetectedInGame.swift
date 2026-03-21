@@ -27,6 +27,13 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
            alt.altitude == .micro {
             return
         }
+        // Non-rocket shells cannot hit ballistic-altitude targets
+        if !(shell is RocketEntity),
+           let drone = droneProjectile as? AttackDroneEntity,
+           let alt = drone.component(ofType: AltitudeComponent.self),
+           alt.altitude == .ballistic {
+            return
+        }
         droneProjectile.takeDamage(shell.damage)
         shell.detonateWithAnimation()
         if let drone = droneProjectile as? AttackDroneEntity, drone.isHit {
@@ -42,6 +49,10 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             if nodeA.name == Self.rocketBlastNodeName,
                let alt = drone.component(ofType: AltitudeComponent.self),
                alt.altitude == .micro { return true }
+            // Rocket blasts cannot hit ballistic-altitude targets (each missile needs a direct hit)
+            if nodeA.name == Self.rocketBlastNodeName,
+               let alt = drone.component(ofType: AltitudeComponent.self),
+               alt.altitude == .ballistic { return true }
             let blastDamage = (nodeA.userData?["damage"] as? Int) ?? 1
             drone.takeDamage(blastDamage)
             if drone.isHit {
@@ -56,6 +67,10 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             if nodeB.name == Self.rocketBlastNodeName,
                let alt = drone.component(ofType: AltitudeComponent.self),
                alt.altitude == .micro { return true }
+            // Rocket blasts cannot hit ballistic-altitude targets (each missile needs a direct hit)
+            if nodeB.name == Self.rocketBlastNodeName,
+               let alt = drone.component(ofType: AltitudeComponent.self),
+               alt.altitude == .ballistic { return true }
             let blastDamage = (nodeB.userData?["damage"] as? Int) ?? 1
             drone.takeDamage(blastDamage)
             if drone.isHit {

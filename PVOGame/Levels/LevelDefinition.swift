@@ -9,6 +9,8 @@ import CoreGraphics
 struct WaveDefinition {
     let droneCount: Int
     let mineLayerCount: Int
+    let missileSalvoCount: Int
+    let harmSalvoCount: Int
     let speed: CGFloat
     let spawnInterval: TimeInterval
     let spawnBatchSize: Int
@@ -28,9 +30,25 @@ struct WaveDefinition {
         }
         let health = 2 + (number - 1) / 2
         let batch = min(3 + number / 2, 6)
+        let firstMissileWave = Constants.GameBalance.enemyMissileFirstWave
+        let salvos: Int
+        if number < firstMissileWave {
+            salvos = 0
+        } else {
+            salvos = 1 + (number - firstMissileWave) / 3
+        }
+        let firstHarmWave = Constants.GameBalance.harmMissileFirstWave
+        let harmSalvos: Int
+        if number < firstHarmWave {
+            harmSalvos = 0
+        } else {
+            harmSalvos = 1 + (number - firstHarmWave) / 2
+        }
         return WaveDefinition(
             droneCount: baseCount,
             mineLayerCount: number >= 3 ? 1 : 0,
+            missileSalvoCount: salvos,
+            harmSalvoCount: harmSalvos,
             speed: speed,
             spawnInterval: max(0.35, 1.2 - Double(number) * 0.07),
             spawnBatchSize: batch,

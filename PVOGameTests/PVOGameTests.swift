@@ -243,12 +243,13 @@ final class PVOGameTests: XCTestCase {
             worldPosition: CGPoint(x: 100, y: 200)
         )
         let spriteNode = tower.component(ofType: SpriteComponent.self)!.spriteNode
+        let baseChildren = spriteNode.children.count // ammo dots for S-300
 
         tower.showRangeIndicator()
-        XCTAssertEqual(spriteNode.children.count, 1) // range circle
+        XCTAssertEqual(spriteNode.children.count, baseChildren + 1) // + range circle
 
         tower.hideRangeIndicator()
-        XCTAssertEqual(spriteNode.children.count, 0)
+        XCTAssertEqual(spriteNode.children.count, baseChildren)
     }
 
     // MARK: - Altitude Tests
@@ -439,7 +440,7 @@ final class PVOGameTests: XCTestCase {
         let spec = Constants.GameBalance.standardRocketSpec
         let rocket = RocketEntity(spec: spec)
         XCTAssertEqual(rocket.blastRadius, spec.blastRadius)
-        XCTAssertFalse(rocket.detonatesOnDirectImpact) // standard has AoE
+        XCTAssertTrue(rocket.detonatesOnDirectImpact) // standard now has 0 blast radius (single-target)
     }
 
     func testInterceptorRocketDirectImpact() {
@@ -465,7 +466,7 @@ final class PVOGameTests: XCTestCase {
         let interceptor = Constants.GameBalance.interceptorRocketBaseSpec
 
         XCTAssertGreaterThan(standard.maxFlightDistance, shortRange.maxFlightDistance)
-        XCTAssertGreaterThan(standard.blastRadius, 0)
+        XCTAssertEqual(standard.blastRadius, 0)
         XCTAssertEqual(interceptor.blastRadius, 0) // interceptor = direct hit
         XCTAssertGreaterThan(shortRange.defaultAmmo, standard.defaultAmmo) // rapid has more ammo
     }
@@ -601,7 +602,7 @@ final class PVOGameTests: XCTestCase {
     func testTowerDisabledAutoRepair() {
         let stats = TowerStatsComponent(
             towerType: .samLauncher,
-            range: 200, fireRate: 0.5, damage: 3,
+            range: 200, fireRate: 1.0, damage: 3,
             reachableAltitudes: [.low, .medium, .high],
             cost: 350
         )
@@ -754,6 +755,98 @@ final class PVOGameTests: XCTestCase {
     }
 
     // MARK: - Wave Mine Layer Tests
+
+    func testSamLauncherMagazine() {
+        let stats = TowerStatsComponent(
+            towerType: .samLauncher,
+            range: 200, fireRate: 1.0, damage: 3,
+            reachableAltitudes: [.low, .medium, .high, .ballistic],
+            cost: 350
+        )
+        XCTAssertEqual(stats.magazineAmmo, 4)
+        XCTAssertFalse(stats.isReloading)
+
+        // Consume all 4 rounds
+        for i in (1...4).reversed() {
+            XCTAssertEqual(stats.magazineAmmo, i)
+            XCTAssertTrue(stats.consumeAmmo())
+        }
+        XCTAssertEqual(stats.magazineAmmo, 0)
+        XCTAssertTrue(stats.isReloading)
+
+        // Can't fire while reloading
+        XCTAssertFalse(stats.consumeAmmo())
+
+        // Tick reload timer partially
+        stats.updateMagazineReload(deltaTime: 6.0)
+        XCTAssertTrue(stats.isReloading) // 6s < 12s
+        XCTAssertEqual(stats.reloadProgress, 0.5, accuracy: 0.01)
+
+        // Complete reload
+        stats.updateMagazineReload(deltaTime: 6.0)
+        XCTAssertFalse(stats.isReloading)
+        XCTAssertEqual(stats.magazineAmmo, 4)
+
+        // Non-magazine tower has nil ammo
+        let autoStats = TowerStatsComponent(
+            towerType: .autocannon,
+            range: 120, fireRate: 8, damage: 1,
+            reachableAltitudes: [.low, .medium, .micro],
+            cost: 100
+        )
+        XCTAssertNil(autoStats.magazineAmmo)
+        XCTAssertFalse(autoStats.isReloading)
+        XCTAssertFalse(autoStats.consumeAmmo())
+    }
+
+    func testSamLauncherReplenishMagazine() {
+        let stats = TowerStatsComponent(
+            towerType: .samLauncher,
+            range: 200, fireRate: 1.0, damage: 3,
+            reachableAltitudes: [.low, .medium, .high, .ballistic],
+            cost: 350
+        )
+        // Deplete magazine
+        for _ in 0..<4 { stats.consumeAmmo() }
+        XCTAssertTrue(stats.isReloading)
+
+        // Replenish instantly
+        stats.replenishMagazine()
+        XCTAssertFalse(stats.isReloading)
+        XCTAssertEqual(stats.magazineAmmo, 4)
+    }
+
+    func testInterceptorMagazine() {
+        let stats = TowerStatsComponent(
+            towerType: .interceptor,
+            range: 150, fireRate: 2.0, damage: 2,
+            reachableAltitudes: [.low, .medium, .high, .ballistic],
+            cost: Constants.TowerDefense.interceptorCost
+        )
+        XCTAssertEqual(stats.magazineAmmo, 6)
+        XCTAssertFalse(stats.isReloading)
+
+        // Consume all 6 rounds
+        for i in (1...6).reversed() {
+            XCTAssertEqual(stats.magazineAmmo, i)
+            XCTAssertTrue(stats.consumeAmmo())
+        }
+        XCTAssertEqual(stats.magazineAmmo, 0)
+        XCTAssertTrue(stats.isReloading)
+
+        // Can't fire while reloading
+        XCTAssertFalse(stats.consumeAmmo())
+
+        // Tick reload timer partially
+        stats.updateMagazineReload(deltaTime: 4.0)
+        XCTAssertTrue(stats.isReloading) // 4s < 8s
+        XCTAssertEqual(stats.reloadProgress, 0.5, accuracy: 0.01)
+
+        // Complete reload
+        stats.updateMagazineReload(deltaTime: 4.0)
+        XCTAssertFalse(stats.isReloading)
+        XCTAssertEqual(stats.magazineAmmo, 6)
+    }
 
     func testWaveDefinitionMineLayerCount() {
         let wave1 = WaveDefinition.defaultWave(number: 1)

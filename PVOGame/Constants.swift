@@ -100,6 +100,40 @@ class Constants{
         static let mineLayerArcStepAngle: CGFloat = .pi / 6  // 30°
         static let mineLayerRetargetInterval: TimeInterval = 1.5
         static let interceptorRangeScreenHeightRatio: CGFloat = 0.25
+
+        // Enemy missile (РСЗО/Град) constants
+        static let isEnemyMissileEnabled = true
+        static let enemyMissileFirstWave = 4
+        static let enemyMissileBaseSpeed: CGFloat = 130
+        static let enemyMissileSpeedVariance: CGFloat = 25
+        static let enemyMissileBaseSalvoSize = 3
+        static let enemyMissileSalvoGrowthInterval = 2
+        static let enemyMissileMaxSalvoSize = 8
+        static let enemyMissileSalvoSpawnDelay: TimeInterval = 6.0
+        static let enemyMissileSalvoInterval: TimeInterval = 12.0
+        static let enemyMissileInSalvoInterval: TimeInterval = 0.4
+        static let enemyMissileScatterRadius: CGFloat = 60
+        static let enemyMissileWarningTime: TimeInterval = 1.5
+        static let scorePerMissile = 150
+        static let resourcesPerMissileKill = 30
+        static let enemyMissileHQDamage = 2
+
+        // HARM (anti-radiation) missile constants
+        static let isHarmMissileEnabled = true
+        static let harmMissileFirstWave = 7
+        static let harmMissileBaseSpeed: CGFloat = 220
+        static let harmMissileSpeedVariance: CGFloat = 30
+        static let harmMissileBaseSalvoSize = 3
+        static let harmMissileSalvoGrowthInterval = 2
+        static let harmMissileMaxSalvoSize = 8
+        static let harmMissileSalvoSpawnDelay: TimeInterval = 8.0
+        static let harmMissileSalvoInterval: TimeInterval = 12.0
+        static let harmMissileInSalvoInterval: TimeInterval = 0.35
+        static let harmMissileWarningTime: TimeInterval = 2.0
+        static let harmMissileTowerDamage = 2
+        static let scorePerHarmMissile = 200
+        static let resourcesPerHarmMissileKill = 40
+
         static let hudFontName = "Menlo-Bold"
         static let hudFontSize: CGFloat = 18
 
@@ -107,16 +141,16 @@ class Constants{
 
         static let standardRocketSpec = RocketSpec(
             type: .standard,
-            damage: 1,
+            damage: 3,
             startImpact: 900,
-            blastRadius: 100,
+            blastRadius: 0,
             imageName: "BulletY",
             initialSpeed: 40,
             acceleration: 1400,
             maxSpeed: 1700,
-            maxFlightDistance: 345,
+            maxFlightDistance: 400,
             turnSpeed: .pi * 1.4,
-            retargetInterval: 0.08,
+            retargetInterval: 0.18,
             cooldown: 0.625,
             defaultAmmo: 20,
             ammoPerWave: 10,
@@ -134,7 +168,7 @@ class Constants{
             maxSpeed: 1800,
             maxFlightDistance: 220,
             turnSpeed: .pi * 1.6,
-            retargetInterval: 0.06,
+            retargetInterval: 0.14,
             cooldown: 0.22,
             defaultAmmo: 36,
             ammoPerWave: 16,
@@ -152,7 +186,7 @@ class Constants{
             maxSpeed: 1750,
             maxFlightDistance: 200,
             turnSpeed: .pi * 2.2,
-            retargetInterval: 0.045,
+            retargetInterval: 0.12,
             cooldown: 0.32,
             defaultAmmo: 100,
             ammoPerWave: 14,

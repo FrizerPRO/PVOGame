@@ -18,6 +18,16 @@ class WaveManager {
     private var mineLayersSpawnedThisWave = 0
     private var mineLayerTimer: TimeInterval = 0
 
+    // Missile salvo spawning
+    private var missileSalvosSpawnedThisWave = 0
+    private var missileSalvoTimer: TimeInterval = 0
+    private(set) var missileWarningShown = false
+
+    // HARM salvo spawning
+    private var harmSalvosSpawnedThisWave = 0
+    private var harmSalvoTimer: TimeInterval = 0
+    private(set) var harmWarningShown = false
+
     init(scene: InPlaySKScene, level: LevelDefinition) {
         self.scene = scene
         self.levelDef = level
@@ -31,9 +41,27 @@ class WaveManager {
         currentWaveDef = nil
         mineLayersSpawnedThisWave = 0
         mineLayerTimer = 0
+        missileSalvosSpawnedThisWave = 0
+        missileSalvoTimer = 0
+        missileWarningShown = false
+        harmSalvosSpawnedThisWave = 0
+        harmSalvoTimer = 0
+        harmWarningShown = false
     }
 
     func nextWaveNumber() -> Int { currentWave + 1 }
+
+    var hasPendingMissileSalvos: Bool {
+        guard isWaveInProgress, let waveDef = currentWaveDef else { return false }
+        return currentWave >= Constants.GameBalance.enemyMissileFirstWave
+            && missileSalvosSpawnedThisWave < waveDef.missileSalvoCount
+    }
+
+    var hasPendingHarmSalvos: Bool {
+        guard isWaveInProgress, let waveDef = currentWaveDef else { return false }
+        return currentWave >= Constants.GameBalance.harmMissileFirstWave
+            && harmSalvosSpawnedThisWave < waveDef.harmSalvoCount
+    }
 
     func startNextWave() {
         currentWave += 1
@@ -42,6 +70,12 @@ class WaveManager {
         spawnTimer = 0
         mineLayersSpawnedThisWave = 0
         mineLayerTimer = Constants.GameBalance.mineLayerSpawnDelay
+        missileSalvosSpawnedThisWave = 0
+        missileSalvoTimer = Constants.GameBalance.enemyMissileSalvoSpawnDelay
+        missileWarningShown = false
+        harmSalvosSpawnedThisWave = 0
+        harmSalvoTimer = Constants.GameBalance.harmMissileSalvoSpawnDelay
+        harmWarningShown = false
 
         let waveDef: WaveDefinition
         if currentWave <= levelDef.waves.count {
@@ -50,6 +84,7 @@ class WaveManager {
             waveDef = WaveDefinition.defaultWave(number: currentWave)
         }
         currentWaveDef = waveDef
+        print("[WAVE] ===== WAVE \(currentWave) START ===== salvos=\(waveDef.missileSalvoCount) harmSalvos=\(waveDef.harmSalvoCount) drones=\(waveDef.droneCount)")
     }
 
     func update(deltaTime: TimeInterval) {
@@ -65,9 +100,53 @@ class WaveManager {
             }
         }
 
+        // Missile salvo spawning
+        if Constants.GameBalance.isEnemyMissileEnabled &&
+            currentWave >= Constants.GameBalance.enemyMissileFirstWave &&
+            missileSalvosSpawnedThisWave < waveDef.missileSalvoCount {
+            missileSalvoTimer -= deltaTime
+            if missileSalvoTimer <= 0 && !missileWarningShown {
+                // Show warning first
+                print("[WAVE] Missile warning shown, wave=\(currentWave), salvoTimer will reset")
+                scene.showMissileWarning()
+                missileWarningShown = true
+                missileSalvoTimer = Constants.GameBalance.enemyMissileWarningTime
+            } else if missileSalvoTimer <= 0 && missileWarningShown {
+                // Spawn the salvo after warning delay
+                print("[WAVE] Spawning missile salvo \(missileSalvosSpawnedThisWave+1)/\(waveDef.missileSalvoCount), wave=\(currentWave)")
+                scene.spawnMissileSalvo(waveNumber: currentWave)
+                missileSalvosSpawnedThisWave += 1
+                missileWarningShown = false
+                missileSalvoTimer = Constants.GameBalance.enemyMissileSalvoInterval
+            }
+        }
+
+        // HARM salvo spawning
+        if Constants.GameBalance.isHarmMissileEnabled &&
+            currentWave >= Constants.GameBalance.harmMissileFirstWave &&
+            harmSalvosSpawnedThisWave < waveDef.harmSalvoCount {
+            harmSalvoTimer -= deltaTime
+            if harmSalvoTimer <= 0 && !harmWarningShown {
+                print("[WAVE] HARM warning shown, wave=\(currentWave)")
+                scene.showHarmWarning()
+                harmWarningShown = true
+                harmSalvoTimer = Constants.GameBalance.harmMissileWarningTime
+            } else if harmSalvoTimer <= 0 && harmWarningShown {
+                print("[WAVE] Spawning HARM salvo \(harmSalvosSpawnedThisWave+1)/\(waveDef.harmSalvoCount), wave=\(currentWave)")
+                scene.spawnHarmSalvo(waveNumber: currentWave)
+                harmSalvosSpawnedThisWave += 1
+                harmWarningShown = false
+                harmSalvoTimer = Constants.GameBalance.harmMissileSalvoInterval
+            }
+        }
+
         if dronesSpawnedThisWave >= waveDef.droneCount {
-            if scene.activeDronesForTowers.isEmpty && mineLayersSpawnedThisWave >= waveDef.mineLayerCount {
+            let allMineLayersDone = mineLayersSpawnedThisWave >= waveDef.mineLayerCount
+            let allSalvosDone = missileSalvosSpawnedThisWave >= waveDef.missileSalvoCount
+            let allHarmSalvosDone = harmSalvosSpawnedThisWave >= waveDef.harmSalvoCount
+            if scene.activeDronesForTowers.isEmpty && allMineLayersDone && allSalvosDone && allHarmSalvosDone && scene.pendingMissileSpawns == 0 && scene.pendingHarmSpawns == 0 {
                 isWaveInProgress = false
+                print("[WAVE] ===== WAVE \(currentWave) END ===== activeDrones=\(scene.activeDroneCount)")
             }
             return
         }

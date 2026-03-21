@@ -15,6 +15,10 @@ class TowerEntity: GKEntity {
     private var wasDisabled = false
     private var smokeEmitter: SKNode?
 
+    // Magazine visual indicators
+    private var ammoDots: [SKShapeNode] = []
+    private var reloadArc: SKShapeNode?
+
     init(towerType: TowerType, at gridPosition: (row: Int, col: Int), worldPosition: CGPoint) {
         self.towerType = towerType
         super.init()
@@ -46,6 +50,11 @@ class TowerEntity: GKEntity {
 
         addComponent(TowerTargetingComponent())
         addComponent(TowerRotationComponent())
+
+        // Magazine towers: create ammo dot indicators
+        if let capacity = towerType.magazineCapacity {
+            setupAmmoDots(count: capacity, on: spriteComponent.spriteNode)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -164,6 +173,65 @@ class TowerEntity: GKEntity {
         if wasDisabledBefore && !stats.isDisabled {
             hideDisabledEffect()
             wasDisabled = false
+        }
+
+        // Magazine visuals
+        if towerType.magazineCapacity != nil {
+            updateAmmoDots(stats: stats)
+            updateReloadArc(stats: stats)
+        }
+    }
+
+    // MARK: - Magazine Visuals
+
+    private func setupAmmoDots(count: Int, on parent: SKNode) {
+        let dotRadius: CGFloat = 2.5
+        let spacing: CGFloat = 8
+        let totalWidth = CGFloat(count - 1) * spacing
+        let startX = -totalWidth / 2
+
+        for i in 0..<count {
+            let dot = SKShapeNode(circleOfRadius: dotRadius)
+            dot.fillColor = .green
+            dot.strokeColor = .clear
+            dot.zPosition = 30
+            dot.position = CGPoint(x: startX + CGFloat(i) * spacing, y: -18)
+            parent.addChild(dot)
+            ammoDots.append(dot)
+        }
+    }
+
+    private func updateAmmoDots(stats: TowerStatsComponent) {
+        guard let ammo = stats.magazineAmmo else { return }
+        for (i, dot) in ammoDots.enumerated() {
+            dot.fillColor = i < ammo ? .green : .darkGray
+        }
+    }
+
+    private func updateReloadArc(stats: TowerStatsComponent) {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+
+        if stats.isReloading {
+            let progress = stats.reloadProgress
+            let arcRadius: CGFloat = 16
+            let startAngle: CGFloat = .pi / 2
+            let endAngle = startAngle + progress * .pi * 2
+
+            if reloadArc == nil {
+                let arc = SKShapeNode()
+                arc.strokeColor = .orange
+                arc.lineWidth = 2.0
+                arc.fillColor = .clear
+                arc.zPosition = 31
+                spriteNode.addChild(arc)
+                reloadArc = arc
+            }
+
+            let path = UIBezierPath(arcCenter: .zero, radius: arcRadius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
+            reloadArc?.path = path.cgPath
+        } else {
+            reloadArc?.removeFromParent()
+            reloadArc = nil
         }
     }
 }

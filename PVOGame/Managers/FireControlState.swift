@@ -54,6 +54,7 @@ struct FireControlState {
     private var tracks = [ObjectIdentifier: TrackState]()
     private var assignments = [ObjectIdentifier: Assignment]()
     private(set) var decisionLog = [String]()
+    var trackCount: Int { tracks.count }
 
     mutating func reset() {
         tracks.removeAll()
@@ -221,13 +222,6 @@ struct FireControlState {
         let accel = profile.acceleration
         let vMax = profile.maxSpeed
         let blastRadius = max(0, profile.blastRadius)
-        let assignmentSnapshot = assignments.values.filter { assignment in
-            if let excludingRocketID {
-                return assignment.rocketID != excludingRocketID
-            }
-            return true
-        }
-
         let candidateTracks = tracks.values.filter { track in
             guard let origin, let maxRange = profile.maxRange else { return true }
             return Self.squaredDistance(track.position, origin) <= maxRange * maxRange
@@ -239,45 +233,51 @@ struct FireControlState {
 
         var candidatePointsByKey = [String: CGPoint]()
         for track in candidateTracks {
-            let baseETA = estimatedETA(origin: origin, target: track.position, speed: speed, acceleration: accel, maxSpeed: vMax)
-            let projected0 = predictedPosition(for: track, after: baseETA)
-            let refinedETA = estimatedETA(origin: origin, target: projected0, speed: speed, acceleration: accel, maxSpeed: vMax)
-            let projectedSeed = predictedPosition(for: track, after: refinedETA)
+            // Damped iterative intercept prediction (4 steps, averaged)
+            var predictedTarget = track.position
+            for _ in 0..<4 {
+                let eta = estimatedETA(origin: origin, target: predictedTarget, speed: speed, acceleration: accel, maxSpeed: vMax)
+                let predicted = predictedPosition(for: track, after: eta)
+                predictedTarget = CGPoint(
+                    x: (predictedTarget.x + predicted.x) * 0.5,
+                    y: (predictedTarget.y + predicted.y) * 0.5
+                )
+            }
+            let projectedSeed = predictedTarget
             if let origin, let maxRange = profile.maxRange,
                Self.squaredDistance(projectedSeed, origin) > maxRange * maxRange {
                 continue
             }
+            let seedETA = estimatedETA(origin: origin, target: projectedSeed, speed: speed, acceleration: accel, maxSpeed: vMax)
             let candidatePoint: CGPoint
             if blastRadius > 0.01 {
-                let neighbors = candidateTracks.filter { otherTrack in
-                    let otherProjected = predictedPosition(for: otherTrack, after: baseETA)
-                    return Self.squaredDistance(otherProjected, projectedSeed) <= blastRadius * blastRadius
-                }
-                let centroidSources: [TrackState]
-                if reservingAssignments {
-                    centroidSources = neighbors.filter { neighbor in
-                        let predicted = predictedPosition(for: neighbor, after: baseETA)
-                        return !isTrackReserved(
-                            hitID: neighbor.id,
-                            predictedPosition: predicted,
-                            by: assignmentSnapshot,
+                var centroidX: CGFloat = 0
+                var centroidY: CGFloat = 0
+                var centroidCount = 0
+                for otherTrack in candidateTracks {
+                    let otherProjected = predictedPosition(for: otherTrack, after: seedETA)
+                    guard Self.squaredDistance(otherProjected, projectedSeed) <= blastRadius * blastRadius else { continue }
+                    if reservingAssignments {
+                        if isTrackReservedByLive(
+                            hitID: otherTrack.id,
+                            predictedPosition: otherProjected,
+                            excludingRocketID: excludingRocketID,
                             singleTargetCoverage: singleTargetReservationCoverageRadius
-                        )
+                        ) { continue }
                     }
-                } else {
-                    centroidSources = neighbors
+                    centroidX += otherProjected.x
+                    centroidY += otherProjected.y
+                    centroidCount += 1
                 }
-                if centroidSources.isEmpty {
+                if centroidCount == 0 {
                     if reservingAssignments {
                         continue
                     }
                     candidatePoint = projectedSeed
                 } else {
-                    let centroidX = centroidSources.map { predictedPosition(for: $0, after: baseETA).x }.reduce(0, +)
-                    let centroidY = centroidSources.map { predictedPosition(for: $0, after: baseETA).y }.reduce(0, +)
                     candidatePoint = CGPoint(
-                        x: centroidX / CGFloat(centroidSources.count),
-                        y: centroidY / CGFloat(centroidSources.count)
+                        x: centroidX / CGFloat(centroidCount),
+                        y: centroidY / CGFloat(centroidCount)
                     )
                 }
             } else {
@@ -356,10 +356,10 @@ struct FireControlState {
             for hitID in hits {
                 guard let track = tracks[hitID] else { continue }
                 let predicted = predictedPosition(for: track, after: eta)
-                if isTrackReserved(
+                if isTrackReservedByLive(
                     hitID: hitID,
                     predictedPosition: predicted,
-                    by: assignmentSnapshot,
+                    excludingRocketID: excludingRocketID,
                     singleTargetCoverage: singleTargetReservationCoverageRadius
                 ) {
                     overlapCount += 1
@@ -372,7 +372,8 @@ struct FireControlState {
             if reservingAssignments && newHits.isEmpty { continue }
 
             var geometricProximityPenalty: CGFloat = 0
-            for assignment in assignmentSnapshot {
+            for (rocketID, assignment) in assignments {
+                if let excludingRocketID, rocketID == excludingRocketID { continue }
                 let avoidanceRadius = softAvoidanceRadius(
                     for: assignment,
                     candidateBlastRadius: blastRadius,
@@ -423,13 +424,18 @@ struct FireControlState {
                 bestPreferredDistance = preferredDistance
             }
 
-            let isSeparatedFromAssignments = assignmentSnapshot.allSatisfy { assignment in
-                isBlastSeparated(
+            var isSeparatedFromAssignments = true
+            for (rocketID, assignment) in assignments {
+                if let excludingRocketID, rocketID == excludingRocketID { continue }
+                if !isBlastSeparated(
                     candidatePoint: point,
                     candidateBlastRadius: blastRadius,
                     from: assignment,
                     singleTargetCoverage: singleTargetReservationCoverageRadius
-                )
+                ) {
+                    isSeparatedFromAssignments = false
+                    break
+                }
             }
             if isSeparatedFromAssignments,
                shouldReplacePlan(
@@ -482,11 +488,14 @@ struct FireControlState {
     ) -> Set<ObjectIdentifier> {
         if blastRadius > 0.01 {
             let radiusSquared = blastRadius * blastRadius
-            let hits = tracks.values.filter { track in
+            var result = Set<ObjectIdentifier>()
+            for track in tracks.values {
                 let predicted = predictedPosition(for: track, after: eta)
-                return Self.squaredDistance(predicted, point) <= radiusSquared
+                if Self.squaredDistance(predicted, point) <= radiusSquared {
+                    result.insert(track.id)
+                }
             }
-            return Set(hits.map(\.id))
+            return result
         }
 
         var nearestID: ObjectIdentifier?
@@ -520,6 +529,23 @@ struct FireControlState {
         singleTargetCoverage: CGFloat
     ) -> Bool {
         for assignment in assignments {
+            if !assignment.claimedTrackIDs.isEmpty {
+                if assignment.claimedTrackIDs.contains(hitID) { return true }
+                continue
+            }
+            if isPointCovered(predictedPosition, by: assignment, singleTargetCoverage: singleTargetCoverage) { return true }
+        }
+        return false
+    }
+
+    private func isTrackReservedByLive(
+        hitID: ObjectIdentifier,
+        predictedPosition: CGPoint,
+        excludingRocketID: ObjectIdentifier?,
+        singleTargetCoverage: CGFloat
+    ) -> Bool {
+        for (rocketID, assignment) in assignments {
+            if let excludingRocketID, rocketID == excludingRocketID { continue }
             if !assignment.claimedTrackIDs.isEmpty {
                 if assignment.claimedTrackIDs.contains(hitID) { return true }
                 continue
@@ -632,6 +658,7 @@ struct FireControlState {
     }
 
     private mutating func appendLog(_ line: String) {
+        print("[FC] \(line)")
         decisionLog.append(line)
         let maxEntries = 60
         if decisionLog.count > maxEntries {

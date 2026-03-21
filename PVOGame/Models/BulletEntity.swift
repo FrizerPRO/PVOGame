@@ -111,6 +111,13 @@ class RocketEntity: BulletEntity {
         return SKTexture(image: image)
     }()
 
+    private static let smokePuffAction: SKAction = {
+        let wait = SKAction.wait(forDuration: 0.15)
+        let expand = SKAction.scale(to: 2.5, duration: 0.45)
+        let fade = SKAction.fadeOut(withDuration: 0.45)
+        return SKAction.sequence([wait, SKAction.group([expand, fade]), SKAction.removeFromParent()])
+    }()
+
     enum GuidancePhase {
         case boost
         case midcourse
@@ -296,6 +303,7 @@ class RocketEntity: BulletEntity {
         spriteNode.physicsBody?.affectedByGravity = false
         spriteNode.physicsBody?.friction = 0
         spriteNode.physicsBody?.restitution = 0
+        spriteNode.physicsBody?.usesPreciseCollisionDetection = true
     }
 
     private func emitSmokeIfNeeded(from spriteNode: SKSpriteNode, deltaTime seconds: TimeInterval) {
@@ -303,7 +311,7 @@ class RocketEntity: BulletEntity {
 
         smokeSpawnAccumulator -= seconds
         guard smokeSpawnAccumulator <= 0 else { return }
-        smokeSpawnAccumulator += 0.05
+        smokeSpawnAccumulator += 0.12
 
         var tailPoint = spriteNode.convert(CGPoint(x: 0, y: -spriteNode.size.height * 0.55), to: scene)
         tailPoint.x += CGFloat.random(in: -2...2)
@@ -321,10 +329,7 @@ class RocketEntity: BulletEntity {
         puff.yScale = 0.75
         scene.addChild(puff)
 
-        let wait = SKAction.wait(forDuration: 0.5)
-        let expand = SKAction.scale(to: 3.0, duration: 1.0)
-        let fade = SKAction.fadeOut(withDuration: 1.0)
-        puff.run(SKAction.sequence([wait, SKAction.group([expand, fade]), SKAction.removeFromParent()]))
+        puff.run(Self.smokePuffAction)
     }
 
     private func retargetIfNeeded(from spriteNode: SKSpriteNode, deltaTime seconds: TimeInterval) -> Bool {
@@ -340,6 +345,8 @@ class RocketEntity: BulletEntity {
         retargetAccumulator += spec.retargetInterval
 
         guard let scene = spriteNode.scene as? InPlaySKScene else { return true }
+        // Limit expensive planLaunch() calls per frame
+        guard scene.consumeRetargetBudget() else { return true }
         let remainingFlightDistance = max(0, spec.maxFlightDistance - travelledDistance)
         if canRetargetThreats {
             if let updatedTarget = scene.bestRocketTargetPoint(

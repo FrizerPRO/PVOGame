@@ -12,6 +12,8 @@ enum DroneAltitude: Int, CaseIterable {
     case medium = 1
     case high = 2
     case micro = 3
+    case ballistic = 4
+    case cruise = 5
 
     /// Altitudes available for regular (non-micro) drones.
     static let regularCases: [DroneAltitude] = [.low, .medium, .high]
@@ -22,6 +24,8 @@ enum DroneAltitude: Int, CaseIterable {
         case .medium: return 0.7
         case .high: return 0.45
         case .micro: return 1.0
+        case .ballistic: return 0.35
+        case .cruise: return 0.5
         }
     }
 
@@ -31,6 +35,8 @@ enum DroneAltitude: Int, CaseIterable {
         case .medium: return CGPoint(x: 6, y: -6)
         case .high: return CGPoint(x: 10, y: -10)
         case .micro: return CGPoint(x: 2, y: -2)
+        case .ballistic: return CGPoint(x: 12, y: -12)
+        case .cruise: return CGPoint(x: 8, y: -8)
         }
     }
 
@@ -40,6 +46,8 @@ enum DroneAltitude: Int, CaseIterable {
         case .medium: return 0.85
         case .high: return 0.7
         case .micro: return 0.6
+        case .ballistic: return 0.7
+        case .cruise: return 0.75
         }
     }
 
@@ -49,6 +57,8 @@ enum DroneAltitude: Int, CaseIterable {
         case .medium: return "Medium"
         case .high: return "High"
         case .micro: return "Micro"
+        case .ballistic: return "Ballistic"
+        case .cruise: return "Cruise"
         }
     }
 }

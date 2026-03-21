@@ -47,10 +47,27 @@ class InPlaySKScene: SKScene {
     private let firstWaveCountdown: TimeInterval = 15.0
     private let normalWaveCountdown: TimeInterval = 3.0
     private var gameSpeed: CGFloat = 1.0
+    private(set) var pendingMissileSpawns = 0
+    private(set) var pendingHarmSpawns = 0
 
     var activeDroneCount: Int { activeDrones.count }
     var activeDronesForTowers: [AttackDroneEntity] { activeDrones }
     var isGameOver: Bool { currentPhase == .gameOver }
+    var isMissileAlertActive: Bool {
+        if waveManager?.missileWarningShown ?? false { return true }
+        if waveManager?.harmWarningShown ?? false { return true }
+        // Only count missiles that are actually on-screen (not ghost missiles at negative Y)
+        return activeDrones.contains(where: { drone in
+            guard (drone is EnemyMissileEntity || drone is HarmMissileEntity) && !drone.isHit else { return false }
+            guard let pos = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else { return false }
+            return pos.y > -50 && pos.y < frame.height + 100
+        })
+    }
+
+    var waveHasPendingMissiles: Bool {
+        guard let wm = waveManager else { return false }
+        return wm.hasPendingMissileSalvos || wm.hasPendingHarmSalvos
+    }
 
     // Compatibility stubs for MineLayerDroneEntity AI (no player gun in TD mode)
     var mainGun: GunEntity? { nil }
@@ -88,6 +105,12 @@ class InPlaySKScene: SKScene {
 
     // Off-screen miner drone indicator
     private var offscreenIndicator: SKNode?
+
+    // Fire control sync guard — ensures sync runs at most once per frame
+    private var fireControlSyncedThisFrame = false
+    // Rocket retarget budget — limits expensive planLaunch() calls per frame
+    private(set) var rocketRetargetBudget = 0
+    private let maxRetargetsPerFrame = 3
 
     // MARK: - Scene Setup
 
@@ -512,15 +535,22 @@ class InPlaySKScene: SKScene {
     private func startCombatPhase() {
         currentPhase = .combat
         startWaveButton?.isHidden = true
+        fireControl.reset()
+        pendingMissileSpawns = 0
+        pendingHarmSpawns = 0
 
-        // Repair all towers at wave start
-        towerPlacement.towers.forEach { $0.fullRepair() }
+        // Repair all towers and replenish magazines at wave start
+        towerPlacement.towers.forEach {
+            $0.fullRepair()
+            $0.stats?.replenishMagazine()
+        }
 
         waveManager.startNextWave()
         updateHUD()
     }
 
     private func onWaveComplete() {
+        print("[WAVE] Wave complete, activeDrones=\(activeDrones.count)")
         currentPhase = .build
         cleanupOffscreenIndicator()
         economyManager.earn(Constants.TowerDefense.waveCompletionBonus)
@@ -607,7 +637,13 @@ class InPlaySKScene: SKScene {
 
         let scoreDelta: Int
         let resourceDelta: Int
-        if drone is MineLayerDroneEntity {
+        if drone is HarmMissileEntity {
+            scoreDelta = Constants.GameBalance.scorePerHarmMissile
+            resourceDelta = Constants.GameBalance.resourcesPerHarmMissileKill
+        } else if drone is EnemyMissileEntity {
+            scoreDelta = Constants.GameBalance.scorePerMissile
+            resourceDelta = Constants.GameBalance.resourcesPerMissileKill
+        } else if drone is MineLayerDroneEntity {
             scoreDelta = Constants.GameBalance.scorePerMineLayerDrone
             resourceDelta = Constants.TowerDefense.resourcesPerMineLayerKill
         } else {
@@ -626,7 +662,15 @@ class InPlaySKScene: SKScene {
             if drone.isHit { return }
             if !activeDrones.contains(drone) { return }
         }
-        lives -= 1
+        if drone is EnemyMissileEntity {
+            lives -= Constants.GameBalance.enemyMissileHQDamage
+            // Impact explosion VFX
+            if let pos = drone?.component(ofType: SpriteComponent.self)?.spriteNode.position {
+                spawnBombExplosion(at: pos)
+            }
+        } else {
+            lives -= 1
+        }
         updateHUD()
         if lives <= 0 {
             triggerGameOver()
@@ -729,6 +773,275 @@ class InPlaySKScene: SKScene {
 
     var hasGameOverOverlay: Bool {
         childNode(withName: "//gameOverOverlay") != nil
+    }
+
+    // MARK: - Enemy Missile Salvo
+
+    func showMissileWarning() {
+        let warning = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+        warning.text = "INCOMING"
+        warning.fontSize = 32
+        warning.fontColor = .red
+        warning.position = CGPoint(x: frame.midX, y: frame.height - safeTop - 80)
+        warning.zPosition = 97
+        warning.alpha = 0
+        warning.name = "missileWarning"
+        addChild(warning)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.15)
+        let pulse = SKAction.sequence([
+            SKAction.scale(to: 1.15, duration: 0.3),
+            SKAction.scale(to: 0.9, duration: 0.3)
+        ])
+        let pulseForever = SKAction.repeat(pulse, count: 3)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let remove = SKAction.removeFromParent()
+        warning.run(SKAction.sequence([fadeIn, pulseForever, fadeOut, remove]))
+
+        // Red edge tint
+        let tint = SKSpriteNode(color: UIColor.red.withAlphaComponent(0.15), size: frame.size)
+        tint.position = CGPoint(x: frame.midX, y: frame.midY)
+        tint.zPosition = 96
+        tint.alpha = 0
+        addChild(tint)
+        tint.run(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.3, duration: 0.2),
+            SKAction.fadeOut(withDuration: 1.0),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    func spawnMissileSalvo(waveNumber: Int) {
+        let gb = Constants.GameBalance.self
+        let firstWave = gb.enemyMissileFirstWave
+        let salvoSize = min(
+            gb.enemyMissileBaseSalvoSize + (waveNumber - firstWave) / gb.enemyMissileSalvoGrowthInterval,
+            gb.enemyMissileMaxSalvoSize
+        )
+
+        pendingMissileSpawns += salvoSize
+        for i in 0..<salvoSize {
+            let delay = TimeInterval(i) * gb.enemyMissileInSalvoInterval
+            let spawnAction = SKAction.sequence([
+                SKAction.wait(forDuration: delay),
+                SKAction.run { [weak self] in
+                    self?.spawnSingleMissile(waveNumber: waveNumber)
+                }
+            ])
+            run(spawnAction)
+        }
+    }
+
+    private func spawnSingleMissile(waveNumber: Int) {
+        pendingMissileSpawns = max(0, pendingMissileSpawns - 1)
+        let gb = Constants.GameBalance.self
+        let spawnX = CGFloat.random(in: 20...(frame.width - 20))
+        let spawnY = frame.height + CGFloat.random(in: 30...50)
+        let spawnPoint = CGPoint(x: spawnX, y: spawnY)
+
+        // Target: HQ center + scatter
+        let hqCenter: CGPoint
+        if let gridMap {
+            // HQ is at bottom center of the grid
+            let hqRow = Constants.TowerDefense.gridRows - 1
+            let hqCol = Constants.TowerDefense.gridCols / 2
+            hqCenter = gridMap.worldPosition(forRow: hqRow, col: hqCol)
+        } else {
+            hqCenter = CGPoint(x: frame.midX, y: 60)
+        }
+
+        let scatterAngle = CGFloat.random(in: 0...(2 * .pi))
+        let scatterDist = CGFloat.random(in: 0...gb.enemyMissileScatterRadius)
+        let target = CGPoint(
+            x: hqCenter.x + cos(scatterAngle) * scatterDist,
+            y: hqCenter.y + sin(scatterAngle) * scatterDist
+        )
+
+        let missileSpeed = gb.enemyMissileBaseSpeed + CGFloat.random(in: -gb.enemyMissileSpeedVariance...gb.enemyMissileSpeedVariance)
+
+        let missile = EnemyMissileEntity(sceneFrame: frame)
+
+        // Add altitude component
+        missile.addComponent(AltitudeComponent(altitude: .ballistic))
+        let shadow = ShadowComponent()
+        missile.addComponent(shadow)
+        shadowLayer?.addChild(shadow.shadowNode)
+
+        // Scale and zPosition for ballistic altitude
+        if let spriteNode = missile.component(ofType: SpriteComponent.self)?.spriteNode {
+            let scale = DroneAltitude.ballistic.droneVisualScale
+            spriteNode.size = CGSize(width: 6 * scale, height: 18 * scale)
+            spriteNode.zPosition = 61 + CGFloat(DroneAltitude.ballistic.rawValue) * 5
+        }
+
+        missile.configureFlight(from: spawnPoint, to: target, speed: missileSpeed)
+        print("[MISSILE] Spawned at (\(Int(spawnPoint.x)),\(Int(spawnPoint.y))) → target (\(Int(target.x)),\(Int(target.y))) speed=\(Int(missileSpeed)) activeDrones=\(activeDrones.count)")
+
+        activeDrones.append(missile)
+        addEntity(missile)
+    }
+
+    // MARK: - HARM (Anti-Radiation) Missile
+
+    func showHarmWarning() {
+        let warning = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+        warning.text = "ПРР"
+        warning.fontSize = 32
+        warning.fontColor = .yellow
+        warning.position = CGPoint(x: frame.midX, y: frame.height - safeTop - 120)
+        warning.zPosition = 97
+        warning.alpha = 0
+        warning.name = "harmWarning"
+        addChild(warning)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.15)
+        let pulse = SKAction.sequence([
+            SKAction.scale(to: 1.15, duration: 0.3),
+            SKAction.scale(to: 0.9, duration: 0.3)
+        ])
+        let pulseForever = SKAction.repeat(pulse, count: 3)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+        let remove = SKAction.removeFromParent()
+        warning.run(SKAction.sequence([fadeIn, pulseForever, fadeOut, remove]))
+
+        // Amber edge tint
+        let tint = SKSpriteNode(color: UIColor.yellow.withAlphaComponent(0.12), size: frame.size)
+        tint.position = CGPoint(x: frame.midX, y: frame.midY)
+        tint.zPosition = 96
+        tint.alpha = 0
+        addChild(tint)
+        tint.run(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.3, duration: 0.2),
+            SKAction.fadeOut(withDuration: 1.0),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    func selectHarmTargets(salvoSize: Int) -> [TowerEntity] {
+        // Filter radar-emitting towers that are not disabled
+        let radarEmitters = towerPlacement.towers.filter { tower in
+            guard let stats = tower.stats, !stats.isDisabled else { return false }
+            return stats.towerType == .samLauncher || stats.towerType == .interceptor || stats.towerType == .radar
+        }
+
+        // Exclude towers already targeted by in-flight HARMs
+        let alreadyTargeted = Set(activeDrones.compactMap { ($0 as? HarmMissileEntity)?.targetTower }.map { ObjectIdentifier($0) })
+        let available = radarEmitters.filter { !alreadyTargeted.contains(ObjectIdentifier($0)) }
+
+        guard !available.isEmpty else { return [] }
+
+        // Sort by priority: S-300 > PRCH > RLS
+        let sorted = available.sorted { a, b in
+            let priorityA = harmTargetPriority(a)
+            let priorityB = harmTargetPriority(b)
+            return priorityA > priorityB
+        }
+
+        // Assign 1 HARM per unique tower first, then wrap around
+        var targets = [TowerEntity]()
+        for i in 0..<salvoSize {
+            let index = i % sorted.count
+            targets.append(sorted[index])
+        }
+        return targets
+    }
+
+    private func harmTargetPriority(_ tower: TowerEntity) -> Int {
+        guard let stats = tower.stats else { return 0 }
+        switch stats.towerType {
+        case .samLauncher: return 3
+        case .interceptor: return 2
+        case .radar: return 1
+        default: return 0
+        }
+    }
+
+    func spawnHarmSalvo(waveNumber: Int) {
+        let gb = Constants.GameBalance.self
+        let firstWave = gb.harmMissileFirstWave
+        let salvoSize = min(
+            gb.harmMissileBaseSalvoSize + (waveNumber - firstWave) / gb.harmMissileSalvoGrowthInterval,
+            gb.harmMissileMaxSalvoSize
+        )
+
+        let targets = selectHarmTargets(salvoSize: salvoSize)
+        guard !targets.isEmpty else {
+            print("[HARM] No valid targets — salvo skipped")
+            return
+        }
+
+        pendingHarmSpawns += targets.count
+        for (i, tower) in targets.enumerated() {
+            let delay = TimeInterval(i) * gb.harmMissileInSalvoInterval
+            let spawnAction = SKAction.sequence([
+                SKAction.wait(forDuration: delay),
+                SKAction.run { [weak self, weak tower] in
+                    guard let self, let tower else {
+                        self?.pendingHarmSpawns = max(0, (self?.pendingHarmSpawns ?? 1) - 1)
+                        return
+                    }
+                    self.spawnSingleHarm(targetTower: tower)
+                }
+            ])
+            run(spawnAction)
+        }
+    }
+
+    private func spawnSingleHarm(targetTower tower: TowerEntity) {
+        pendingHarmSpawns = max(0, pendingHarmSpawns - 1)
+
+        // Re-check tower not disabled at spawn time
+        if let stats = tower.stats, stats.isDisabled {
+            print("[HARM] Target tower disabled at spawn time — skipping")
+            return
+        }
+
+        let gb = Constants.GameBalance.self
+        let spawnX = CGFloat.random(in: 20...(frame.width - 20))
+        let spawnY = frame.height + CGFloat.random(in: 30...50)
+        let spawnPoint = CGPoint(x: spawnX, y: spawnY)
+
+        let missileSpeed = gb.harmMissileBaseSpeed + CGFloat.random(in: -gb.harmMissileSpeedVariance...gb.harmMissileSpeedVariance)
+
+        let harm = HarmMissileEntity(sceneFrame: frame)
+
+        // Add altitude component — cruise altitude
+        harm.addComponent(AltitudeComponent(altitude: .cruise))
+        let shadow = ShadowComponent()
+        harm.addComponent(shadow)
+        shadowLayer?.addChild(shadow.shadowNode)
+
+        // Scale and zPosition for cruise altitude
+        if let spriteNode = harm.component(ofType: SpriteComponent.self)?.spriteNode {
+            let scale = DroneAltitude.cruise.droneVisualScale
+            spriteNode.size = CGSize(width: 7 * scale, height: 20 * scale)
+            spriteNode.zPosition = 61 + CGFloat(DroneAltitude.cruise.rawValue) * 5
+        }
+
+        harm.configureFlight(from: spawnPoint, toTower: tower, speed: missileSpeed)
+        print("[HARM] Spawned at (\(Int(spawnPoint.x)),\(Int(spawnPoint.y))) → tower \(tower.stats?.towerType.displayName ?? "?") speed=\(Int(missileSpeed))")
+
+        activeDrones.append(harm)
+        addEntity(harm)
+    }
+
+    func onHarmHitTower(harm: HarmMissileEntity) {
+        guard let tower = harm.targetTower,
+              let stats = tower.stats else { return }
+        tower.takeBombDamage(Constants.GameBalance.harmMissileTowerDamage)
+        print("[HARM] Hit tower \(stats.towerType.displayName) — durability=\(stats.durability)/\(stats.maxDurability) disabled=\(stats.isDisabled)")
+
+        // Impact explosion VFX
+        if let pos = harm.component(ofType: SpriteComponent.self)?.spriteNode.position {
+            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 20, height: 20))
+            flash.position = pos
+            flash.zPosition = 50
+            flash.alpha = 0.8
+            addChild(flash)
+            let expand = SKAction.scale(to: 2.5, duration: 0.2)
+            let fade = SKAction.fadeOut(withDuration: 0.2)
+            flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))
+        }
     }
 
     // MARK: - Mine Layer / Bomber Drone
@@ -885,16 +1198,34 @@ class InPlaySKScene: SKScene {
                 continue
             }
 
-            // Check if drone reached HQ area (bottom of map)
+            // HARM missiles that pass their target just miss — no HQ damage
             let hqThreshold = gridMap.origin.y + gridMap.cellSize.height
-            if !drone.isHit && droneNode.position.y < hqThreshold {
-                onDroneReachedHQ(drone: drone)
-                drone.reachedDestination()
+            if let harm = drone as? HarmMissileEntity, !drone.isHit, droneNode.position.y < hqThreshold {
+                harm.reachedDestination()
+                removeEntity(drone)
                 continue
             }
 
-            // Remove hit drones that fell off screen
-            if drone.isHit && droneNode.position.y < -50 {
+            // Check if drone reached HQ area (bottom of map)
+            if !drone.isHit && droneNode.position.y < hqThreshold {
+                if drone is EnemyMissileEntity {
+                    print("[MISSILE] Reached HQ threshold at (\(Int(droneNode.position.x)),\(Int(droneNode.position.y))) isHit=\(drone.isHit)")
+                }
+                onDroneReachedHQ(drone: drone)
+                drone.reachedDestination()
+                // Safety net: ensure entity is removed even if reachedDestination's
+                // removeFromParent() silently fails (e.g. spriteNode.scene already nil)
+                removeEntity(drone)
+                continue
+            }
+
+            // Remove drones that fell far off screen (ghost cleanup)
+            if droneNode.position.y < -50 {
+                if drone is EnemyMissileEntity {
+                    print("[MISSILE] Ghost cleanup at (\(Int(droneNode.position.x)),\(Int(droneNode.position.y))) isHit=\(drone.isHit)")
+                }
+                // HARM missiles miss — no HQ damage
+                if !drone.isHit && !(drone is HarmMissileEntity) { onDroneReachedHQ(drone: drone) }
                 removeEntity(drone)
                 continue
             }
@@ -1084,6 +1415,13 @@ class InPlaySKScene: SKScene {
         return fireControl.isDroneOverkilled(ObjectIdentifier(drone))
     }
 
+    /// Returns true and increments budget if a rocket is allowed to retarget this frame.
+    func consumeRetargetBudget() -> Bool {
+        guard rocketRetargetBudget < maxRetargetsPerFrame else { return false }
+        rocketRetargetBudget += 1
+        return true
+    }
+
     func onRocketDetonated(_ rocket: RocketEntity, at position: CGPoint, blastRadius: CGFloat) {
         fireControl.lockAssignmentForImpact(
             rocketID: ObjectIdentifier(rocket),
@@ -1094,18 +1432,18 @@ class InPlaySKScene: SKScene {
         )
     }
 
-    func spawnRocketBlast(at position: CGPoint, radius: CGFloat, damage: Int = 1) {
-        let blastTexture: SKTexture = {
-            let d: CGFloat = 64
-            let renderer = UIGraphicsImageRenderer(size: CGSize(width: d, height: d))
-            let image = renderer.image { ctx in
-                UIColor.white.setFill()
-                ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: d, height: d))
-            }
-            return SKTexture(image: image)
-        }()
+    private static let blastTexture: SKTexture = {
+        let d: CGFloat = 64
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: d, height: d))
+        let image = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: d, height: d))
+        }
+        return SKTexture(image: image)
+    }()
 
-        let blast = SKSpriteNode(texture: blastTexture)
+    func spawnRocketBlast(at position: CGPoint, radius: CGFloat, damage: Int = 1) {
+        let blast = SKSpriteNode(texture: Self.blastTexture)
         blast.size = CGSize(width: radius * 2, height: radius * 2)
         blast.name = "rocketBlastNode"
         blast.position = position
@@ -1127,16 +1465,22 @@ class InPlaySKScene: SKScene {
     }
 
     private func syncFireControlState() {
+        guard !fireControlSyncedThisFrame else { return }
+        fireControlSyncedThisFrame = true
         let rocketsInFlightIDs = Set(activeRockets.map { ObjectIdentifier($0) })
         fireControl.syncAssignments(
             withActiveRocketIDs: rocketsInFlightIDs,
             currentTime: elapsedGameplayTime
         )
         fireControl.syncTracks(
-            with: activeDrones.filter { !$0.isHit },
+            with: activeDrones.filter { !$0.isHit && !($0 is MineLayerDroneEntity) },
             currentTime: elapsedGameplayTime,
             sceneHeight: frame.height
         )
+        let missileTrackCount = activeDrones.filter { $0 is EnemyMissileEntity && !$0.isHit }.count
+        if missileTrackCount > 0 {
+            print("[SYNC] tracks=\(fireControl.trackCount) missiles_in_activeDrones=\(missileTrackCount) rockets=\(activeRockets.count)")
+        }
     }
 
     // MARK: - Touch Handling
@@ -1347,6 +1691,10 @@ class InPlaySKScene: SKScene {
 
         if currentPhase == .combat {
             elapsedGameplayTime += scaledDt
+            // Sync fire control ONCE before entity updates so towers/rockets see fresh data
+            fireControlSyncedThisFrame = false
+            rocketRetargetBudget = 0
+            syncFireControlState()
         }
 
         // Update all entities
@@ -1359,7 +1707,6 @@ class InPlaySKScene: SKScene {
             cleanupDrones()
             updateShadows()
             updateMineLayerOffscreenIndicator()
-            syncFireControlState()
 
             // Check wave completion
             if let waveManager, !waveManager.isWaveInProgress && activeDrones.isEmpty {
