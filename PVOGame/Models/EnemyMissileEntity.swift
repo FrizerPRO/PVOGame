@@ -12,7 +12,8 @@ final class EnemyMissileEntity: AttackDroneEntity {
     private var targetPoint: CGPoint = .zero
     private var velocity: CGVector = .zero
     private var smokeAccumulator: TimeInterval = 0
-    private var positionLogAccumulator: TimeInterval = 0
+    private var nightFlameNode: SKSpriteNode?
+
 
     private static let smokePuffTexture: SKTexture = {
         let diameter: CGFloat = 14
@@ -103,32 +104,58 @@ final class EnemyMissileEntity: AttackDroneEntity {
         spriteNode.position.x += velocity.dx * CGFloat(seconds)
         spriteNode.position.y += velocity.dy * CGFloat(seconds)
 
-        // Throttled position logging
-        positionLogAccumulator += seconds
-        if positionLogAccumulator >= 1.0 {
-            positionLogAccumulator = 0
-            print("[MISSILE] pos=(\(Int(spriteNode.position.x)),\(Int(spriteNode.position.y))) vel=(\(Int(velocity.dx)),\(Int(velocity.dy))) isHit=\(isHit)")
-        }
+        // Night mode: persistent flame, no puffs
+        let gameScene = spriteNode.scene as? InPlaySKScene
+        let nightMode = gameScene?.isNightWave == true
 
-        // Emit smoke puffs
-        smokeAccumulator += seconds
-        if smokeAccumulator >= 0.1, let scene = spriteNode.scene {
-            smokeAccumulator = 0
+        if nightMode {
+            spriteNode.color = .clear  // hide body, keep alpha=1 so children visible
+            if nightFlameNode == nil {
+                let flame = SKSpriteNode(texture: Self.smokePuffTexture)
+                flame.size = CGSize(width: 6, height: 6)
+                flame.color = UIColor(red: 1, green: 0.35, blue: 0.1, alpha: 1)
+                flame.colorBlendFactor = 1.0
+                flame.alpha = 0.85
+                flame.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
+                flame.zPosition = Constants.NightWave.nightEffectZPosition - spriteNode.zPosition
+                spriteNode.addChild(flame)
+                let flicker = SKAction.sequence([
+                    SKAction.fadeAlpha(to: 0.5, duration: 0.12),
+                    SKAction.fadeAlpha(to: 0.85, duration: 0.12)
+                ])
+                flame.run(SKAction.repeatForever(flicker))
+                nightFlameNode = flame
+            }
+        } else {
+            spriteNode.color = UIColor(red: 0.85, green: 0.15, blue: 0.1, alpha: 1)  // restore body color
+            if let flame = nightFlameNode { flame.removeFromParent(); nightFlameNode = nil }
 
-            let tailOffset = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
-            var tailPoint = spriteNode.convert(tailOffset, to: scene)
-            tailPoint.x += CGFloat.random(in: -1.5...1.5)
-            tailPoint.y += CGFloat.random(in: -1.5...1.5)
+            // Day smoke puffs
+            smokeAccumulator += seconds
+            if smokeAccumulator >= 0.1, let scene = spriteNode.scene {
+                smokeAccumulator = 0
 
-            let puff = SKSpriteNode(texture: Self.smokePuffTexture)
-            puff.size = CGSize(width: 5, height: 5)
-            puff.position = tailPoint
-            puff.zPosition = 40
-            puff.color = UIColor(white: 0.9, alpha: 0.9)
-            puff.colorBlendFactor = 1.0
-            puff.alpha = 0.6
-            scene.addChild(puff)
-            puff.run(Self.smokePuffAction)
+                let tailOffset = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
+                var tailPoint = spriteNode.convert(tailOffset, to: scene)
+                tailPoint.x += CGFloat.random(in: -1.5...1.5)
+                tailPoint.y += CGFloat.random(in: -1.5...1.5)
+
+                let puff = gameScene?.acquireSmokePuff() ?? SKSpriteNode(texture: Self.smokePuffTexture)
+                puff.size = CGSize(width: 5, height: 5)
+                puff.position = tailPoint
+                puff.zPosition = 40
+                puff.color = UIColor(white: 0.9, alpha: 0.9)
+                puff.colorBlendFactor = 1.0
+                puff.alpha = 0.6
+                scene.addChild(puff)
+                puff.run(SKAction.sequence([
+                    SKAction.group([SKAction.scale(to: 2.0, duration: 0.4), SKAction.fadeOut(withDuration: 0.4)]),
+                    SKAction.run { [weak gameScene, weak puff] in
+                        guard let gameScene, let puff else { return }
+                        gameScene.releaseSmokePuff(puff)
+                    }
+                ]))
+            }
         }
     }
 
@@ -143,7 +170,7 @@ final class EnemyMissileEntity: AttackDroneEntity {
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
             flash.position = spriteNode.position
-            flash.zPosition = 55
+            flash.zPosition = (spriteNode.scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 55
             flash.alpha = 0.9
             spriteNode.scene?.addChild(flash)
 
@@ -168,7 +195,7 @@ final class EnemyMissileEntity: AttackDroneEntity {
            let scene = spriteNode.scene {
             let flash = SKSpriteNode(color: .orange, size: CGSize(width: 18, height: 18))
             flash.position = spriteNode.position
-            flash.zPosition = 50
+            flash.zPosition = (scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 50
             flash.alpha = 0.7
             scene.addChild(flash)
 

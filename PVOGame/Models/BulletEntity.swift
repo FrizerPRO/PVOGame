@@ -136,6 +136,7 @@ class RocketEntity: BulletEntity {
     private var targetPoint = CGPoint.zero
     private var isGuided = false
     private var smokeSpawnAccumulator: TimeInterval = 0
+    private var nightFlameNode: SKSpriteNode?
     private var retargetAccumulator: TimeInterval = 0
     private var climbsWhenNoTargets = true
     private var travelledDistance: CGFloat = 0
@@ -309,6 +310,40 @@ class RocketEntity: BulletEntity {
     private func emitSmokeIfNeeded(from spriteNode: SKSpriteNode, deltaTime seconds: TimeInterval) {
         guard let scene = spriteNode.scene else { return }
 
+        let gameScene = scene as? InPlaySKScene
+        let nightMode = gameScene?.isNightWave == true
+
+        // Night mode: persistent flame glow on rocket tail, no smoke puffs
+        if nightMode {
+            // Hide body via color blend (keeps alpha=1 so children stay visible)
+            spriteNode.colorBlendFactor = 1.0
+            spriteNode.color = .clear
+            if nightFlameNode == nil {
+                let flame = SKSpriteNode(texture: Self.smokePuffTexture)
+                flame.size = CGSize(width: 8, height: 8)
+                flame.color = UIColor(red: 1, green: 0.3, blue: 0.1, alpha: 1)
+                flame.colorBlendFactor = 1.0
+                flame.alpha = 0.9
+                flame.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
+                flame.zPosition = Constants.NightWave.nightEffectZPosition - spriteNode.zPosition
+                spriteNode.addChild(flame)
+                let flicker = SKAction.sequence([
+                    SKAction.fadeAlpha(to: 0.6, duration: 0.15),
+                    SKAction.fadeAlpha(to: 0.9, duration: 0.15)
+                ])
+                flame.run(SKAction.repeatForever(flicker))
+                nightFlameNode = flame
+            }
+            return
+        }
+
+        // Day mode: restore body, normal smoke puffs
+        spriteNode.colorBlendFactor = 0
+        if let flame = nightFlameNode {
+            flame.removeFromParent()
+            nightFlameNode = nil
+        }
+
         smokeSpawnAccumulator -= seconds
         guard smokeSpawnAccumulator <= 0 else { return }
         smokeSpawnAccumulator += 0.12
@@ -318,7 +353,7 @@ class RocketEntity: BulletEntity {
         tailPoint.y += CGFloat.random(in: -2...2)
 
         let baseRadius = CGFloat.random(in: 2.5...4.5)
-        let puff = SKSpriteNode(texture: Self.smokePuffTexture)
+        let puff = gameScene?.acquireSmokePuff() ?? SKSpriteNode(texture: Self.smokePuffTexture)
         puff.size = CGSize(width: baseRadius * 2, height: baseRadius * 2)
         puff.position = tailPoint
         puff.zPosition = 40
@@ -329,7 +364,14 @@ class RocketEntity: BulletEntity {
         puff.yScale = 0.75
         scene.addChild(puff)
 
-        puff.run(Self.smokePuffAction)
+        puff.run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.15),
+            SKAction.group([SKAction.scale(to: 2.5, duration: 0.45), SKAction.fadeOut(withDuration: 0.45)]),
+            SKAction.run { [weak gameScene, weak puff] in
+                guard let gameScene, let puff else { return }
+                gameScene.releaseSmokePuff(puff)
+            }
+        ]))
     }
 
     private func retargetIfNeeded(from spriteNode: SKSpriteNode, deltaTime seconds: TimeInterval) -> Bool {
@@ -407,6 +449,14 @@ class RocketEntity: BulletEntity {
         guidancePhase = .coast
         isGuided = false
         spriteNode.physicsBody?.affectedByGravity = true
+
+        // Clear fire control reservation immediately — the rocket is no longer
+        // guided and won't hit the intended target. Without this, the target
+        // stays marked "overkilled" during the entire coast phase (0.5-1.5s),
+        // preventing other towers from retargeting it.
+        if let scene = spriteNode.scene as? InPlaySKScene {
+            scene.onRocketDetonated(self, at: spriteNode.position, blastRadius: 0)
+        }
     }
 
     private func updateGuidancePhase(distanceToTarget: CGFloat) {

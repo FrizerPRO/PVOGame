@@ -67,6 +67,10 @@ class Constants{
         static let scorePerMineLayerDrone = 250
         static let waveSpeedIncrease: CGFloat = 25
         static let waveDroneIncrease = 10
+        // Asymptotic drone speed curve: baseSpeed + maxBonus * (1 - exp(-wave * rate))
+        static let droneBaseSpeed: CGFloat = 40
+        static let droneMaxSpeedBonus: CGFloat = 55
+        static let droneSpeedGrowthRate: CGFloat = 0.12
         static let isRegularDroneEnabled = true
         static let isMineLayerEnabled = true
         static let isRocketLauncherEnabled = false
@@ -260,11 +264,192 @@ class Constants{
         static let samCost = 350
         static let interceptorCost = 250
         static let radarCost = 150
+        static let pzrkCost = 50
+        static let gepardCost = 175
         static let upgradeCostMultiplier: CGFloat = 1.5
 
         static let hqLives = 20
     }
 
+    // MARK: - Kamikaze Drone Constants
+    struct Kamikaze {
+        static let isEnabled = true
+        static let firstWave = 5
+        static let speed: CGFloat = 40
+        static let health = 1
+        static let hqDamage = 3
+        static let towerDamage = 2
+        static let reward = 10
+        static let scorePerKill = 50
+        static let spawnBatchMin = 5
+        static let spawnBatchMax = 8
+        static let spawnInterval: TimeInterval = 0.3
+        static let spriteScale: CGFloat = 0.5
+        static let spawnDelay: TimeInterval = 4.0
+    }
+
+    // MARK: - Night Wave Constants
+    struct NightWave {
+        static let overlayAlpha: CGFloat = 1.0
+        static let transitionDuration: TimeInterval = 2.0
+        static let nightWaveInterval = 4
+        static let firstNightWave = 3
+        static let nightEffectZPosition: CGFloat = 91
+    }
+
+    // MARK: - EW (Electronic Warfare) Constants
+    struct EW {
+        // Enemy EW drone
+        static let isEWDroneEnabled = true
+        static let ewDroneFirstWave = 6
+        static let ewDroneSpeed: CGFloat = 60
+        static let ewDroneHealth = 4
+        static let ewDroneJamRadius: CGFloat = 150
+        static let ewDroneAccuracyMultiplier: CGFloat = 0.4
+        static let ewDroneTurnRateMultiplier: CGFloat = 0.5
+        static let ewDroneReward = 60
+        static let ewDroneScore = 300
+        // Player EW tower
+        static let ewTowerCost = 175
+        static let ewTowerRange: CGFloat = 120
+        static let ewTowerSlowMultiplier: CGFloat = 0.6
+        static let ewTowerFPVKillChance: CGFloat = 0.25
+        static let ewTowerFPVKillInterval: TimeInterval = 0.5
+    }
+
+    // MARK: - Ability Constants
+    struct Abilities {
+        // Fighter
+        static let fighterCooldown: TimeInterval = 90
+        static let fighterMaxKills = 5
+        static let fighterFlyDuration: TimeInterval = 0.8
+        static let fighterZPosition: CGFloat = 85
+        // Barrage
+        static let barrageCooldown: TimeInterval = 60
+        static let barrageDelay: TimeInterval = 2.0
+        static let barrageExplosionCount = 5
+        static let barrageRadius: CGFloat = 80
+        static let barrageDamage = 3
+        // Emergency Reload
+        static let reloadCooldown: TimeInterval = 15
+        // UI
+        static let abilityButtonSize: CGFloat = 50
+        static let abilityButtonZPosition: CGFloat = 98
+    }
+
+    // MARK: - Advanced Enemy Constants
+    struct AdvancedEnemies {
+        // Heavy Drone (Bayraktar)
+        static let heavyDroneFirstWave = 7
+        static let heavyDroneSpeed: CGFloat = 25
+        static let heavyDroneHealth = 12
+        static let heavyDroneArmor = 2
+        static let heavyDroneBombCount = 2
+        static let heavyDroneExitSpeed: CGFloat = 80
+        static let heavyDroneSpriteScale: CGFloat = 1.4
+        static let heavyDroneReward = 80
+        static let heavyDroneScore = 300
+        // Cruise Missile
+        static let cruiseMissileFirstWave = 8
+        static let cruiseMissileMinSpeed: CGFloat = 150
+        static let cruiseMissileMaxSpeed: CGFloat = 200
+        static let cruiseMissileHealth = 3
+        static let cruiseMissileHQDamage = 4
+        static let cruiseMissileEvasionRadius: CGFloat = 60
+        static let cruiseMissileMaxEvasions = 3
+        static let cruiseMissileEvasionAngle: CGFloat = .pi / 3  // 60°
+        static let cruiseMissileDiveChance: CGFloat = 0.3
+        static let cruiseMissileDiveDuration: TimeInterval = 1.5
+        static let cruiseMissileScore = 250
+        static let cruiseMissileReward = 45
+        // Swarm
+        static let swarmFirstWave = 10
+        static let swarmDroneCount = 15
+        static let swarmDroneHealth = 1
+        static let swarmSeparation: CGFloat = 12
+        static let swarmCohesion: CGFloat = 15
+        static let swarmSpeed: CGFloat = 50
+        static let swarmScore = 30  // per drone
+        static let swarmReward = 8  // per drone
+        static let swarmMaxBlastKills = 6
+        static let swarmDisorganizedSpeed: CGFloat = 65
+        static let swarmFanAngle: CGFloat = .pi / 4
+    }
+
+    // MARK: - Shahed-136 Constants
+    struct Shahed {
+        static let firstWave = 6
+        static let speed: CGFloat = 50
+        static let health = 2
+        static let reward = 8
+        static let scorePerKill = 30
+        static let batchSize = 10      // drones per spawn batch
+        static let spawnInterval: TimeInterval = 0.5  // between drones in a batch
+        static let batchDelay: TimeInterval = 8.0     // between batches
+    }
+
+    // MARK: - Lancet Constants
+    struct Lancet {
+        static let firstWave = 8
+        static let speed: CGFloat = 60
+        static let health = 2
+        static let reward = 25
+        static let scorePerKill = 100
+        static let loiterDuration: TimeInterval = 10.0  // circle before diving
+        static let diveSpeed: CGFloat = 200
+        static let towerDestroyDamage = 100  // enough to destroy any tower
+        static let spawnDelay: TimeInterval = 12.0
+    }
+
+    // MARK: - Orlan-10 Constants
+    struct Orlan {
+        static let firstWave = 9
+        static let speed: CGFloat = 40
+        static let health = 4
+        static let reward = 35
+        static let scorePerKill = 150
+        static let buffRadius: CGFloat = 999  // global effect while alive
+        static let salvoIntervalMultiplier: CGFloat = 0.65  // missiles come 35% faster
+        static let spawnDelay: TimeInterval = 15.0
+    }
+
+    // MARK: - Settlement Constants
+    struct Settlement {
+        static let count = 5
+        static let minDistanceFromEdge = 2
+        static let minDistanceBetween = 3
+        static let minDistanceFromHQ = 3
+
+        // HP per level
+        static let baseHP = 3
+        static let level2HP = 5
+        static let level3HP = 8
+
+        // Income per wave per level
+        static let level1Income = 30
+        static let level2Income = 60
+        static let level3Income = 100
+
+        // Upgrade costs
+        static let upgradeCostLevel2 = 150
+        static let upgradeCostLevel3 = 300
+
+        // Damage to global lives
+        static let droneDamageToLives = 1
+        static let kamikazeDamageToLives = 2
+        static let cruiseMissileDamageToLives = 3
+
+        // Drone targeting
+        static let strategicTargetingChance: CGFloat = 0.6
+        static let level2TargetPriorityMultiplier: CGFloat = 1.5
+        static let level3TargetPriorityMultiplier: CGFloat = 2.0
+
+        // Visual
+        static let spriteZPosition: CGFloat = 15
+    }
+
     static let hqName = "headquarters"
     static let towerBitMask: UInt32 = 0x1 << 7
+    static let kamikazeBitMask: UInt32 = 0x1 << 8
+    static let settlementBitMask: UInt32 = 0x1 << 9
 }

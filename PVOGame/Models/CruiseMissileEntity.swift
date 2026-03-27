@@ -1,5 +1,5 @@
 //
-//  HarmMissileEntity.swift
+//  CruiseMissileEntity.swift
 //  PVOGame
 //
 
@@ -7,14 +7,15 @@ import Foundation
 import GameplayKit
 import SpriteKit
 
-final class HarmMissileEntity: AttackDroneEntity {
+final class CruiseMissileEntity: AttackDroneEntity {
 
-    weak var targetTower: TowerEntity?
     private var targetPoint: CGPoint = .zero
     private var velocity: CGVector = .zero
     private var smokeAccumulator: TimeInterval = 0
     private var nightFlameNode: SKSpriteNode?
-
+    private var evasionsRemaining: Int = Constants.AdvancedEnemies.cruiseMissileMaxEvasions
+    private var isDiving = false
+    private var diveTimer: TimeInterval = 0
 
     private static let smokePuffTexture: SKTexture = {
         let diameter: CGFloat = 14
@@ -52,16 +53,17 @@ final class HarmMissileEntity: AttackDroneEntity {
         )
         super.init(
             damage: 1,
-            speed: Constants.GameBalance.harmMissileBaseSpeed,
+            speed: Constants.AdvancedEnemies.cruiseMissileMinSpeed,
             imageName: "Bullet",
             flyingPath: dummyPath
         )
         removeComponent(ofType: FlyingProjectileComponent.self)
+        configureHealth(Constants.AdvancedEnemies.cruiseMissileHealth)
 
-        // Olive green missile sprite
+        // Gray cruise missile sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 7, height: 20)
-            spriteNode.color = UIColor(red: 0.4, green: 0.5, blue: 0.35, alpha: 1)
+            spriteNode.size = CGSize(width: 8, height: 22)
+            spriteNode.color = UIColor(white: 0.55, alpha: 1)
             spriteNode.colorBlendFactor = 1.0
         }
     }
@@ -74,29 +76,24 @@ final class HarmMissileEntity: AttackDroneEntity {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configureFlight(from spawnPoint: CGPoint, toTower tower: TowerEntity, speed missileSpeed: CGFloat) {
-        self.targetTower = tower
+    func configureFlight(from spawnPoint: CGPoint, to target: CGPoint, speed missileSpeed: CGFloat) {
+        self.targetPoint = target
         self.speed = missileSpeed
-
-        // Target the tower's position
-        if let towerPos = tower.component(ofType: SpriteComponent.self)?.spriteNode.position {
-            self.targetPoint = towerPos
-        }
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.position = spawnPoint
         }
 
-        let dx = targetPoint.x - spawnPoint.x
-        let dy = targetPoint.y - spawnPoint.y
+        let dx = target.x - spawnPoint.x
+        let dy = target.y - spawnPoint.y
         let dist = sqrt(dx * dx + dy * dy)
         guard dist > 0 else { return }
 
+        // Generate zig-zag waypoint deviation
         let dirX = dx / dist
         let dirY = dy / dist
         velocity = CGVector(dx: dirX * missileSpeed, dy: dirY * missileSpeed)
 
-        // Rotate sprite to face direction of travel
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.zRotation = atan2(dy, dx) - .pi / 2
         }
@@ -106,18 +103,59 @@ final class HarmMissileEntity: AttackDroneEntity {
         guard !isHit else { return }
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
+        // Dive timer
+        if isDiving {
+            diveTimer -= seconds
+            if diveTimer <= 0 {
+                isDiving = false
+                // Restore cruise altitude
+                if let altComp = component(ofType: AltitudeComponent.self) {
+                    altComp.altitude = .cruise
+                }
+            }
+        }
+
+        // Evasion check: check nearby rockets
+        if evasionsRemaining > 0, let scene = spriteNode.scene as? InPlaySKScene {
+            let evasionRadius = Constants.AdvancedEnemies.cruiseMissileEvasionRadius
+            for rocket in scene.entities.compactMap({ $0 as? RocketEntity }) {
+                guard let rocketPos = rocket.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
+                let dx = rocketPos.x - spriteNode.position.x
+                let dy = rocketPos.y - spriteNode.position.y
+                if dx * dx + dy * dy < evasionRadius * evasionRadius {
+                    performEvasion()
+                    break
+                }
+            }
+        }
+
         // Move
         spriteNode.position.x += velocity.dx * CGFloat(seconds)
         spriteNode.position.y += velocity.dy * CGFloat(seconds)
 
-        // Check proximity to target — impact
-        let dx = spriteNode.position.x - targetPoint.x
-        let dy = spriteNode.position.y - targetPoint.y
-        let dist = sqrt(dx * dx + dy * dy)
-        if dist < 15 {
-            (spriteNode.scene as? InPlaySKScene)?.onHarmHitTower(harm: self)
-            reachedDestination()
-            return
+        // Update rotation to match velocity
+        spriteNode.zRotation = atan2(velocity.dy, velocity.dx) - .pi / 2
+
+        // Random dive near towers
+        if !isDiving, let scene = spriteNode.scene as? InPlaySKScene {
+            if let towerPlacement = scene.towerPlacement {
+                for tower in towerPlacement.towers {
+                    guard let stats = tower.stats, !stats.isDisabled else { continue }
+                    let tPos = tower.worldPosition
+                    let dx = tPos.x - spriteNode.position.x
+                    let dy = tPos.y - spriteNode.position.y
+                    if dx * dx + dy * dy < stats.range * stats.range * 0.5 {
+                        if CGFloat.random(in: 0...1) < Constants.AdvancedEnemies.cruiseMissileDiveChance * CGFloat(seconds) {
+                            isDiving = true
+                            diveTimer = Constants.AdvancedEnemies.cruiseMissileDiveDuration
+                            if let altComp = component(ofType: AltitudeComponent.self) {
+                                altComp.altitude = .low
+                            }
+                        }
+                        break
+                    }
+                }
+            }
         }
 
         // Night mode: persistent flame, no puffs
@@ -143,12 +181,12 @@ final class HarmMissileEntity: AttackDroneEntity {
                 nightFlameNode = flame
             }
         } else {
-            spriteNode.color = UIColor(red: 0.4, green: 0.5, blue: 0.35, alpha: 1)
+            spriteNode.color = UIColor(white: 0.55, alpha: 1)
             if let flame = nightFlameNode { flame.removeFromParent(); nightFlameNode = nil }
 
-            // Day smoke puffs
+            // Day smoke trail
             smokeAccumulator += seconds
-            if smokeAccumulator >= 0.1, let scene = spriteNode.scene {
+            if smokeAccumulator >= 0.08, let scene = spriteNode.scene {
                 smokeAccumulator = 0
 
                 let tailOffset = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
@@ -160,7 +198,7 @@ final class HarmMissileEntity: AttackDroneEntity {
                 puff.size = CGSize(width: 5, height: 5)
                 puff.position = tailPoint
                 puff.zPosition = 40
-                puff.color = UIColor(white: 0.85, alpha: 0.9)
+                puff.color = UIColor(white: 0.7, alpha: 0.8)
                 puff.colorBlendFactor = 1.0
                 puff.alpha = 0.5
                 scene.addChild(puff)
@@ -175,6 +213,17 @@ final class HarmMissileEntity: AttackDroneEntity {
         }
     }
 
+    private func performEvasion() {
+        evasionsRemaining -= 1
+        let evasionAngle = Constants.AdvancedEnemies.cruiseMissileEvasionAngle
+        let currentAngle = atan2(velocity.dy, velocity.dx)
+        let deviation = Bool.random() ? evasionAngle : -evasionAngle
+        let newAngle = currentAngle + deviation
+
+        let currentSpeed = sqrt(velocity.dx * velocity.dx + velocity.dy * velocity.dy)
+        velocity = CGVector(dx: cos(newAngle) * currentSpeed, dy: sin(newAngle) * currentSpeed)
+    }
+
     override func didHit() {
         isHit = true
 
@@ -182,7 +231,6 @@ final class HarmMissileEntity: AttackDroneEntity {
         physicBody?.contactTestBitMask = 0
         physicBody?.categoryBitMask = 0
 
-        // Orange explosion flash
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
             flash.position = spriteNode.position
@@ -206,15 +254,13 @@ final class HarmMissileEntity: AttackDroneEntity {
             removeFromParent()
             return
         }
-        // Explosion VFX at impact point
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
            let scene = spriteNode.scene {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 18, height: 18))
+            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 20, height: 20))
             flash.position = spriteNode.position
             flash.zPosition = (scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 50
             flash.alpha = 0.7
             scene.addChild(flash)
-
             let expand = SKAction.scale(to: 2.0, duration: 0.15)
             let fade = SKAction.fadeOut(withDuration: 0.15)
             flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))

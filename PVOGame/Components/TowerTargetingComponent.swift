@@ -10,7 +10,7 @@ class TowerTargetingComponent: GKComponent {
     private(set) weak var currentTarget: AttackDroneEntity?
     private var fireCooldown: TimeInterval = 0
 
-    private static let tracerTexture: SKTexture = {
+    static let poolTracerTexture: SKTexture = {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
         let image = renderer.image { ctx in
             UIColor.white.setFill()
@@ -19,13 +19,6 @@ class TowerTargetingComponent: GKComponent {
         return SKTexture(image: image)
     }()
 
-    private static let hitTracerAction: SKAction = {
-        SKAction.sequence([SKAction.fadeOut(withDuration: 0.12), SKAction.removeFromParent()])
-    }()
-
-    private static let missTracerAction: SKAction = {
-        SKAction.sequence([SKAction.fadeOut(withDuration: 0.1), SKAction.removeFromParent()])
-    }()
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -48,17 +41,9 @@ class TowerTargetingComponent: GKComponent {
         stats.updateMagazineReload(deltaTime: seconds)
 
         if stats.isDisabled {
-            if (stats.towerType == .samLauncher || stats.towerType == .interceptor) {
-                let hasMissiles = scene.activeDronesForTowers.contains(where: { ($0 is EnemyMissileEntity || $0 is HarmMissileEntity) && !$0.isHit })
-                if hasMissiles { print("[TOWER] \(stats.towerType.displayName) DISABLED while missiles present") }
-            }
             currentTarget = nil; return
         }
         if stats.isReloading {
-            if (stats.towerType == .samLauncher || stats.towerType == .interceptor) {
-                let hasMissiles = scene.activeDronesForTowers.contains(where: { ($0 is EnemyMissileEntity || $0 is HarmMissileEntity) && !$0.isHit })
-                if hasMissiles { print("[TOWER] \(stats.towerType.displayName) RELOADING (ammo=\(stats.magazineAmmo ?? -1) progress=\(String(format: "%.0f%%", stats.reloadProgress * 100))) while missiles present") }
-            }
             currentTarget = nil; return
         }
         if scene.currentPhase != .combat { return }
@@ -85,7 +70,13 @@ class TowerTargetingComponent: GKComponent {
         guard let targetPos = target.component(ofType: SpriteComponent.self)?.spriteNode.position else { return }
 
         let didFire = fire(from: towerPos, toward: targetPos, in: scene, stats: stats)
-        fireCooldown = didFire ? (1.0 / stats.fireRate) : 0.1
+        if didFire {
+            fireCooldown = 1.0 / stats.fireRate
+        } else {
+            // Fire control rejected the shot — drop target so we re-evaluate next frame
+            currentTarget = nil
+            fireCooldown = 0.15
+        }
     }
 
     private func isInRange(_ drone: AttackDroneEntity, towerPos: CGPoint, stats: TowerStatsComponent) -> Bool {
@@ -93,7 +84,19 @@ class TowerTargetingComponent: GKComponent {
         let dx = dronePos.x - towerPos.x
         let dy = dronePos.y - towerPos.y
         let distSq = dx * dx + dy * dy
+
+        // Range check: always use full range
         guard distSq <= stats.range * stats.range else { return false }
+
+        // Night radar gate: gun-based AA and IR-guided ПЗРК require radar coverage at night
+        if stats.towerType == .autocannon || stats.towerType == .ciws
+            || stats.towerType == .gepard || stats.towerType == .pzrk {
+            if let tower = entity as? TowerEntity,
+               let scene = tower.component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene,
+               scene.isNightWave {
+                guard scene.isPositionInRadarCoverage(dronePos) else { return false }
+            }
+        }
 
         // Check altitude compatibility
         if let altComp = drone.component(ofType: AltitudeComponent.self) {
@@ -107,30 +110,9 @@ class TowerTargetingComponent: GKComponent {
         var bestDrone: AttackDroneEntity?
         var bestScore: CGFloat = -.greatestFiniteMagnitude
 
-        // DEBUG: log missile visibility for rocket towers
-        let droneList = scene.activeDronesForTowers.filter { !$0.isHit }
-        if isRocketTower && droneList.contains(where: { $0 is EnemyMissileEntity || $0 is HarmMissileEntity }) {
-            print("[TARGET] \(stats.towerType.displayName) at (\(Int(towerPos.x)),\(Int(towerPos.y))): \(droneList.count) alive, \(droneList.filter { $0 is EnemyMissileEntity }.count) missiles, ammo=\(stats.magazineAmmo ?? -1) reloading=\(stats.isReloading) disabled=\(stats.isDisabled) cooldown=\(String(format: "%.2f", fireCooldown)) alertActive=\(scene.isMissileAlertActive)")
-        }
-
         for drone in scene.activeDronesForTowers where !drone.isHit {
-            guard isInRange(drone, towerPos: towerPos, stats: stats) else {
-                // DEBUG: log WHY not in range for missiles
-                if isRocketTower && (drone is EnemyMissileEntity || drone is HarmMissileEntity) {
-                    let dronePos = drone.component(ofType: SpriteComponent.self)?.spriteNode.position ?? .zero
-                    let dist = hypot(dronePos.x - towerPos.x, dronePos.y - towerPos.y)
-                    let alt = drone.component(ofType: AltitudeComponent.self)?.altitude
-                    print("[TARGET] SKIP missile at \(dronePos) dist=\(Int(dist)) range=\(Int(stats.range)) alt=\(String(describing: alt)) reachable=\(stats.reachableAltitudes)")
-                }
-                continue
-            }
+            guard isInRange(drone, towerPos: towerPos, stats: stats) else { continue }
             guard let dronePos = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
-
-            // Log missile in range for rocket towers
-            if isRocketTower && (drone is EnemyMissileEntity || drone is HarmMissileEntity) {
-                let score = -dronePos.y + 5000
-                print("[TARGET] MISSILE IN RANGE at (\(Int(dronePos.x)),\(Int(dronePos.y))) dist=\(Int(hypot(dronePos.x - towerPos.x, dronePos.y - towerPos.y))) score=\(Int(score)) overkilled=\(scene.isDroneOverkilled(drone)) reserved=\(scene.isDroneReservedByRocket(drone))")
-            }
 
             // Missile alert: rocket towers hold fire for missiles, skip non-missile targets
             if isRocketTower && scene.isMissileAlertActive && !(drone is EnemyMissileEntity) && !(drone is HarmMissileEntity) {
@@ -138,9 +120,9 @@ class TowerTargetingComponent: GKComponent {
             }
 
             // Ammo reservation: rocket towers save rounds for incoming missiles
-            if isRocketTower && scene.waveHasPendingMissiles && !(drone is EnemyMissileEntity) && !(drone is HarmMissileEntity) {
+            if isRocketTower && scene.isMissileAlertActive && !(drone is EnemyMissileEntity) && !(drone is HarmMissileEntity) {
                 if let ammo = stats.magazineAmmo {
-                    let reserved = stats.towerType == .samLauncher ? 4 : 3
+                    let reserved = stats.towerType == .samLauncher ? 2 : 1
                     if ammo <= reserved { continue }
                 }
             }
@@ -158,10 +140,16 @@ class TowerTargetingComponent: GKComponent {
                 score += 3000
             }
 
-            // Rocket towers: deprioritize overkilled/reserved drones to spread fire
+            // Rocket towers: spread fire across targets
             if isRocketTower {
+                let isMissileTarget = drone is EnemyMissileEntity || drone is HarmMissileEntity
                 if scene.isDroneOverkilled(drone) {
-                    score -= 20000
+                    if isMissileTarget {
+                        // Missiles are fast — rocket may miss, so only deprioritize
+                        score -= 10000
+                    } else {
+                        continue  // Slow drone: enough rockets already en route
+                    }
                 } else if scene.isDroneReservedByRocket(drone) {
                     score -= 10000
                 }
@@ -171,10 +159,6 @@ class TowerTargetingComponent: GKComponent {
                 bestScore = score
                 bestDrone = drone
             }
-        }
-        // DEBUG: log result for rocket towers (only when missiles present to avoid spam)
-        if isRocketTower && (bestDrone != nil || droneList.contains(where: { $0 is EnemyMissileEntity || $0 is HarmMissileEntity })) {
-            print("[TARGET] \(stats.towerType.displayName) bestTarget=\(bestDrone != nil ? String(describing: type(of: bestDrone!)) : "nil") score=\(bestScore)")
         }
         return bestDrone
     }
@@ -195,6 +179,15 @@ class TowerTargetingComponent: GKComponent {
             return fired
         case .radar:
             return false
+        case .ewTower:
+            return false  // EW tower doesn't fire; effects handled by EWTowerComponent
+        case .pzrk:
+            let fired = fireRocket(from: towerPos, toward: targetPos, in: scene, spec: Constants.GameBalance.interceptorRocketBaseSpec)
+            if fired { stats.consumeAmmo() }
+            return fired
+        case .gepard:
+            fireBullet(from: towerPos, toward: targetPos, in: scene, stats: stats)
+            return true
         }
     }
 
@@ -206,7 +199,12 @@ class TowerTargetingComponent: GKComponent {
         } else {
             targetAltitude = .low
         }
-        let accuracy = stats.towerType.accuracy(against: targetAltitude)
+        var accuracy = stats.towerType.accuracy(against: targetAltitude)
+        // Apply EW jamming debuff
+        if let tower = entity as? TowerEntity,
+           let scene = tower.component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene {
+            accuracy *= scene.ewJammingMultiplier(for: tower)
+        }
         let isHit = CGFloat.random(in: 0...1) < accuracy
 
         let dx = target.x - origin.x
@@ -231,20 +229,27 @@ class TowerTargetingComponent: GKComponent {
                 shootComp.shoot(vector: direction)
             }
 
-            // Hit tracer (SKSpriteNode batches unlike SKShapeNode)
+            // Hit tracer (recycled from pool)
             let tdx = target.x - origin.x
             let tdy = target.y - origin.y
             let length = sqrt(tdx * tdx + tdy * tdy)
-            let tracer = SKSpriteNode(texture: Self.tracerTexture)
-            tracer.size = CGSize(width: 1.0, height: length)
-            tracer.color = stats.towerType == .ciws ? .orange : .yellow
+            let nightMode = scene.isNightWave
+            let tracer = scene.acquireTracer()
+            tracer.size = CGSize(width: nightMode ? 1.5 : 1.0, height: length)
+            tracer.color = nightMode ? .red : (stats.towerType == .ciws ? .orange : .yellow)
             tracer.colorBlendFactor = 1.0
-            tracer.alpha = 0.6
-            tracer.zPosition = 42
+            tracer.alpha = nightMode ? 0.9 : 0.6
+            tracer.zPosition = nightMode ? Constants.NightWave.nightEffectZPosition : 42
             tracer.position = CGPoint(x: (origin.x + target.x) * 0.5, y: (origin.y + target.y) * 0.5)
             tracer.zRotation = atan2(tdy, tdx) - .pi / 2
             scene.addChild(tracer)
-            tracer.run(Self.hitTracerAction)
+            tracer.run(SKAction.sequence([
+                SKAction.fadeOut(withDuration: 0.12),
+                SKAction.run { [weak scene, weak tracer] in
+                    guard let scene, let tracer else { return }
+                    scene.releaseTracer(tracer)
+                }
+            ]))
         } else {
             // Miss tracer — angular deviation, no BulletEntity
             let spreadAngle = CGFloat.random(in: -0.35...0.35) // ±~20°
@@ -258,16 +263,23 @@ class TowerTargetingComponent: GKComponent {
             let mdx = missEnd.x - origin.x
             let mdy = missEnd.y - origin.y
             let mLength = sqrt(mdx * mdx + mdy * mdy)
-            let tracer = SKSpriteNode(texture: Self.tracerTexture)
-            tracer.size = CGSize(width: 0.8, height: mLength)
-            tracer.color = stats.towerType == .ciws ? .orange : .yellow
+            let nightMode = scene.isNightWave
+            let tracer = scene.acquireTracer()
+            tracer.size = CGSize(width: nightMode ? 1.0 : 0.8, height: mLength)
+            tracer.color = nightMode ? .red : (stats.towerType == .ciws ? .orange : .yellow)
             tracer.colorBlendFactor = 1.0
-            tracer.alpha = 0.3
-            tracer.zPosition = 42
+            tracer.alpha = nightMode ? 0.5 : 0.3
+            tracer.zPosition = nightMode ? Constants.NightWave.nightEffectZPosition : 42
             tracer.position = CGPoint(x: (origin.x + missEnd.x) * 0.5, y: (origin.y + missEnd.y) * 0.5)
             tracer.zRotation = atan2(mdy, mdx) - .pi / 2
             scene.addChild(tracer)
-            tracer.run(Self.missTracerAction)
+            tracer.run(SKAction.sequence([
+                SKAction.fadeOut(withDuration: 0.1),
+                SKAction.run { [weak scene, weak tracer] in
+                    guard let scene, let tracer else { return }
+                    scene.releaseTracer(tracer)
+                }
+            ]))
         }
     }
 
@@ -277,7 +289,7 @@ class TowerTargetingComponent: GKComponent {
         var finalTarget = scene.bestRocketTargetPoint(
             preferredPoint: target,
             origin: origin,
-            radius: nil,
+            radius: spec.maxFlightDistance,
             influenceRadius: spec.blastRadius,
             reservingActiveRocketImpacts: true,
             excludingRocket: nil,
@@ -286,17 +298,14 @@ class TowerTargetingComponent: GKComponent {
             projectileMaxSpeed: spec.maxSpeed
         )
 
-        // DEBUG: log planLaunch result
-        print("[FIRE] planLaunch result: \(finalTarget != nil ? "\(finalTarget!)" : "nil")")
-
-        // Fallback: retry without reservations, but only if the target drone
-        // is NOT overkilled (i.e. existing rockets aren't enough to kill it).
+        // Fallback: retry without reservations if the target isn't already overkilled
         if finalTarget == nil,
-           currentTarget != nil {
+           let currentDrone = currentTarget,
+           !scene.isDroneOverkilled(currentDrone) {
             finalTarget = scene.bestRocketTargetPoint(
                 preferredPoint: target,
                 origin: origin,
-                radius: nil,
+                radius: spec.maxFlightDistance,
                 influenceRadius: spec.blastRadius,
                 reservingActiveRocketImpacts: false,
                 excludingRocket: nil,
@@ -304,7 +313,6 @@ class TowerTargetingComponent: GKComponent {
                 projectileAcceleration: spec.acceleration,
                 projectileMaxSpeed: spec.maxSpeed
             )
-            print("[FIRE] fallback planLaunch result: \(finalTarget != nil ? "\(finalTarget!)" : "nil")")
         }
 
         guard let finalTarget else { return false }
@@ -316,12 +324,37 @@ class TowerTargetingComponent: GKComponent {
         let dx = finalTarget.x - origin.x
         let dy = finalTarget.y - origin.y
         rocketSprite.zRotation = atan2(dy, dx) - .pi / 2
-        rocket.configureFlight(
-            targetPoint: finalTarget,
-            initialSpeed: spec.initialSpeed,
-            climbsWhenNoTargets: false
-        )
+
+        // Add rocket to scene stationary (no configureFlight yet)
         scene.addEntity(rocket)
+
+        // Ignition flame at launcher
+        let flame = SKSpriteNode(color: .orange, size: CGSize(width: 14, height: 14))
+        flame.position = origin
+        flame.zPosition = scene.isNightWave
+            ? Constants.NightWave.nightEffectZPosition : 44
+        flame.alpha = 0.9
+        scene.addChild(flame)
+        flame.run(SKAction.sequence([
+            SKAction.group([
+                SKAction.scale(to: 1.8, duration: 0.15),
+                SKAction.fadeOut(withDuration: 0.15)
+            ]),
+            SKAction.removeFromParent()
+        ]))
+
+        // Dwell on launcher, then launch
+        let launchDelay: TimeInterval = 0.12
+        rocketSprite.run(SKAction.sequence([
+            SKAction.wait(forDuration: launchDelay),
+            SKAction.run { [weak rocket] in
+                rocket?.configureFlight(
+                    targetPoint: finalTarget,
+                    initialSpeed: spec.initialSpeed,
+                    climbsWhenNoTargets: false
+                )
+            }
+        ]))
 
         // Launch smoke VFX
         spawnLaunchSmoke(at: origin, in: scene)

@@ -7,18 +7,37 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		018ED432CE3ABCDEF2EE1A09 /* EWDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F9E676C9F055079CF3B2F88 /* EWDroneEntity.swift */; };
+		107B032D61309B93264DB743 /* AbilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA92ED7AC641FBA9FB1297FE /* AbilityManager.swift */; };
+		24110B1048F0170CA6453DBC /* TechTreeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D6E231A7E48C629FD6A17F1 /* TechTreeManager.swift */; };
 		289E3B90C2A401CE1D3EF51A /* EconomyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC46726178361CF293B37DD /* EconomyManager.swift */; };
+		30E74BAA2637D734FEFBDA93 /* AbilityButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89E80557A39812CE1D8D89EF /* AbilityButton.swift */; };
+		342D3B16227FFC7A8D050745 /* SettlementEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70EFF6AD3C75BA7832ECDA9 /* SettlementEntity.swift */; };
 		34D036294A4909BB181B2C9A /* TowerPlacementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84BE006ABDF7265596BBC8C0 /* TowerPlacementManager.swift */; };
+		3E50CCDEAAE67AE778D830A6 /* ShahedDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 703CCE9D1A35A6D5155D4A45 /* ShahedDroneEntity.swift */; };
+		61CB429A9B0AFF9FAC5C6864 /* CampaignManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602446D8463333F1C8470BCA /* CampaignManager.swift */; };
 		667541F865B7F961E067D0A0 /* GridPositionComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F78C1EF5EB59582A3C456C5 /* GridPositionComponent.swift */; };
 		691A771BFF5CE50294B49148 /* TowerStatsComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDE79B0995E5C5B5360EFADA /* TowerStatsComponent.swift */; };
+		6AC30D2C94324BB50766453C /* HeavyDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D349281A822100EECF8A65AB /* HeavyDroneEntity.swift */; };
+		7710380A16E26668152F1351 /* FighterEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 154227CFE8F456841C7DE947 /* FighterEntity.swift */; };
+		781F3B8C7039AEC0AC5F2722 /* ConveyorBeltManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE2C3DA3DFC623DED35C43E /* ConveyorBeltManager.swift */; };
 		79A0886C50AF7615663C1D9B /* EnemyMissileEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3619EA960005F014CAFE3D9 /* EnemyMissileEntity.swift */; };
+		8117D7CD7C573AA2F49852BD /* CruiseMissileEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E146F79F31B3C66E5D69ADC /* CruiseMissileEntity.swift */; };
 		848313676039A5C56B482EC4 /* GridMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5370C041DACB6C0053E400B /* GridMap.swift */; };
+		94B68F3C46133AA22086A326 /* MilitaryAidManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C011B81159844D3C7B0449B /* MilitaryAidManager.swift */; };
 		9975FDC0B5DDD3587194E9FB /* AltitudeComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B16310071E0D99CD242F3D4C /* AltitudeComponent.swift */; };
+		A4A6E1CB14564D043A7A1A23 /* KamikazeDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD78F146D97E5B42B351A96D /* KamikazeDroneEntity.swift */; };
+		A4D058169AE7BC53878D6758 /* TowerSynergyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25E9B506C99B4585BE5AD97A /* TowerSynergyManager.swift */; };
+		B57152D34E9C3E67E997616F /* OrlanDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C6F9E411DB41A419A36AC /* OrlanDroneEntity.swift */; };
 		B582FAB6E050507D4C495DFA /* WaveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C075363E2C5B5B7E074DCF6C /* WaveManager.swift */; };
 		C9F3E25E7990769E95E0D64C /* TowerTargetingComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 685BEF6E407B503488D8EA60 /* TowerTargetingComponent.swift */; };
 		CCBCB79DCEA1327FF0B9562B /* TowerRotationComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 325D875BD641413BA6D78230 /* TowerRotationComponent.swift */; };
 		D34B8009409421E985CD36E3 /* LevelDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B1839A1A1701FB46CA5B4B /* LevelDefinition.swift */; };
+		D51976B1A53E01028C4839ED /* SettlementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8733782335164078D672CC11 /* SettlementManager.swift */; };
 		DA730FEE84881832C0360DFC /* TowerEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30119FBCFF5EA73AE60E8F3A /* TowerEntity.swift */; };
+		DB002D25F8E4889AC3276E95 /* EWTowerComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3D522EBC1D29A42138FB62C /* EWTowerComponent.swift */; };
+		DB305973B7474676C7633779 /* SwarmCloudEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC73A0E5DDD9738F5CEF68A5 /* SwarmCloudEntity.swift */; };
+		DDBC47F211B77CE6BC54EC74 /* LancetDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FFB66BE84B0031D87EF779 /* LancetDroneEntity.swift */; };
 		DE827CD0133C20631EE5ECB5 /* DroneFlightPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483A5CB80C901133E62EF9CB /* DroneFlightPath.swift */; };
 		E9356F7C2948A6A6005BC143 /* Direction.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9356F7B2948A6A6005BC143 /* Direction.swift */; };
 		E9356FFD2959A564005BC143 /* ShootComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9356FFC2959A564005BC143 /* ShootComponent.swift */; };
@@ -57,6 +76,7 @@
 		E9BC12B229C0D93200BAC76F /* DickGun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC12B129C0D93200BAC76F /* DickGun.swift */; };
 		EE3C41F0087C21F639F74984 /* ShadowComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 730B3560840256CE1DCC1AB5 /* ShadowComponent.swift */; };
 		F307F65196D3217F749A6623 /* HarmMissileEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EBB30BC3A53DAC4BF70B7BE /* HarmMissileEntity.swift */; };
+		FE149B9875CAAEC930349665 /* EWJammingComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E1C5B0D0A67BF2B9555FD8 /* EWJammingComponent.swift */; };
 		FFF5B111B75E8D0D686450BB /* FireControlState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DB3F8BACC96B363350118D /* FireControlState.swift */; };
 /* End PBXBuildFile section */
 
@@ -79,19 +99,38 @@
 
 /* Begin PBXFileReference section */
 		0AC46726178361CF293B37DD /* EconomyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EconomyManager.swift; sourceTree = "<group>"; };
+		0C011B81159844D3C7B0449B /* MilitaryAidManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MilitaryAidManager.swift; sourceTree = "<group>"; };
+		0D6E231A7E48C629FD6A17F1 /* TechTreeManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TechTreeManager.swift; sourceTree = "<group>"; };
+		154227CFE8F456841C7DE947 /* FighterEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FighterEntity.swift; sourceTree = "<group>"; };
+		1E146F79F31B3C66E5D69ADC /* CruiseMissileEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CruiseMissileEntity.swift; sourceTree = "<group>"; };
+		25E9B506C99B4585BE5AD97A /* TowerSynergyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerSynergyManager.swift; sourceTree = "<group>"; };
 		30119FBCFF5EA73AE60E8F3A /* TowerEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerEntity.swift; sourceTree = "<group>"; };
 		30DB3F8BACC96B363350118D /* FireControlState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FireControlState.swift; sourceTree = "<group>"; };
 		325D875BD641413BA6D78230 /* TowerRotationComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerRotationComponent.swift; sourceTree = "<group>"; };
+		3BE2C3DA3DFC623DED35C43E /* ConveyorBeltManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConveyorBeltManager.swift; sourceTree = "<group>"; };
 		3EBB30BC3A53DAC4BF70B7BE /* HarmMissileEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HarmMissileEntity.swift; sourceTree = "<group>"; };
+		42E1C5B0D0A67BF2B9555FD8 /* EWJammingComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EWJammingComponent.swift; sourceTree = "<group>"; };
 		483A5CB80C901133E62EF9CB /* DroneFlightPath.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DroneFlightPath.swift; sourceTree = "<group>"; };
 		4F78C1EF5EB59582A3C456C5 /* GridPositionComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GridPositionComponent.swift; sourceTree = "<group>"; };
+		5F0C6F9E411DB41A419A36AC /* OrlanDroneEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OrlanDroneEntity.swift; sourceTree = "<group>"; };
+		602446D8463333F1C8470BCA /* CampaignManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CampaignManager.swift; sourceTree = "<group>"; };
 		685BEF6E407B503488D8EA60 /* TowerTargetingComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerTargetingComponent.swift; sourceTree = "<group>"; };
+		703CCE9D1A35A6D5155D4A45 /* ShahedDroneEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShahedDroneEntity.swift; sourceTree = "<group>"; };
 		72B1839A1A1701FB46CA5B4B /* LevelDefinition.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LevelDefinition.swift; sourceTree = "<group>"; };
 		730B3560840256CE1DCC1AB5 /* ShadowComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShadowComponent.swift; sourceTree = "<group>"; };
+		7F9E676C9F055079CF3B2F88 /* EWDroneEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EWDroneEntity.swift; sourceTree = "<group>"; };
 		84BE006ABDF7265596BBC8C0 /* TowerPlacementManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerPlacementManager.swift; sourceTree = "<group>"; };
+		8733782335164078D672CC11 /* SettlementManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettlementManager.swift; sourceTree = "<group>"; };
+		89E80557A39812CE1D8D89EF /* AbilityButton.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AbilityButton.swift; sourceTree = "<group>"; };
 		A3619EA960005F014CAFE3D9 /* EnemyMissileEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EnemyMissileEntity.swift; sourceTree = "<group>"; };
+		A3D522EBC1D29A42138FB62C /* EWTowerComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EWTowerComponent.swift; sourceTree = "<group>"; };
+		A70EFF6AD3C75BA7832ECDA9 /* SettlementEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettlementEntity.swift; sourceTree = "<group>"; };
+		AA92ED7AC641FBA9FB1297FE /* AbilityManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AbilityManager.swift; sourceTree = "<group>"; };
 		B16310071E0D99CD242F3D4C /* AltitudeComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AltitudeComponent.swift; sourceTree = "<group>"; };
 		C075363E2C5B5B7E074DCF6C /* WaveManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaveManager.swift; sourceTree = "<group>"; };
+		CC73A0E5DDD9738F5CEF68A5 /* SwarmCloudEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SwarmCloudEntity.swift; sourceTree = "<group>"; };
+		D349281A822100EECF8A65AB /* HeavyDroneEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HeavyDroneEntity.swift; sourceTree = "<group>"; };
+		DD78F146D97E5B42B351A96D /* KamikazeDroneEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KamikazeDroneEntity.swift; sourceTree = "<group>"; };
 		E9356F7B2948A6A6005BC143 /* Direction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Direction.swift; sourceTree = "<group>"; };
 		E9356FFC2959A564005BC143 /* ShootComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShootComponent.swift; sourceTree = "<group>"; };
 		E95511BC293A05FD000137C6 /* BulletEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BulletEntity.swift; sourceTree = "<group>"; };
@@ -132,6 +171,7 @@
 		E9BC12B129C0D93200BAC76F /* DickGun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DickGun.swift; sourceTree = "<group>"; };
 		EDE79B0995E5C5B5360EFADA /* TowerStatsComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerStatsComponent.swift; sourceTree = "<group>"; };
 		F5370C041DACB6C0053E400B /* GridMap.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GridMap.swift; sourceTree = "<group>"; };
+		F7FFB66BE84B0031D87EF779 /* LancetDroneEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LancetDroneEntity.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -175,6 +215,13 @@
 				0AC46726178361CF293B37DD /* EconomyManager.swift */,
 				C075363E2C5B5B7E074DCF6C /* WaveManager.swift */,
 				84BE006ABDF7265596BBC8C0 /* TowerPlacementManager.swift */,
+				AA92ED7AC641FBA9FB1297FE /* AbilityManager.swift */,
+				0C011B81159844D3C7B0449B /* MilitaryAidManager.swift */,
+				25E9B506C99B4585BE5AD97A /* TowerSynergyManager.swift */,
+				602446D8463333F1C8470BCA /* CampaignManager.swift */,
+				0D6E231A7E48C629FD6A17F1 /* TechTreeManager.swift */,
+				3BE2C3DA3DFC623DED35C43E /* ConveyorBeltManager.swift */,
+				8733782335164078D672CC11 /* SettlementManager.swift */,
 			);
 			name = Managers;
 			path = Managers;
@@ -201,6 +248,15 @@
 			);
 			name = Components;
 			path = Components;
+			sourceTree = "<group>";
+		};
+		50C7186672D6E30FE5A522DF /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				89E80557A39812CE1D8D89EF /* AbilityButton.swift */,
+			);
+			name = UI;
+			path = UI;
 			sourceTree = "<group>";
 		};
 		59E8E05C95CD2C2F6837D10D /* Grid */ = {
@@ -234,6 +290,16 @@
 				E95E43AB296C161700A06F86 /* InGameSettingsMenu.swift */,
 				A3619EA960005F014CAFE3D9 /* EnemyMissileEntity.swift */,
 				3EBB30BC3A53DAC4BF70B7BE /* HarmMissileEntity.swift */,
+				DD78F146D97E5B42B351A96D /* KamikazeDroneEntity.swift */,
+				7F9E676C9F055079CF3B2F88 /* EWDroneEntity.swift */,
+				D349281A822100EECF8A65AB /* HeavyDroneEntity.swift */,
+				1E146F79F31B3C66E5D69ADC /* CruiseMissileEntity.swift */,
+				CC73A0E5DDD9738F5CEF68A5 /* SwarmCloudEntity.swift */,
+				154227CFE8F456841C7DE947 /* FighterEntity.swift */,
+				703CCE9D1A35A6D5155D4A45 /* ShahedDroneEntity.swift */,
+				F7FFB66BE84B0031D87EF779 /* LancetDroneEntity.swift */,
+				5F0C6F9E411DB41A419A36AC /* OrlanDroneEntity.swift */,
+				A70EFF6AD3C75BA7832ECDA9 /* SettlementEntity.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -247,6 +313,8 @@
 				E9551214293E5A04000137C6 /* RotationComponent.swift */,
 				E9356FFC2959A564005BC143 /* ShootComponent.swift */,
 				E96D79F82964BA4700D47A57 /* FlyingProjectileComponent.swift */,
+				42E1C5B0D0A67BF2B9555FD8 /* EWJammingComponent.swift */,
+				A3D522EBC1D29A42138FB62C /* EWTowerComponent.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -347,6 +415,7 @@
 				19F5AD15B93876136C5BD5EF /* Managers */,
 				502369391CC0F9FFC3520774 /* Components */,
 				118C5CCA54EF4FE7B3CAFF5E /* Models */,
+				50C7186672D6E30FE5A522DF /* UI */,
 			);
 			path = PVOGame;
 			sourceTree = "<group>";
@@ -544,6 +613,26 @@
 				DA730FEE84881832C0360DFC /* TowerEntity.swift in Sources */,
 				79A0886C50AF7615663C1D9B /* EnemyMissileEntity.swift in Sources */,
 				F307F65196D3217F749A6623 /* HarmMissileEntity.swift in Sources */,
+				A4A6E1CB14564D043A7A1A23 /* KamikazeDroneEntity.swift in Sources */,
+				018ED432CE3ABCDEF2EE1A09 /* EWDroneEntity.swift in Sources */,
+				6AC30D2C94324BB50766453C /* HeavyDroneEntity.swift in Sources */,
+				8117D7CD7C573AA2F49852BD /* CruiseMissileEntity.swift in Sources */,
+				DB305973B7474676C7633779 /* SwarmCloudEntity.swift in Sources */,
+				7710380A16E26668152F1351 /* FighterEntity.swift in Sources */,
+				FE149B9875CAAEC930349665 /* EWJammingComponent.swift in Sources */,
+				DB002D25F8E4889AC3276E95 /* EWTowerComponent.swift in Sources */,
+				30E74BAA2637D734FEFBDA93 /* AbilityButton.swift in Sources */,
+				107B032D61309B93264DB743 /* AbilityManager.swift in Sources */,
+				94B68F3C46133AA22086A326 /* MilitaryAidManager.swift in Sources */,
+				3E50CCDEAAE67AE778D830A6 /* ShahedDroneEntity.swift in Sources */,
+				DDBC47F211B77CE6BC54EC74 /* LancetDroneEntity.swift in Sources */,
+				B57152D34E9C3E67E997616F /* OrlanDroneEntity.swift in Sources */,
+				A4D058169AE7BC53878D6758 /* TowerSynergyManager.swift in Sources */,
+				61CB429A9B0AFF9FAC5C6864 /* CampaignManager.swift in Sources */,
+				24110B1048F0170CA6453DBC /* TechTreeManager.swift in Sources */,
+				781F3B8C7039AEC0AC5F2722 /* ConveyorBeltManager.swift in Sources */,
+				342D3B16227FFC7A8D050745 /* SettlementEntity.swift in Sources */,
+				D51976B1A53E01028C4839ED /* SettlementManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

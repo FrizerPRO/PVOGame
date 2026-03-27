@@ -36,6 +36,7 @@ class TowerEntity: GKEntity {
         body.collisionBitMask = 0
         body.isDynamic = false
         spriteComponent.spriteNode.physicsBody = body
+        spriteComponent.spriteNode.userData = ["tower": self]
 
         addComponent(GridPositionComponent(row: gridPosition.row, col: gridPosition.col))
 
@@ -50,6 +51,11 @@ class TowerEntity: GKEntity {
 
         addComponent(TowerTargetingComponent())
         addComponent(TowerRotationComponent())
+
+        // EW tower: add EW component
+        if towerType == .ewTower {
+            addComponent(EWTowerComponent())
+        }
 
         // Magazine towers: create ammo dot indicators
         if let capacity = towerType.magazineCapacity {

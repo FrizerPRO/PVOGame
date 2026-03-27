@@ -11,6 +11,7 @@ enum CellTerrain: Int {
     case flightPath = 1
     case blocked = 2
     case headquarters = 3
+    case settlement = 4
 }
 
 struct GridCell {
@@ -18,7 +19,9 @@ struct GridCell {
     let col: Int
     var terrain: CellTerrain
     var towerID: ObjectIdentifier?
+    var settlementID: ObjectIdentifier?
     var isOccupied: Bool { towerID != nil }
+    var hasSettlement: Bool { settlementID != nil }
 }
 
 class GridMap {
@@ -76,7 +79,7 @@ class GridMap {
     func canPlaceTower(atRow row: Int, col: Int) -> Bool {
         guard row >= 0, row < rows, col >= 0, col < cols else { return false }
         let cell = cells[row][col]
-        return cell.terrain == .ground && !cell.isOccupied
+        return cell.terrain == .ground && !cell.isOccupied && !cell.hasSettlement
     }
 
     @discardableResult
@@ -94,5 +97,59 @@ class GridMap {
     func cell(atRow row: Int, col: Int) -> GridCell? {
         guard row >= 0, row < rows, col >= 0, col < cols else { return nil }
         return cells[row][col]
+    }
+
+    // MARK: - Settlement Placement
+
+    @discardableResult
+    func placeSettlement(_ id: ObjectIdentifier, atRow row: Int, col: Int) -> Bool {
+        guard row >= 0, row < rows, col >= 0, col < cols else { return false }
+        guard cells[row][col].terrain == .ground && !cells[row][col].isOccupied && !cells[row][col].hasSettlement else { return false }
+        cells[row][col].settlementID = id
+        cells[row][col].terrain = .settlement
+        return true
+    }
+
+    func removeSettlement(atRow row: Int, col: Int) {
+        guard row >= 0, row < rows, col >= 0, col < cols else { return }
+        cells[row][col].settlementID = nil
+        cells[row][col].terrain = .ground
+    }
+
+    func generateSettlementPositions(count: Int) -> [(row: Int, col: Int)] {
+        let minEdge = Constants.Settlement.minDistanceFromEdge
+        let minBetween = Constants.Settlement.minDistanceBetween
+        let minFromHQ = Constants.Settlement.minDistanceFromHQ
+
+        // Find HQ row (bottom rows typically)
+        let hqRow = rows - 1
+
+        // Collect valid candidate cells
+        var candidates: [(row: Int, col: Int)] = []
+        for row in 0..<rows {
+            for col in 0..<cols {
+                guard cells[row][col].terrain == .ground else { continue }
+                guard row >= minEdge && row < rows - minEdge else { continue }
+                guard col >= minEdge && col < cols - minEdge else { continue }
+                // Must be far enough from HQ (HQ is at bottom, high row numbers)
+                guard (hqRow - row) >= minFromHQ else { continue }
+                candidates.append((row, col))
+            }
+        }
+
+        candidates.shuffle()
+
+        var selected: [(row: Int, col: Int)] = []
+        for candidate in candidates {
+            guard selected.count < count else { break }
+            let tooClose = selected.contains { existing in
+                abs(existing.row - candidate.row) + abs(existing.col - candidate.col) < minBetween
+            }
+            if !tooClose {
+                selected.append(candidate)
+            }
+        }
+
+        return selected
     }
 }

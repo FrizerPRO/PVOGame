@@ -27,6 +27,8 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
     public var imageName: String
     public var isHit = false
 
+    weak var targetSettlement: SettlementEntity?
+
     public var health: Int
     public var maxHealth: Int
 
@@ -157,6 +159,21 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
 
         // Animate fall + fade, then remove
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+            // Explosion flash at hit position
+            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 20, height: 20))
+            flash.position = spriteNode.position
+            flash.zPosition = (spriteNode.scene as? InPlaySKScene)?.isNightWave == true
+                ? Constants.NightWave.nightEffectZPosition : 55
+            flash.alpha = 0.9
+            spriteNode.scene?.addChild(flash)
+            flash.run(SKAction.sequence([
+                SKAction.group([
+                    SKAction.scale(to: 2.0, duration: 0.15),
+                    SKAction.fadeOut(withDuration: 0.15)
+                ]),
+                SKAction.removeFromParent()
+            ]))
+
             let spin = SKAction.rotate(byAngle: .pi * 2, duration: 0.6)
             let fall = SKAction.moveBy(x: 0, y: -120, duration: 0.6)
             fall.timingMode = .easeIn
@@ -175,9 +192,19 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         else {return}
         scene.removeEntity(self)
     }
+    /// Retarget the drone mid-flight: rebuild GKAgent path from current position through new waypoints
+    func retargetPath(waypoints: [CGPoint]) {
+        guard !waypoints.isEmpty else { return }
+        let nodes = waypoints.map { vector_float2(x: Float($0.x), y: Float($0.y)) }
+        let path = GKPath(points: nodes, radius: 15, cyclical: false)
+        let goal = GKGoal(toFollow: path, maxPredictionTime: 100 / speed * 1.5, forward: true)
+        let newBehavior = GKBehavior(goal: goal, weight: 100000)
+        component(ofType: FlyingProjectileComponent.self)?.behavior = newBehavior
+    }
+
     private func behavior(for flyingPath: FlyingPath)->GKBehavior{
         let path = GKPath(points: flyingPath.nodes, radius: 15, cyclical: false)
-        
+
         let goal = GKGoal(toFollow: path, maxPredictionTime: 100/speed * 1.5, forward: true)
         return GKBehavior(goal: goal, weight: 100000)
     }
@@ -724,7 +751,10 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         case .interceptor: return 1
         case .radar:       return 2
         case .ciws:        return 3
-        case .autocannon:  return 4
+        case .gepard:      return 4
+        case .autocannon:  return 5
+        case .pzrk:        return 6
+        case .ewTower:     return 7
         }
     }
 

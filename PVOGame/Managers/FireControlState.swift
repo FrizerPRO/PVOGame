@@ -658,7 +658,6 @@ struct FireControlState {
     }
 
     private mutating func appendLog(_ line: String) {
-        print("[FC] \(line)")
         decisionLog.append(line)
         let maxEntries = 60
         if decisionLog.count > maxEntries {

@@ -34,12 +34,27 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
            alt.altitude == .ballistic {
             return
         }
+
+        // Heavy drone armor: bullets blocked, rockets pierce
+        if let heavyDrone = droneProjectile as? HeavyDroneEntity,
+           !(shell is RocketEntity) {
+            heavyDrone.takeBulletDamage(shell.damage)
+            shell.detonateWithAnimation()
+            if heavyDrone.isHit {
+                gameScene?.onDroneDestroyed(drone: heavyDrone)
+            }
+            return
+        }
+
         droneProjectile.takeDamage(shell.damage)
         shell.detonateWithAnimation()
         if let drone = droneProjectile as? AttackDroneEntity, drone.isHit {
             gameScene?.onDroneDestroyed(drone: drone)
         }
     }
+
+    // Track swarm blast kills per blast node to enforce limit
+    private var swarmBlastKills: [ObjectIdentifier: Int] = [:]
 
     private func handleBlastHitsDrone(nodeA: SKNode, nodeB: SKNode) -> Bool {
         if (nodeA.name == Self.rocketBlastNodeName || nodeA.name == Self.mineBombBlastNodeName),
@@ -49,10 +64,17 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             if nodeA.name == Self.rocketBlastNodeName,
                let alt = drone.component(ofType: AltitudeComponent.self),
                alt.altitude == .micro { return true }
-            // Rocket blasts cannot hit ballistic-altitude targets (each missile needs a direct hit)
+            // Rocket blasts cannot hit ballistic-altitude targets
             if nodeA.name == Self.rocketBlastNodeName,
                let alt = drone.component(ofType: AltitudeComponent.self),
                alt.altitude == .ballistic { return true }
+            // Swarm blast kill limit
+            if drone is SwarmDroneEntity, nodeA.name == Self.rocketBlastNodeName {
+                let blastID = ObjectIdentifier(nodeA)
+                let kills = swarmBlastKills[blastID, default: 0]
+                if kills >= Constants.AdvancedEnemies.swarmMaxBlastKills { return true }
+                swarmBlastKills[blastID] = kills + 1
+            }
             let blastDamage = (nodeA.userData?["damage"] as? Int) ?? 1
             drone.takeDamage(blastDamage)
             if drone.isHit {
@@ -67,10 +89,17 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             if nodeB.name == Self.rocketBlastNodeName,
                let alt = drone.component(ofType: AltitudeComponent.self),
                alt.altitude == .micro { return true }
-            // Rocket blasts cannot hit ballistic-altitude targets (each missile needs a direct hit)
+            // Rocket blasts cannot hit ballistic-altitude targets
             if nodeB.name == Self.rocketBlastNodeName,
                let alt = drone.component(ofType: AltitudeComponent.self),
                alt.altitude == .ballistic { return true }
+            // Swarm blast kill limit
+            if drone is SwarmDroneEntity, nodeB.name == Self.rocketBlastNodeName {
+                let blastID = ObjectIdentifier(nodeB)
+                let kills = swarmBlastKills[blastID, default: 0]
+                if kills >= Constants.AdvancedEnemies.swarmMaxBlastKills { return true }
+                swarmBlastKills[blastID] = kills + 1
+            }
             let blastDamage = (nodeB.userData?["damage"] as? Int) ?? 1
             drone.takeDamage(blastDamage)
             if drone.isHit {
@@ -132,15 +161,7 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
     }
 
     private func findTowerForNode(_ node: SKNode) -> TowerEntity? {
-        guard let scene = gameScene else { return nil }
-        for entity in scene.entities {
-            guard let tower = entity as? TowerEntity,
-                  let spriteNode = tower.component(ofType: SpriteComponent.self)?.spriteNode,
-                  spriteNode === node
-            else { continue }
-            return tower
-        }
-        return nil
+        return node.userData?["tower"] as? TowerEntity
     }
 
     private func handleMineHitsDrone(nodeA: SKNode, nodeB: SKNode) -> Bool {
@@ -199,6 +220,34 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             }
         }
     }
+    private func handleKamikazeHitsTower(nodeA: SKNode, nodeB: SKNode) -> Bool {
+        if let kamikaze = nodeA.entity as? KamikazeDroneEntity,
+           nodeB.physicsBody?.categoryBitMask == Constants.towerBitMask {
+            if kamikaze.isHit { return true }
+            if let tower = findTowerForNode(nodeB) {
+                tower.takeBombDamage(Constants.Kamikaze.towerDamage)
+                kamikaze.takeDamage(kamikaze.health)
+                if kamikaze.isHit {
+                    gameScene?.onDroneDestroyed(drone: kamikaze)
+                }
+            }
+            return true
+        }
+        if let kamikaze = nodeB.entity as? KamikazeDroneEntity,
+           nodeA.physicsBody?.categoryBitMask == Constants.towerBitMask {
+            if kamikaze.isHit { return true }
+            if let tower = findTowerForNode(nodeA) {
+                tower.takeBombDamage(Constants.Kamikaze.towerDamage)
+                kamikaze.takeDamage(kamikaze.health)
+                if kamikaze.isHit {
+                    gameScene?.onDroneDestroyed(drone: kamikaze)
+                }
+            }
+            return true
+        }
+        return false
+    }
+
     func didBegin(_ contact: SKPhysicsContact) {
         guard let nodeA = contact.bodyA.node
         else {
@@ -209,6 +258,9 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             return
         }
         if handleBlastHitsDrone(nodeA: nodeA, nodeB: nodeB) {
+            return
+        }
+        if handleKamikazeHitsTower(nodeA: nodeA, nodeB: nodeB) {
             return
         }
         if handleBombHitsTower(nodeA: nodeA, nodeB: nodeB) {
