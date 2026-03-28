@@ -256,25 +256,11 @@ class TowerSynergyManager {
         for tower in towers {
             guard let stats = tower.stats else { continue }
             let type = stats.towerType
-            var range = type.baseRange
-            var fireRate = type.baseFireRate
-            var damage = type.baseDamage
 
-            switch stats.level {
-            case 2:
-                range *= 1.25
-                fireRate *= 1.3
-            case 3:
-                range *= 1.25 * 1.2
-                fireRate *= 1.3
-                damage += 1
-            default:
-                break
-            }
-
-            stats.range = range
-            stats.fireRate = fireRate
-            stats.damage = damage
+            // Reset to base stats
+            stats.range = type.baseRange
+            stats.fireRate = type.baseFireRate
+            stats.damage = type.baseDamage
         }
         appliedBonuses.removeAll()
     }

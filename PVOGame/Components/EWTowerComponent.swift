@@ -8,8 +8,8 @@ import SpriteKit
 
 /// Applied to player EW towers. Slows enemies and can intercept FPV kamikaze drones.
 class EWTowerComponent: GKComponent {
-    let slowMultiplier: CGFloat
-    let fpvKillChance: CGFloat
+    var slowMultiplier: CGFloat
+    var fpvKillChance: CGFloat
     let fpvKillInterval: TimeInterval
     private var fpvKillTimer: TimeInterval = 0
     private var pulseTimer: TimeInterval = 0

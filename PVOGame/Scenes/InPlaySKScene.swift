@@ -39,8 +39,6 @@ class InPlaySKScene: SKScene {
     private let synergyManager = TowerSynergyManager()
     private var selectedLevel: LevelDefinition = LevelDefinition.level1
     private var selectedCampaignLevelId: String?  // nil = endless mode
-    private(set) var activeTechBuffs = TechBuffs()
-
     private(set) var currentPhase: GamePhase = .mainMenu
     private(set) var score = 0
     private(set) var lives = Constants.TowerDefense.hqLives
@@ -351,6 +349,7 @@ class InPlaySKScene: SKScene {
         let menu = InGameSettingsMenu(
             frame: CGRect(x: 0, y: 0, width: width, height: Constants.GameBalance.settingsMenuHeight),
             onResume: { [weak self] in self?.resumeGame() },
+            onRestart: { [weak self] in self?.restartGame() },
             onExit: { [weak self] in self?.exitToMainMenu() }
         )
         view.addSubview(menu)
@@ -373,6 +372,12 @@ class InPlaySKScene: SKScene {
         // Reset lastUpdateTime so the next frame doesn't see a huge dt
         lastUpdateTime = 0
         isPaused = false
+    }
+
+    private func restartGame() {
+        resumeGame()
+        stopGame()
+        startGame()
     }
 
     private func exitToMainMenu() {
@@ -549,133 +554,6 @@ class InPlaySKScene: SKScene {
         endlessLabel.name = "startGameButton"
         endlessBtn.addChild(endlessLabel)
 
-        // Tech tree button
-        let techBtn = SKSpriteNode(color: .systemPurple, size: CGSize(width: 200, height: 50))
-        techBtn.position = CGPoint(x: frame.midX, y: frame.midY - 130)
-        techBtn.name = "techTreeButton"
-        overlay.addChild(techBtn)
-
-        let techLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        techLabel.text = "ИССЛЕДОВАНИЯ"
-        techLabel.fontSize = 18
-        techLabel.fontColor = .white
-        techLabel.verticalAlignmentMode = .center
-        techLabel.name = "techTreeButton"
-        techBtn.addChild(techLabel)
-
-        let availStars = TechTreeManager.shared.availableStars()
-        let starsAvailLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        starsAvailLabel.text = "\(availStars) \u{2605} доступно"
-        starsAvailLabel.fontSize = 12
-        starsAvailLabel.fontColor = .systemYellow
-        starsAvailLabel.position = CGPoint(x: frame.midX, y: frame.midY - 160)
-        overlay.addChild(starsAvailLabel)
-    }
-
-    // MARK: - Tech Tree Screen
-
-    private func showTechTree() {
-        enumerateChildNodes(withName: "//mainMenuOverlay") { node, _ in
-            node.removeFromParent()
-        }
-
-        let overlay = SKNode()
-        overlay.name = "techTreeOverlay"
-        overlay.zPosition = 100
-        addChild(overlay)
-
-        let bg = SKSpriteNode(color: UIColor.black.withAlphaComponent(0.85), size: frame.size)
-        bg.position = CGPoint(x: frame.midX, y: frame.midY)
-        overlay.addChild(bg)
-
-        let tech = TechTreeManager.shared
-        let availStars = tech.availableStars()
-
-        let title = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        title.text = "ИССЛЕДОВАНИЯ  \(availStars) \u{2605}"
-        title.fontSize = 20
-        title.fontColor = .systemYellow
-        title.position = CGPoint(x: frame.midX, y: frame.height - 70 - safeTop)
-        overlay.addChild(title)
-
-        let branches = TechBranch.allCases
-        let colWidth = frame.width / CGFloat(branches.count)
-        let startY = frame.height - 110 - safeTop
-
-        for (bi, branch) in branches.enumerated() {
-            let x = colWidth * CGFloat(bi) + colWidth / 2
-
-            // Branch header
-            let header = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-            header.text = branch.displayName
-            header.fontSize = 9
-            header.fontColor = .white
-            header.position = CGPoint(x: x, y: startY)
-            overlay.addChild(header)
-
-            let branchNodes = tech.nodes.filter { $0.branch == branch }.sorted { $0.tier < $1.tier }
-
-            for (ni, node) in branchNodes.enumerated() {
-                let y = startY - 50 - CGFloat(ni) * 80
-                let unlocked = tech.isUnlocked(node.id)
-                let canUnlock = tech.canUnlock(node.id)
-
-                let bgColor: UIColor
-                if unlocked { bgColor = .systemGreen.withAlphaComponent(0.4) }
-                else if canUnlock { bgColor = .systemYellow.withAlphaComponent(0.3) }
-                else { bgColor = .darkGray.withAlphaComponent(0.4) }
-
-                let card = SKSpriteNode(color: bgColor, size: CGSize(width: colWidth - 8, height: 70))
-                card.position = CGPoint(x: x, y: y)
-                card.name = canUnlock ? "techNode_\(node.id)" : nil
-                overlay.addChild(card)
-
-                let nameLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-                nameLabel.text = node.name
-                nameLabel.fontSize = 8
-                nameLabel.fontColor = unlocked ? .systemGreen : .white
-                nameLabel.position = CGPoint(x: 0, y: 14)
-                nameLabel.verticalAlignmentMode = .center
-                nameLabel.name = card.name
-                card.addChild(nameLabel)
-
-                let descLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-                descLabel.text = node.description
-                descLabel.fontSize = 6
-                descLabel.fontColor = UIColor.white.withAlphaComponent(0.6)
-                descLabel.position = CGPoint(x: 0, y: 0)
-                descLabel.verticalAlignmentMode = .center
-                card.addChild(descLabel)
-
-                let costLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-                if unlocked {
-                    costLabel.text = "\u{2713}"
-                    costLabel.fontColor = .systemGreen
-                } else {
-                    costLabel.text = "\(node.cost) \u{2605}"
-                    costLabel.fontColor = canUnlock ? .systemYellow : .gray
-                }
-                costLabel.fontSize = 10
-                costLabel.position = CGPoint(x: 0, y: -18)
-                costLabel.verticalAlignmentMode = .center
-                costLabel.name = card.name
-                card.addChild(costLabel)
-            }
-        }
-
-        // Back button
-        let backBtn = SKSpriteNode(color: .systemRed, size: CGSize(width: 120, height: 40))
-        backBtn.position = CGPoint(x: frame.midX, y: 60 + safeBottom)
-        backBtn.name = "techTreeBack"
-        overlay.addChild(backBtn)
-
-        let backLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        backLabel.text = "НАЗАД"
-        backLabel.fontSize = 16
-        backLabel.fontColor = .white
-        backLabel.verticalAlignmentMode = .center
-        backLabel.name = "techTreeBack"
-        backBtn.addChild(backLabel)
     }
 
     // MARK: - Level Selection
@@ -695,7 +573,7 @@ class InPlaySKScene: SKScene {
         overlay.addChild(bg)
 
         let title = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        title.text = "КАМПАНИЯ"
+        title.text = "CAMPAIGN"
         title.fontSize = 24
         title.fontColor = .white
         title.position = CGPoint(x: frame.midX, y: frame.height - 80 - safeTop)
@@ -703,9 +581,9 @@ class InPlaySKScene: SKScene {
 
         let campaign = CampaignManager.shared
         let levels = campaign.levels
-        let cardHeight: CGFloat = 56
-        let spacing: CGFloat = 10
-        let startY = frame.height - 130 - safeTop
+        let cardHeight: CGFloat = 48
+        let spacing: CGFloat = 8
+        let startY = frame.height - 120 - safeTop
 
         for (i, level) in levels.enumerated() {
             let y = startY - CGFloat(i) * (cardHeight + spacing)
@@ -724,9 +602,9 @@ class InPlaySKScene: SKScene {
             // Level number
             let numLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
             numLabel.text = "\(i + 1)."
-            numLabel.fontSize = 16
+            numLabel.fontSize = 14
             numLabel.fontColor = unlocked ? .white : .gray
-            numLabel.position = CGPoint(x: -card.size.width / 2 + 20, y: 8)
+            numLabel.position = CGPoint(x: -card.size.width / 2 + 20, y: 6)
             numLabel.horizontalAlignmentMode = .left
             numLabel.verticalAlignmentMode = .center
             numLabel.name = card.name
@@ -735,9 +613,9 @@ class InPlaySKScene: SKScene {
             // Level name
             let nameLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
             nameLabel.text = unlocked ? level.name : "???"
-            nameLabel.fontSize = 14
+            nameLabel.fontSize = 12
             nameLabel.fontColor = unlocked ? .white : .gray
-            nameLabel.position = CGPoint(x: -card.size.width / 2 + 44, y: 8)
+            nameLabel.position = CGPoint(x: -card.size.width / 2 + 44, y: 6)
             nameLabel.horizontalAlignmentMode = .left
             nameLabel.verticalAlignmentMode = .center
             nameLabel.name = card.name
@@ -746,9 +624,9 @@ class InPlaySKScene: SKScene {
             // Subtitle
             let subLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
             subLabel.text = unlocked ? level.subtitle : ""
-            subLabel.fontSize = 10
+            subLabel.fontSize = 9
             subLabel.fontColor = UIColor.white.withAlphaComponent(0.5)
-            subLabel.position = CGPoint(x: -card.size.width / 2 + 44, y: -10)
+            subLabel.position = CGPoint(x: -card.size.width / 2 + 44, y: -8)
             subLabel.horizontalAlignmentMode = .left
             subLabel.verticalAlignmentMode = .center
             card.addChild(subLabel)
@@ -758,7 +636,7 @@ class InPlaySKScene: SKScene {
                 let starsText = String(repeating: "\u{2605}", count: stars) + String(repeating: "\u{2606}", count: 3 - stars)
                 let starsLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
                 starsLabel.text = starsText
-                starsLabel.fontSize = 16
+                starsLabel.fontSize = 14
                 starsLabel.fontColor = .systemYellow
                 starsLabel.position = CGPoint(x: card.size.width / 2 - 40, y: 0)
                 starsLabel.verticalAlignmentMode = .center
@@ -767,7 +645,7 @@ class InPlaySKScene: SKScene {
             } else if !unlocked {
                 let lockLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
                 lockLabel.text = "LOCKED"
-                lockLabel.fontSize = 12
+                lockLabel.fontSize = 10
                 lockLabel.fontColor = .gray
                 lockLabel.position = CGPoint(x: card.size.width / 2 - 40, y: 0)
                 lockLabel.verticalAlignmentMode = .center
@@ -782,7 +660,7 @@ class InPlaySKScene: SKScene {
         overlay.addChild(backBtn)
 
         let backLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        backLabel.text = "НАЗАД"
+        backLabel.text = "BACK"
         backLabel.fontSize = 16
         backLabel.fontColor = .white
         backLabel.verticalAlignmentMode = .center
@@ -812,10 +690,7 @@ class InPlaySKScene: SKScene {
         for (_, dot) in radarNightDots { dot.removeFromParent() }
         radarNightDots.removeAll()
 
-        // Apply tech tree buffs
-        let techBuffs = TechTreeManager.shared.activeBuffs()
-        lives = Constants.TowerDefense.hqLives + techBuffs.hqHPBonus
-        activeTechBuffs = techBuffs
+        lives = Constants.TowerDefense.hqLives
 
         // Reload grid with selected level
         gridMap.loadLevel(selectedLevel)
@@ -827,11 +702,11 @@ class InPlaySKScene: SKScene {
             settlementManager?.generateAndPlace(
                 on: gridMap,
                 gridLayer: gridLayer,
-                count: Constants.Settlement.count
+                count: selectedLevel.settlementCount
             )
         }
 
-        economyManager.reset(to: selectedLevel.startingResources + techBuffs.startingDPBonus)
+        economyManager.reset(to: selectedLevel.startingResources)
         waveManager = WaveManager(scene: self, level: selectedLevel)
         towerPlacement.removeAllTowers()
         militaryAidManager.reset()
@@ -850,6 +725,8 @@ class InPlaySKScene: SKScene {
         activeRockets.removeAll()
 
         hudNode?.isHidden = false
+        conveyorBelt.setAvailableTowers(selectedLevel.availableTowers)
+        conveyorBelt.setGuaranteedTowers(selectedLevel.guaranteedTowers)
         conveyorBelt.setup(in: self, safeBottom: safeBottom)
         startWaveButton?.isHidden = false
         speedButton?.isHidden = false
@@ -866,7 +743,16 @@ class InPlaySKScene: SKScene {
 
         interWaveCountdown = firstWaveCountdown
         updateStartWaveButton()
-        showWaveAnnouncement(wave: waveManager.nextWaveNumber())
+
+        // Show level name for campaign levels, then wave announcement
+        if let levelId = selectedCampaignLevelId,
+           let campaignLevel = CampaignManager.shared.levels.first(where: { $0.id == levelId }) {
+            showLevelNameAnnouncement(name: campaignLevel.name) {
+                self.showWaveAnnouncement(wave: self.waveManager.nextWaveNumber())
+            }
+        } else {
+            showWaveAnnouncement(wave: waveManager.nextWaveNumber())
+        }
         updateHUD()
     }
 
@@ -938,7 +824,7 @@ class InPlaySKScene: SKScene {
         cleanupOffscreenIndicator()
         transitionToDay()
         activeSwarmClouds.removeAll()
-        let waveBonus = Constants.TowerDefense.waveCompletionBonus + activeTechBuffs.waveCompletionBonus
+        let waveBonus = Constants.TowerDefense.waveCompletionBonus
         let settlementIncome = settlementManager?.totalWaveIncome() ?? 0
         economyManager.earn(waveBonus + settlementIncome)
 
@@ -1014,13 +900,31 @@ class InPlaySKScene: SKScene {
             overlay.addChild(label)
         }
 
+        // Next level button (only if there IS a next level)
+        if let currentId = selectedCampaignLevelId,
+           let currentIdx = CampaignManager.shared.levels.firstIndex(where: { $0.id == currentId }),
+           currentIdx + 1 < CampaignManager.shared.levels.count {
+            let nextBtn = SKSpriteNode(color: .systemGreen, size: CGSize(width: 180, height: 44))
+            nextBtn.position = CGPoint(x: frame.midX, y: frame.midY - 110)
+            nextBtn.name = "victoryNextButton"
+            overlay.addChild(nextBtn)
+
+            let nextLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+            nextLabel.text = "NEXT"
+            nextLabel.fontSize = 18
+            nextLabel.fontColor = .white
+            nextLabel.verticalAlignmentMode = .center
+            nextLabel.name = "victoryNextButton"
+            nextBtn.addChild(nextLabel)
+        }
+
         let menuBtn = SKSpriteNode(color: .systemBlue, size: CGSize(width: 180, height: 44))
-        menuBtn.position = CGPoint(x: frame.midX, y: frame.midY - 120)
+        menuBtn.position = CGPoint(x: frame.midX, y: frame.midY - 165)
         menuBtn.name = "victoryMenuButton"
         overlay.addChild(menuBtn)
 
         let menuLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        menuLabel.text = "КАМПАНИЯ"
+        menuLabel.text = "CAMPAIGN"
         menuLabel.fontSize = 18
         menuLabel.fontColor = .white
         menuLabel.verticalAlignmentMode = .center
@@ -1031,6 +935,25 @@ class InPlaySKScene: SKScene {
     private func updateStartWaveButton() {
         let bonus = Int(interWaveCountdown * 2)
         startWaveLabel?.text = bonus > 0 ? "EARLY START (+\(bonus) DP)" : "START WAVE"
+    }
+
+    private func showLevelNameAnnouncement(name: String, completion: @escaping () -> Void) {
+        let label = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+        label.text = name
+        label.fontSize = 30
+        label.fontColor = .systemYellow
+        label.position = CGPoint(x: frame.width / 2, y: frame.height / 2)
+        label.zPosition = 96
+        label.alpha = 0
+        addChild(label)
+
+        let fadeIn = SKAction.fadeIn(withDuration: 0.4)
+        let wait = SKAction.wait(forDuration: 1.5)
+        let fadeOut = SKAction.fadeOut(withDuration: 0.4)
+        let remove = SKAction.removeFromParent()
+        label.run(SKAction.sequence([fadeIn, wait, fadeOut, remove])) {
+            completion()
+        }
     }
 
     private func showWaveAnnouncement(wave: Int) {
@@ -1504,8 +1427,7 @@ class InPlaySKScene: SKScene {
         }
         score += scoreDelta
         dronesDestroyed += 1
-        let adjustedReward = Int(CGFloat(resourceDelta) * activeTechBuffs.killRewardMultiplier)
-        economyManager.earn(adjustedReward)
+        economyManager.earn(resourceDelta)
         updateHUD()
     }
 
@@ -2881,22 +2803,6 @@ class InPlaySKScene: SKScene {
                     node.removeFromParent()
                 }
                 showMainMenu()
-            } else if touchedNode.name == "techTreeButton" {
-                showTechTree()
-            } else if touchedNode.name == "techTreeBack" {
-                enumerateChildNodes(withName: "//techTreeOverlay") { node, _ in
-                    node.removeFromParent()
-                }
-                showMainMenu()
-            } else if let name = touchedNode.name, name.hasPrefix("techNode_") {
-                let nodeId = String(name.dropFirst("techNode_".count))
-                if TechTreeManager.shared.unlock(nodeId) {
-                    // Refresh tech tree
-                    enumerateChildNodes(withName: "//techTreeOverlay") { node, _ in
-                        node.removeFromParent()
-                    }
-                    showTechTree()
-                }
             }
 
         case .gameOver:
@@ -2908,12 +2814,27 @@ class InPlaySKScene: SKScene {
                 }
                 stopGame()
                 showMainMenu()
+            } else if touchedNode.name == "victoryNextButton" {
+                enumerateChildNodes(withName: "//victoryOverlay") { node, _ in
+                    node.removeFromParent()
+                }
+                stopGame()
+                // Start next campaign level
+                if let currentId = selectedCampaignLevelId,
+                   let currentIdx = CampaignManager.shared.levels.firstIndex(where: { $0.id == currentId }),
+                   currentIdx + 1 < CampaignManager.shared.levels.count {
+                    let nextLevel = CampaignManager.shared.levels[currentIdx + 1]
+                    selectedLevel = nextLevel.definition
+                    selectedCampaignLevelId = nextLevel.id
+                    startGame()
+                }
             } else if touchedNode.name == "victoryMenuButton" {
                 enumerateChildNodes(withName: "//victoryOverlay") { node, _ in
                     node.removeFromParent()
                 }
                 stopGame()
                 showMainMenu()
+                showLevelSelect()
             }
 
         case .build:
@@ -2971,19 +2892,7 @@ class InPlaySKScene: SKScene {
             return
         }
 
-        // Upgrade/sell buttons
-        if touchedNode.name == "upgradeButton" || touchedNode.parent?.name == "upgradeButton" {
-            if let tower = selectedTower {
-                if towerPlacement.upgradeTower(tower, economy: economyManager) {
-                    tower.hideRangeIndicator()
-                    tower.showRangeIndicator()
-                    dismissTowerActionPanel()
-                    synergyManager.recalculate(towers: towerPlacement.towers, in: self)
-                    updateHUD()
-                }
-            }
-            return
-        }
+        // Sell button
         if touchedNode.name == "sellButton" || touchedNode.parent?.name == "sellButton" {
             if let tower = selectedTower {
                 towerPlacement.sellTower(tower, economy: economyManager)
@@ -3141,27 +3050,9 @@ class InPlaySKScene: SKScene {
         panel.zPosition = 97
         panel.position = CGPoint(x: pos.x, y: pos.y + 45)
 
-        if stats.level < 3 {
-            let upgradeCost = Int(CGFloat(stats.cost) * Constants.TowerDefense.upgradeCostMultiplier)
-            let upgradeBtn = SKSpriteNode(
-                color: economyManager.canAfford(upgradeCost) ? .systemBlue : .gray,
-                size: CGSize(width: 60, height: 24)
-            )
-            upgradeBtn.name = "upgradeButton"
-            upgradeBtn.position = CGPoint(x: -35, y: 0)
-            let upgradeLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-            upgradeLabel.text = "UP \(upgradeCost)"
-            upgradeLabel.fontSize = 10
-            upgradeLabel.fontColor = .white
-            upgradeLabel.verticalAlignmentMode = .center
-            upgradeLabel.name = "upgradeButton"
-            upgradeBtn.addChild(upgradeLabel)
-            panel.addChild(upgradeBtn)
-        }
-
         let sellBtn = SKSpriteNode(color: .systemRed, size: CGSize(width: 60, height: 24))
         sellBtn.name = "sellButton"
-        sellBtn.position = CGPoint(x: 35, y: 0)
+        sellBtn.position = .zero
         let sellLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
         sellLabel.text = "SELL \(stats.sellValue)"
         sellLabel.fontSize = 10

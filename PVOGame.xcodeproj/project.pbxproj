@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		018ED432CE3ABCDEF2EE1A09 /* EWDroneEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F9E676C9F055079CF3B2F88 /* EWDroneEntity.swift */; };
 		107B032D61309B93264DB743 /* AbilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA92ED7AC641FBA9FB1297FE /* AbilityManager.swift */; };
-		24110B1048F0170CA6453DBC /* TechTreeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D6E231A7E48C629FD6A17F1 /* TechTreeManager.swift */; };
 		289E3B90C2A401CE1D3EF51A /* EconomyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC46726178361CF293B37DD /* EconomyManager.swift */; };
 		30E74BAA2637D734FEFBDA93 /* AbilityButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89E80557A39812CE1D8D89EF /* AbilityButton.swift */; };
 		342D3B16227FFC7A8D050745 /* SettlementEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70EFF6AD3C75BA7832ECDA9 /* SettlementEntity.swift */; };
@@ -100,7 +99,6 @@
 /* Begin PBXFileReference section */
 		0AC46726178361CF293B37DD /* EconomyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EconomyManager.swift; sourceTree = "<group>"; };
 		0C011B81159844D3C7B0449B /* MilitaryAidManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MilitaryAidManager.swift; sourceTree = "<group>"; };
-		0D6E231A7E48C629FD6A17F1 /* TechTreeManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TechTreeManager.swift; sourceTree = "<group>"; };
 		154227CFE8F456841C7DE947 /* FighterEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FighterEntity.swift; sourceTree = "<group>"; };
 		1E146F79F31B3C66E5D69ADC /* CruiseMissileEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CruiseMissileEntity.swift; sourceTree = "<group>"; };
 		25E9B506C99B4585BE5AD97A /* TowerSynergyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TowerSynergyManager.swift; sourceTree = "<group>"; };
@@ -219,7 +217,6 @@
 				0C011B81159844D3C7B0449B /* MilitaryAidManager.swift */,
 				25E9B506C99B4585BE5AD97A /* TowerSynergyManager.swift */,
 				602446D8463333F1C8470BCA /* CampaignManager.swift */,
-				0D6E231A7E48C629FD6A17F1 /* TechTreeManager.swift */,
 				3BE2C3DA3DFC623DED35C43E /* ConveyorBeltManager.swift */,
 				8733782335164078D672CC11 /* SettlementManager.swift */,
 			);
@@ -629,7 +626,6 @@
 				B57152D34E9C3E67E997616F /* OrlanDroneEntity.swift in Sources */,
 				A4D058169AE7BC53878D6758 /* TowerSynergyManager.swift in Sources */,
 				61CB429A9B0AFF9FAC5C6864 /* CampaignManager.swift in Sources */,
-				24110B1048F0170CA6453DBC /* TechTreeManager.swift in Sources */,
 				781F3B8C7039AEC0AC5F2722 /* ConveyorBeltManager.swift in Sources */,
 				342D3B16227FFC7A8D050745 /* SettlementEntity.swift in Sources */,
 				D51976B1A53E01028C4839ED /* SettlementManager.swift in Sources */,

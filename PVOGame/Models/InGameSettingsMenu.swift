@@ -10,12 +10,15 @@ import UIKit
 class InGameSettingsMenu: UIStackView {
     private let onResume: () -> Void
     private let onExit: () -> Void
+    private let onRestart: () -> Void
     private let titleLabel = UILabel()
     private let resumeButton = UIButton(type: .system)
+    private let restartButton = UIButton(type: .system)
     private let exitButton = UIButton(type: .system)
 
-    init(frame: CGRect, onResume: @escaping () -> Void, onExit: @escaping () -> Void) {
+    init(frame: CGRect, onResume: @escaping () -> Void, onRestart: @escaping () -> Void, onExit: @escaping () -> Void) {
         self.onResume = onResume
+        self.onRestart = onRestart
         self.onExit = onExit
         super.init(frame: frame)
         setupUI()
@@ -45,6 +48,12 @@ class InGameSettingsMenu: UIStackView {
         resumeButton.layer.cornerRadius = 8
         resumeButton.addTarget(self, action: #selector(resumeDidTap), for: .touchUpInside)
 
+        restartButton.setTitle("Restart", for: .normal)
+        restartButton.backgroundColor = .darkGray
+        restartButton.setTitleColor(.systemOrange, for: .normal)
+        restartButton.layer.cornerRadius = 8
+        restartButton.addTarget(self, action: #selector(restartDidTap), for: .touchUpInside)
+
         exitButton.setTitle("Exit to Menu", for: .normal)
         exitButton.backgroundColor = .red
         exitButton.setTitleColor(.white, for: .normal)
@@ -53,12 +62,18 @@ class InGameSettingsMenu: UIStackView {
 
         addArrangedSubview(titleLabel)
         addArrangedSubview(resumeButton)
+        addArrangedSubview(restartButton)
         addArrangedSubview(exitButton)
     }
 
     @objc
     private func resumeDidTap() {
         onResume()
+    }
+
+    @objc
+    private func restartDidTap() {
+        onRestart()
     }
 
     @objc

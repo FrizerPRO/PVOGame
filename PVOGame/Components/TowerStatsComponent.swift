@@ -19,7 +19,7 @@ class TowerStatsComponent: GKComponent {
 
     // Durability system
     private(set) var maxDurability: Int
-    let repairTime: TimeInterval
+    var repairTime: TimeInterval
     private(set) var durability: Int
     private var repairTimer: TimeInterval = 0
     var isDisabled: Bool { durability <= 0 }
@@ -131,27 +131,6 @@ class TowerStatsComponent: GKComponent {
         durability += bonus
     }
 
-    @discardableResult
-    func upgrade() -> Int {
-        guard level < 3 else { return 0 }
-        let upgradeCost = Int(CGFloat(cost) * Constants.TowerDefense.upgradeCostMultiplier)
-        level += 1
-        switch level {
-        case 2:
-            range *= 1.25
-            fireRate *= 1.3
-        case 3:
-            range *= 1.2
-            damage += 1
-            if towerType == .autocannon {
-                reachableAltitudes.insert(.high)
-            }
-        default:
-            break
-        }
-        cost += upgradeCost
-        return upgradeCost
-    }
 }
 
 enum TowerType: String, CaseIterable {

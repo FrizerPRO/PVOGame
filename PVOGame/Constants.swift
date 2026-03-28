@@ -61,7 +61,7 @@ class Constants{
         static let settingsButtonSize = CGSize(width: 40, height: 40)
         static let settingsButtonInsets = CGPoint(x: 20, y: 40)
         static let settingsMenuWidthRatio: CGFloat = 0.75
-        static let settingsMenuHeight: CGFloat = 220
+        static let settingsMenuHeight: CGFloat = 270
         static let defaultLives = 10
         static let scorePerDrone = 100
         static let scorePerMineLayerDrone = 250

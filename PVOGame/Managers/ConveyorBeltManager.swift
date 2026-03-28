@@ -27,6 +27,9 @@ class ConveyorBeltManager {
         (.ewTower, 4),
     ]
 
+    private var availableTowers: [TowerType] = TowerType.allCases
+    private var guaranteedQueue: [TowerType] = []
+
     private(set) var slots: [TowerType?] = Array(repeating: nil, count: slotCount)
     private var spawnTimer: TimeInterval = 0
     private var selectedSlot: Int? = nil
@@ -181,19 +184,34 @@ class ConveyorBeltManager {
 
         removeRadarSweep()
 
-        let type = weightedRandom()
+        let type: TowerType
+        if !guaranteedQueue.isEmpty {
+            type = guaranteedQueue.removeFirst()
+        } else {
+            type = weightedRandom()
+        }
         slots[emptyIdx] = type
         createCardVisual(at: emptyIdx, type: type)
     }
 
+    func setAvailableTowers(_ towers: [TowerType]) {
+        self.availableTowers = towers
+    }
+
+    func setGuaranteedTowers(_ towers: [TowerType]) {
+        self.guaranteedQueue = towers
+    }
+
     private func weightedRandom() -> TowerType {
-        let totalWeight = ConveyorBeltManager.weights.reduce(0) { $0 + $1.1 }
+        let filtered = ConveyorBeltManager.weights.filter { availableTowers.contains($0.0) }
+        guard !filtered.isEmpty else { return .autocannon }
+        let totalWeight = filtered.reduce(0) { $0 + $1.1 }
         var roll = Int.random(in: 0..<totalWeight)
-        for (type, weight) in ConveyorBeltManager.weights {
+        for (type, weight) in filtered {
             roll -= weight
             if roll < 0 { return type }
         }
-        return .autocannon
+        return filtered[0].0
     }
 
     private func createCardVisual(at index: Int, type: TowerType) {
@@ -402,6 +420,8 @@ class ConveyorBeltManager {
         slots = Array(repeating: nil, count: ConveyorBeltManager.slotCount)
         selectedSlot = nil
         spawnTimer = 0
+        availableTowers = TowerType.allCases
+        guaranteedQueue = []
         removeRadarSweep()
         for card in cardNodes {
             card?.removeAllActions()

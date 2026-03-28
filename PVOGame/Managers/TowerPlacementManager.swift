@@ -28,16 +28,19 @@ class TowerPlacementManager {
         let worldPos = scene.gridMap.worldPosition(forRow: gridPos.row, col: gridPos.col)
         let canPlace = scene.gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col)
 
-        let preview = SKSpriteNode(color: canPlace ? type.color.withAlphaComponent(0.5) : .red.withAlphaComponent(0.5),
+        let towerColor = type.color
+
+        let preview = SKSpriteNode(color: canPlace ? towerColor.withAlphaComponent(0.5) : .red.withAlphaComponent(0.5),
                                     size: CGSize(width: 28, height: 28))
         preview.position = worldPos
         preview.zPosition = 30
         scene.addChild(preview)
         previewNode = preview
 
-        let rangeCircle = SKShapeNode(circleOfRadius: type.baseRange)
-        rangeCircle.strokeColor = canPlace ? type.color.withAlphaComponent(0.3) : .red.withAlphaComponent(0.3)
-        rangeCircle.fillColor = canPlace ? type.color.withAlphaComponent(0.05) : .red.withAlphaComponent(0.05)
+        let previewRange = type.baseRange
+        let rangeCircle = SKShapeNode(circleOfRadius: previewRange)
+        rangeCircle.strokeColor = canPlace ? towerColor.withAlphaComponent(0.3) : .red.withAlphaComponent(0.3)
+        rangeCircle.fillColor = canPlace ? towerColor.withAlphaComponent(0.05) : .red.withAlphaComponent(0.05)
         rangeCircle.lineWidth = 1
         rangeCircle.zPosition = 21
         rangeCircle.position = worldPos
@@ -86,21 +89,6 @@ class TowerPlacementManager {
         if let idx = scene?.entities.firstIndex(of: tower) {
             scene?.entities.remove(at: idx)
         }
-    }
-
-    func upgradeTower(_ tower: TowerEntity, economy: EconomyManager) -> Bool {
-        guard let stats = tower.stats, stats.level < 3 else { return false }
-        let upgradeCost = Int(CGFloat(stats.cost) * Constants.TowerDefense.upgradeCostMultiplier)
-        guard economy.canAfford(upgradeCost) else { return false }
-        economy.spend(upgradeCost)
-        stats.upgrade()
-
-        // Visual feedback — color saturation increases with level
-        if let sprite = tower.component(ofType: SpriteComponent.self)?.spriteNode {
-            let scale: CGFloat = 1.0 + CGFloat(stats.level - 1) * 0.15
-            sprite.setScale(scale)
-        }
-        return true
     }
 
     func removeAllTowers() {

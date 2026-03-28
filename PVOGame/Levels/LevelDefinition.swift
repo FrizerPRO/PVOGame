@@ -162,6 +162,23 @@ struct LevelDefinition {
     let dronePaths: [DronePathDefinition]
     let waves: [WaveDefinition]
     let startingResources: Int
+    let availableTowers: [TowerType]
+    let settlementCount: Int
+    let guaranteedTowers: [TowerType]
+
+    init(gridLayout: [[Int]], dronePaths: [DronePathDefinition],
+         waves: [WaveDefinition], startingResources: Int,
+         availableTowers: [TowerType] = TowerType.allCases,
+         settlementCount: Int = Constants.Settlement.count,
+         guaranteedTowers: [TowerType] = []) {
+        self.gridLayout = gridLayout
+        self.dronePaths = dronePaths
+        self.waves = waves
+        self.startingResources = startingResources
+        self.availableTowers = availableTowers
+        self.settlementCount = settlementCount
+        self.guaranteedTowers = guaranteedTowers
+    }
 
     // 0 = ground (placeable), 1 = flight path, 2 = blocked, 3 = headquarters
     static let level1: LevelDefinition = {
@@ -262,88 +279,176 @@ struct LevelDefinition {
     private static var sharedPaths: [DronePathDefinition] { level1.dronePaths }
     private static var sharedLayout: [[Int]] { level1.gridLayout }
 
-    // MARK: - Campaign Level 1: Первый контакт (5 waves, easy)
+    // MARK: - Campaign Level 1: First Contact (4 waves — ZU only, basic drones)
     static let campaignLevel1: LevelDefinition = {
         let w: [WaveDefinition] = [
+            .campaign(drones: 15, speed: 55, interval: 1.2, batch: 2, health: 1),
             .campaign(drones: 20, speed: 58, interval: 1.0, batch: 2, health: 1),
             .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1),
             .campaign(drones: 30, speed: 64, interval: 0.8, batch: 3, health: 2),
-            .campaign(drones: 35, speed: 67, interval: 0.7, batch: 4, health: 2),
-            .campaign(drones: 40, speed: 70, interval: 0.6, batch: 4, health: 2),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
-                               waves: w, startingResources: 400)
+                               waves: w, startingResources: 300,
+                               availableTowers: [.autocannon],
+                               settlementCount: 0,
+                               guaranteedTowers: [.autocannon, .autocannon, .autocannon])
     }()
 
-    // MARK: - Campaign Level 2: Ночные Шахеды (8 waves)
+    // MARK: - Campaign Level 2: Night Alarm (5 waves — ZU + RLS, night drones)
     static let campaignLevel2: LevelDefinition = {
         let w: [WaveDefinition] = [
-            .campaign(drones: 20, speed: 58, interval: 1.0, batch: 2, health: 1),
-            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1, night: true, shahed: 10),
-            .campaign(drones: 30, speed: 64, interval: 0.8, batch: 3, health: 2, shahed: 12),
-            .campaign(drones: 30, speed: 67, interval: 0.7, batch: 4, health: 2, kamikaze: 5, night: true, shahed: 14),
-            .campaign(drones: 35, speed: 70, interval: 0.6, batch: 4, health: 2, kamikaze: 7, shahed: 16),
-            .campaign(drones: 35, speed: 73, interval: 0.5, batch: 5, health: 3, kamikaze: 8, night: true, shahed: 18),
-            .campaign(drones: 40, speed: 76, interval: 0.5, batch: 5, health: 3, kamikaze: 10, shahed: 20),
-            .campaign(drones: 45, speed: 80, interval: 0.4, batch: 5, health: 3, kamikaze: 12, night: true, shahed: 24),
+            .campaign(drones: 18, speed: 56, interval: 1.1, batch: 2, health: 1),
+            .campaign(drones: 22, speed: 59, interval: 1.0, batch: 2, health: 1, night: true),
+            .campaign(drones: 25, speed: 62, interval: 0.9, batch: 3, health: 1, night: true),
+            .campaign(drones: 28, speed: 65, interval: 0.8, batch: 3, health: 2),
+            .campaign(drones: 30, speed: 68, interval: 0.7, batch: 3, health: 2, night: true),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
-                               waves: w, startingResources: 500)
+                               waves: w, startingResources: 350,
+                               availableTowers: [.autocannon, .radar],
+                               settlementCount: 0,
+                               guaranteedTowers: [.autocannon, .autocannon, .radar])
     }()
 
-    // MARK: - Campaign Level 3: Град (10 waves, missiles from wave 2)
+    // MARK: - Campaign Level 3: Missile Strike (5 waves — + Interceptor, Grad missiles)
     static let campaignLevel3: LevelDefinition = {
         let w: [WaveDefinition] = [
-            .campaign(drones: 25, speed: 60, interval: 0.9, batch: 3, health: 2),
-            .campaign(drones: 30, speed: 63, interval: 0.8, batch: 3, health: 2, missiles: 1),
-            .campaign(drones: 35, speed: 66, interval: 0.7, batch: 4, health: 2, missiles: 1, shahed: 10),
-            .campaign(drones: 35, speed: 69, interval: 0.7, batch: 4, health: 3, miners: 1, missiles: 2, shahed: 10),
-            .campaign(drones: 40, speed: 72, interval: 0.6, batch: 5, health: 3, missiles: 2, kamikaze: 5, night: true),
-            .campaign(drones: 40, speed: 75, interval: 0.6, batch: 5, health: 3, missiles: 2, kamikaze: 6, shahed: 12),
-            .campaign(drones: 45, speed: 78, interval: 0.5, batch: 5, health: 3, missiles: 3, kamikaze: 8),
-            .campaign(drones: 45, speed: 80, interval: 0.5, batch: 6, health: 4, missiles: 3, kamikaze: 8, shahed: 14),
-            .campaign(drones: 50, speed: 82, interval: 0.4, batch: 6, health: 4, missiles: 4, kamikaze: 10, night: true),
-            .campaign(drones: 55, speed: 85, interval: 0.4, batch: 6, health: 4, missiles: 4, kamikaze: 12, shahed: 16),
+            .campaign(drones: 20, speed: 58, interval: 1.0, batch: 2, health: 1),
+            .campaign(drones: 22, speed: 61, interval: 0.9, batch: 3, health: 1, missiles: 1),
+            .campaign(drones: 25, speed: 64, interval: 0.8, batch: 3, health: 2, missiles: 1),
+            .campaign(drones: 28, speed: 67, interval: 0.7, batch: 3, health: 2, missiles: 2, night: true),
+            .campaign(drones: 30, speed: 70, interval: 0.7, batch: 4, health: 2, missiles: 2),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
-                               waves: w, startingResources: 500)
+                               waves: w, startingResources: 400,
+                               availableTowers: [.autocannon, .radar, .interceptor],
+                               settlementCount: 0,
+                               guaranteedTowers: [.autocannon, .radar, .interceptor])
     }()
 
-    // MARK: - Campaign Level 4: Охота на Ланцеты (10 waves)
+    // MARK: - Campaign Level 4: People's Defense (5 waves — + PZRK, Shaheds + FPV)
     static let campaignLevel4: LevelDefinition = {
         let w: [WaveDefinition] = [
-            .campaign(drones: 20, speed: 60, interval: 0.9, batch: 3, health: 2),
-            .campaign(drones: 25, speed: 63, interval: 0.8, batch: 3, health: 2, lancet: 1),
-            .campaign(drones: 25, speed: 66, interval: 0.7, batch: 4, health: 2, shahed: 8, lancet: 1),
-            .campaign(drones: 30, speed: 69, interval: 0.7, batch: 4, health: 3, kamikaze: 5, night: true, lancet: 2),
-            .campaign(drones: 30, speed: 72, interval: 0.6, batch: 4, health: 3, kamikaze: 6, shahed: 8, lancet: 2, orlan: 1),
-            .campaign(drones: 35, speed: 75, interval: 0.6, batch: 5, health: 3, missiles: 1, kamikaze: 7, ew: 1, lancet: 2),
-            .campaign(drones: 35, speed: 78, interval: 0.5, batch: 5, health: 3, missiles: 1, harms: 1, kamikaze: 8, lancet: 3),
-            .campaign(drones: 40, speed: 80, interval: 0.5, batch: 5, health: 4, missiles: 1, kamikaze: 10, night: true, lancet: 3, orlan: 1),
-            .campaign(drones: 40, speed: 82, interval: 0.4, batch: 6, health: 4, missiles: 2, kamikaze: 10, shahed: 10, lancet: 4),
-            .campaign(drones: 45, speed: 85, interval: 0.4, batch: 6, health: 4, missiles: 2, harms: 1, kamikaze: 12, ew: 1, shahed: 12, lancet: 4, orlan: 1),
+            .campaign(drones: 22, speed: 58, interval: 1.0, batch: 2, health: 1),
+            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 8),
+            .campaign(drones: 28, speed: 64, interval: 0.8, batch: 3, health: 2, kamikaze: 4, shahed: 10),
+            .campaign(drones: 30, speed: 67, interval: 0.7, batch: 4, health: 2, kamikaze: 6, shahed: 12),
+            .campaign(drones: 35, speed: 70, interval: 0.6, batch: 4, health: 2, kamikaze: 8, night: true, shahed: 14),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
-                               waves: w, startingResources: 550)
+                               waves: w, startingResources: 400,
+                               availableTowers: [.autocannon, .radar, .interceptor, .pzrk],
+                               settlementCount: 0,
+                               guaranteedTowers: [.autocannon, .pzrk, .pzrk])
     }()
 
-    // MARK: - Campaign Level 5: Железный рой (12 waves, massive FPV + swarms)
+    // MARK: - Campaign Level 5: City Defense (6 waves — settlements introduced)
     static let campaignLevel5: LevelDefinition = {
         let w: [WaveDefinition] = [
-            .campaign(drones: 30, speed: 60, interval: 0.8, batch: 3, health: 2),
-            .campaign(drones: 35, speed: 63, interval: 0.7, batch: 4, health: 2, kamikaze: 8),
-            .campaign(drones: 40, speed: 66, interval: 0.6, batch: 4, health: 3, kamikaze: 10, shahed: 14),
-            .campaign(drones: 40, speed: 68, interval: 0.6, batch: 5, health: 3, miners: 1, kamikaze: 12, swarm: 1, shahed: 16),
-            .campaign(drones: 45, speed: 70, interval: 0.5, batch: 5, health: 3, kamikaze: 14, night: true, swarm: 1, shahed: 18),
-            .campaign(drones: 45, speed: 72, interval: 0.5, batch: 5, health: 4, missiles: 1, kamikaze: 16, swarm: 1, shahed: 20, lancet: 1),
-            .campaign(drones: 50, speed: 74, interval: 0.4, batch: 6, health: 4, kamikaze: 18, ew: 1, swarm: 2, shahed: 20),
-            .campaign(drones: 50, speed: 76, interval: 0.4, batch: 6, health: 4, miners: 1, missiles: 1, kamikaze: 20, heavy: 1, swarm: 2, shahed: 22),
-            .campaign(drones: 55, speed: 78, interval: 0.4, batch: 6, health: 5, kamikaze: 22, night: true, swarm: 2, shahed: 24, lancet: 1),
-            .campaign(drones: 55, speed: 80, interval: 0.35, batch: 6, health: 5, missiles: 2, kamikaze: 24, cruise: 1, swarm: 3, shahed: 26),
-            .campaign(drones: 60, speed: 82, interval: 0.35, batch: 6, health: 5, kamikaze: 26, ew: 1, heavy: 1, swarm: 3, shahed: 28, lancet: 2, orlan: 1),
-            .campaign(drones: 65, speed: 85, interval: 0.35, batch: 6, health: 6, missiles: 2, harms: 1, kamikaze: 30, night: true, heavy: 1, cruise: 1, swarm: 3, shahed: 30, lancet: 2, orlan: 1),
+            .campaign(drones: 20, speed: 58, interval: 1.0, batch: 2, health: 1),
+            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 6),
+            .campaign(drones: 28, speed: 64, interval: 0.8, batch: 3, health: 2, missiles: 1, shahed: 8),
+            .campaign(drones: 30, speed: 67, interval: 0.7, batch: 4, health: 2, kamikaze: 4, night: true),
+            .campaign(drones: 33, speed: 70, interval: 0.6, batch: 4, health: 2, missiles: 1, kamikaze: 6, shahed: 10),
+            .campaign(drones: 35, speed: 73, interval: 0.6, batch: 4, health: 3, missiles: 2, kamikaze: 8, shahed: 12),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
-                               waves: w, startingResources: 600)
+                               waves: w, startingResources: 350,
+                               availableTowers: [.autocannon, .radar, .interceptor, .pzrk],
+                               settlementCount: 3,
+                               guaranteedTowers: [.autocannon, .radar, .pzrk])
+    }()
+
+    // MARK: - Campaign Level 6: FPV Attack (6 waves — + EW Tower, EW drones)
+    static let campaignLevel6: LevelDefinition = {
+        let w: [WaveDefinition] = [
+            .campaign(drones: 25, speed: 60, interval: 0.9, batch: 3, health: 2),
+            .campaign(drones: 28, speed: 63, interval: 0.8, batch: 3, health: 2, kamikaze: 5, ew: 1),
+            .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, kamikaze: 7, night: true, ew: 1, shahed: 8),
+            .campaign(drones: 33, speed: 69, interval: 0.7, batch: 4, health: 3, missiles: 1, kamikaze: 8, ew: 1),
+            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 4, health: 3, kamikaze: 10, night: true, ew: 2, shahed: 10),
+            .campaign(drones: 38, speed: 75, interval: 0.5, batch: 5, health: 3, missiles: 1, kamikaze: 12, ew: 2, shahed: 12),
+        ]
+        return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
+                               waves: w, startingResources: 400,
+                               availableTowers: [.autocannon, .radar, .interceptor, .pzrk, .ewTower],
+                               settlementCount: 3,
+                               guaranteedTowers: [.autocannon, .radar, .ewTower])
+    }()
+
+    // MARK: - Campaign Level 7: Hail (7 waves — + S-300, heavy missiles + HARM)
+    static let campaignLevel7: LevelDefinition = {
+        let w: [WaveDefinition] = [
+            .campaign(drones: 25, speed: 60, interval: 0.9, batch: 3, health: 2),
+            .campaign(drones: 28, speed: 63, interval: 0.8, batch: 3, health: 2, missiles: 2, shahed: 8),
+            .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, missiles: 2, harms: 1, night: true),
+            .campaign(drones: 33, speed: 69, interval: 0.7, batch: 4, health: 3, missiles: 3, kamikaze: 5, ew: 1, shahed: 10),
+            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 5, health: 3, missiles: 3, harms: 1, kamikaze: 7, shahed: 12),
+            .campaign(drones: 38, speed: 75, interval: 0.5, batch: 5, health: 3, missiles: 4, kamikaze: 8, night: true, ew: 1),
+            .campaign(drones: 40, speed: 78, interval: 0.5, batch: 5, health: 4, missiles: 4, harms: 2, kamikaze: 10, shahed: 14),
+        ]
+        return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
+                               waves: w, startingResources: 500,
+                               availableTowers: [.autocannon, .radar, .interceptor, .pzrk, .ewTower, .samLauncher],
+                               settlementCount: 4,
+                               guaranteedTowers: [.radar, .interceptor, .samLauncher])
+    }()
+
+    // MARK: - Campaign Level 8: Cruise Missiles (7 waves — + ZRPK, cruise + heavy drones)
+    static let campaignLevel8: LevelDefinition = {
+        let w: [WaveDefinition] = [
+            .campaign(drones: 28, speed: 62, interval: 0.8, batch: 3, health: 2, shahed: 8),
+            .campaign(drones: 30, speed: 65, interval: 0.7, batch: 4, health: 2, heavy: 1, cruise: 1),
+            .campaign(drones: 33, speed: 68, interval: 0.7, batch: 4, health: 3, missiles: 2, night: true, cruise: 1, shahed: 10),
+            .campaign(drones: 35, speed: 71, interval: 0.6, batch: 4, health: 3, miners: 1, kamikaze: 6, heavy: 1, cruise: 2),
+            .campaign(drones: 38, speed: 74, interval: 0.5, batch: 5, health: 3, missiles: 2, harms: 1, kamikaze: 8, cruise: 2, shahed: 12),
+            .campaign(drones: 40, speed: 77, interval: 0.5, batch: 5, health: 4, miners: 1, kamikaze: 10, night: true, heavy: 2, cruise: 2),
+            .campaign(drones: 42, speed: 80, interval: 0.4, batch: 5, health: 4, missiles: 3, harms: 1, kamikaze: 12, heavy: 2, cruise: 3, shahed: 14),
+        ]
+        return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
+                               waves: w, startingResources: 500,
+                               availableTowers: [.autocannon, .radar, .interceptor, .pzrk, .ewTower, .samLauncher, .ciws],
+                               settlementCount: 4,
+                               guaranteedTowers: [.radar, .ciws, .interceptor])
+    }()
+
+    // MARK: - Campaign Level 9: Lancets (8 waves — Lancets + Orlan recon)
+    static let campaignLevel9: LevelDefinition = {
+        let w: [WaveDefinition] = [
+            .campaign(drones: 25, speed: 60, interval: 0.9, batch: 3, health: 2),
+            .campaign(drones: 28, speed: 63, interval: 0.8, batch: 3, health: 2, lancet: 1),
+            .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, kamikaze: 5, shahed: 8, lancet: 2),
+            .campaign(drones: 33, speed: 69, interval: 0.7, batch: 4, health: 3, missiles: 1, night: true, lancet: 2, orlan: 1),
+            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 4, health: 3, kamikaze: 7, ew: 1, shahed: 10, lancet: 3),
+            .campaign(drones: 38, speed: 75, interval: 0.5, batch: 5, health: 3, missiles: 2, harms: 1, kamikaze: 8, lancet: 3, orlan: 1),
+            .campaign(drones: 40, speed: 78, interval: 0.5, batch: 5, health: 4, kamikaze: 10, night: true, cruise: 1, shahed: 12, lancet: 4),
+            .campaign(drones: 42, speed: 80, interval: 0.4, batch: 5, health: 4, missiles: 2, kamikaze: 12, ew: 1, heavy: 1, lancet: 4, orlan: 1),
+        ]
+        return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
+                               waves: w, startingResources: 500,
+                               availableTowers: [.autocannon, .radar, .interceptor, .pzrk, .ewTower, .samLauncher, .ciws],
+                               settlementCount: 4,
+                               guaranteedTowers: [.radar, .interceptor, .samLauncher])
+    }()
+
+    // MARK: - Campaign Level 10: Iron Swarm (10 waves — all towers, swarms, everything)
+    static let campaignLevel10: LevelDefinition = {
+        let w: [WaveDefinition] = [
+            .campaign(drones: 30, speed: 62, interval: 0.8, batch: 3, health: 2, shahed: 8),
+            .campaign(drones: 33, speed: 65, interval: 0.7, batch: 4, health: 2, kamikaze: 6, swarm: 1, shahed: 10),
+            .campaign(drones: 35, speed: 68, interval: 0.7, batch: 4, health: 3, missiles: 2, kamikaze: 8, night: true, swarm: 1),
+            .campaign(drones: 38, speed: 71, interval: 0.6, batch: 4, health: 3, miners: 1, kamikaze: 10, cruise: 1, swarm: 1, shahed: 12, lancet: 1),
+            .campaign(drones: 40, speed: 74, interval: 0.5, batch: 5, health: 3, missiles: 2, harms: 1, kamikaze: 12, ew: 1, swarm: 2, lancet: 2),
+            .campaign(drones: 42, speed: 77, interval: 0.5, batch: 5, health: 4, kamikaze: 14, night: true, heavy: 1, cruise: 2, swarm: 2, shahed: 14, orlan: 1),
+            .campaign(drones: 45, speed: 80, interval: 0.4, batch: 5, health: 4, missiles: 3, harms: 1, kamikaze: 16, ew: 1, cruise: 2, swarm: 2, lancet: 3),
+            .campaign(drones: 48, speed: 82, interval: 0.4, batch: 6, health: 4, miners: 1, kamikaze: 18, night: true, heavy: 2, cruise: 3, swarm: 3, shahed: 16),
+            .campaign(drones: 50, speed: 84, interval: 0.35, batch: 6, health: 5, missiles: 3, harms: 2, kamikaze: 20, ew: 2, cruise: 3, swarm: 3, shahed: 18, lancet: 3, orlan: 1),
+            .campaign(drones: 55, speed: 86, interval: 0.35, batch: 6, health: 5, missiles: 4, harms: 2, kamikaze: 24, night: true, heavy: 2, cruise: 3, swarm: 4, shahed: 20, lancet: 4, orlan: 1),
+        ]
+        return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
+                               waves: w, startingResources: 600,
+                               availableTowers: TowerType.allCases,
+                               settlementCount: 5,
+                               guaranteedTowers: [.radar, .interceptor, .gepard])
     }()
 }

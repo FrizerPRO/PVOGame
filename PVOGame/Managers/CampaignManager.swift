@@ -31,43 +31,83 @@ class CampaignManager {
     let levels: [CampaignLevel] = [
         CampaignLevel(
             id: "first_contact",
-            name: "Первый контакт",
-            subtitle: "5 волн — обучение",
-            waveCount: 5,
+            name: "First Contact",
+            subtitle: "4 waves — tutorial",
+            waveCount: 4,
             definition: LevelDefinition.campaignLevel1,
             requiredLevel: nil
         ),
         CampaignLevel(
-            id: "night_shaheds",
-            name: "Ночные Шахеды",
-            subtitle: "8 волн — ночные атаки",
-            waveCount: 8,
+            id: "night_alarm",
+            name: "Night Alarm",
+            subtitle: "5 waves — night attacks",
+            waveCount: 5,
             definition: LevelDefinition.campaignLevel2,
             requiredLevel: "first_contact"
         ),
         CampaignLevel(
-            id: "grad",
-            name: "Град",
-            subtitle: "10 волн — ракетный обстрел",
-            waveCount: 10,
+            id: "missile_strike",
+            name: "Missile Strike",
+            subtitle: "5 waves — missile barrage",
+            waveCount: 5,
             definition: LevelDefinition.campaignLevel3,
-            requiredLevel: "night_shaheds"
+            requiredLevel: "night_alarm"
         ),
         CampaignLevel(
-            id: "lancet_hunt",
-            name: "Охота на Ланцеты",
-            subtitle: "10 волн — защита башен",
-            waveCount: 10,
+            id: "peoples_defense",
+            name: "People's Defense",
+            subtitle: "5 waves — mass attacks",
+            waveCount: 5,
             definition: LevelDefinition.campaignLevel4,
+            requiredLevel: "missile_strike"
+        ),
+        CampaignLevel(
+            id: "city_defense",
+            name: "City Defense",
+            subtitle: "6 waves — settlements",
+            waveCount: 6,
+            definition: LevelDefinition.campaignLevel5,
+            requiredLevel: "peoples_defense"
+        ),
+        CampaignLevel(
+            id: "fpv_attack",
+            name: "FPV Attack",
+            subtitle: "6 waves — EW & FPV",
+            waveCount: 6,
+            definition: LevelDefinition.campaignLevel6,
+            requiredLevel: "city_defense"
+        ),
+        CampaignLevel(
+            id: "grad",
+            name: "Hail",
+            subtitle: "7 waves — heavy missiles",
+            waveCount: 7,
+            definition: LevelDefinition.campaignLevel7,
+            requiredLevel: "fpv_attack"
+        ),
+        CampaignLevel(
+            id: "cruise_missiles",
+            name: "Cruise Missiles",
+            subtitle: "7 waves — cruise missiles",
+            waveCount: 7,
+            definition: LevelDefinition.campaignLevel8,
             requiredLevel: "grad"
         ),
         CampaignLevel(
+            id: "lancets",
+            name: "Lancets",
+            subtitle: "8 waves — loitering munitions",
+            waveCount: 8,
+            definition: LevelDefinition.campaignLevel9,
+            requiredLevel: "cruise_missiles"
+        ),
+        CampaignLevel(
             id: "iron_swarm",
-            name: "Железный рой",
-            subtitle: "12 волн — массовые FPV",
-            waveCount: 12,
-            definition: LevelDefinition.campaignLevel5,
-            requiredLevel: "lancet_hunt"
+            name: "Iron Swarm",
+            subtitle: "10 waves — all combined",
+            waveCount: 10,
+            definition: LevelDefinition.campaignLevel10,
+            requiredLevel: "lancets"
         ),
     ]
 

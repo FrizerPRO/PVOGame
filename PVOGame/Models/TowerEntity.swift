@@ -24,7 +24,8 @@ class TowerEntity: GKEntity {
         super.init()
 
         let size: CGFloat = 28
-        let spriteComponent = SpriteComponent(color: towerType.color, size: CGSize(width: size, height: size))
+        let towerColor = towerType.color
+        let spriteComponent = SpriteComponent(color: towerColor, size: CGSize(width: size, height: size))
         spriteComponent.spriteNode.position = worldPosition
         spriteComponent.spriteNode.zPosition = 25
         addComponent(spriteComponent)
@@ -57,10 +58,18 @@ class TowerEntity: GKEntity {
             addComponent(EWTowerComponent())
         }
 
-        // Magazine towers: create ammo dot indicators
+        // Magazine towers: ammo dots created after tech buffs are applied via rebuildAmmoDots()
         if let capacity = towerType.magazineCapacity {
             setupAmmoDots(count: capacity, on: spriteComponent.spriteNode)
         }
+    }
+
+    func rebuildAmmoDots() {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
+              let capacity = stats?.magazineCapacity else { return }
+        for dot in ammoDots { dot.removeFromParent() }
+        ammoDots.removeAll()
+        setupAmmoDots(count: capacity, on: spriteNode)
     }
 
     required init?(coder: NSCoder) {
@@ -79,9 +88,10 @@ class TowerEntity: GKEntity {
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
               let range = stats?.range,
               rangeIndicator == nil else { return }
+        let towerColor = towerType.color
         let circle = SKShapeNode(circleOfRadius: range)
-        circle.strokeColor = towerType.color.withAlphaComponent(0.4)
-        circle.fillColor = towerType.color.withAlphaComponent(0.08)
+        circle.strokeColor = towerColor.withAlphaComponent(0.4)
+        circle.fillColor = towerColor.withAlphaComponent(0.08)
         circle.lineWidth = 1.5
         circle.zPosition = 22
         circle.position = .zero

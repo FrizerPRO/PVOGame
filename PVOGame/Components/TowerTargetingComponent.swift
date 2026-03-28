@@ -100,7 +100,10 @@ class TowerTargetingComponent: GKComponent {
 
         // Check altitude compatibility
         if let altComp = drone.component(ofType: AltitudeComponent.self) {
-            return stats.reachableAltitudes.contains(altComp.altitude)
+            if stats.reachableAltitudes.contains(altComp.altitude) {
+                return true
+            }
+            return false
         }
         return stats.reachableAltitudes.contains(.low)
     }
@@ -200,12 +203,12 @@ class TowerTargetingComponent: GKComponent {
             targetAltitude = .low
         }
         var accuracy = stats.towerType.accuracy(against: targetAltitude)
-        // Apply EW jamming debuff
         if let tower = entity as? TowerEntity,
            let scene = tower.component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene {
+            // Apply EW jamming debuff
             accuracy *= scene.ewJammingMultiplier(for: tower)
         }
-        let isHit = CGFloat.random(in: 0...1) < accuracy
+        let isHit = CGFloat.random(in: 0...1) < min(accuracy, 1.0)
 
         let dx = target.x - origin.x
         let dy = target.y - origin.y
