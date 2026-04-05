@@ -59,9 +59,15 @@ final class EnemyMissileEntity: AttackDroneEntity {
 
         // Elongated red missile sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 6, height: 18)
-            spriteNode.color = UIColor(red: 0.85, green: 0.15, blue: 0.1, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = Constants.SpriteSize.enemyMissile
+            if let tex = AnimationTextureCache.shared.projectileTextures["missile_enemy"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(red: 0.85, green: 0.15, blue: 0.1, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
         }
     }
 
@@ -111,17 +117,33 @@ final class EnemyMissileEntity: AttackDroneEntity {
         if nightMode {
             spriteNode.color = .clear  // hide body, keep alpha=1 so children visible
             if nightFlameNode == nil {
-                let flame = SKSpriteNode(texture: Self.smokePuffTexture)
+                let flameTex = AnimationTextureCache.shared.flameGlow ?? Self.smokePuffTexture
+                let flame = SKSpriteNode(texture: flameTex)
                 flame.size = CGSize(width: 6, height: 6)
                 flame.color = UIColor(red: 1, green: 0.35, blue: 0.1, alpha: 1)
-                flame.colorBlendFactor = 1.0
+                flame.colorBlendFactor = AnimationTextureCache.shared.flameGlow != nil ? 0 : 1.0
                 flame.alpha = 0.85
                 flame.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
                 flame.zPosition = Constants.NightWave.nightEffectZPosition - spriteNode.zPosition
                 spriteNode.addChild(flame)
+                // Enhanced flicker with scale variation
                 let flicker = SKAction.sequence([
-                    SKAction.fadeAlpha(to: 0.5, duration: 0.12),
-                    SKAction.fadeAlpha(to: 0.85, duration: 0.12)
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 0.5, duration: 0.08),
+                        SKAction.scale(to: 0.85, duration: 0.08)
+                    ]),
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 0.9, duration: 0.06),
+                        SKAction.scale(to: 1.15, duration: 0.06)
+                    ]),
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 0.6, duration: 0.10),
+                        SKAction.scale(to: 0.9, duration: 0.10)
+                    ]),
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 0.85, duration: 0.06),
+                        SKAction.scale(to: 1.05, duration: 0.06)
+                    ])
                 ])
                 flame.run(SKAction.repeatForever(flicker))
                 nightFlameNode = flame
@@ -166,17 +188,37 @@ final class EnemyMissileEntity: AttackDroneEntity {
         physicBody?.contactTestBitMask = 0
         physicBody?.categoryBitMask = 0
 
-        // Orange explosion flash (no spin/fall — ballistic missile explodes in place)
-        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
-            flash.position = spriteNode.position
-            flash.zPosition = (spriteNode.scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 55
-            flash.alpha = 0.9
-            spriteNode.scene?.addChild(flash)
-
-            let expand = SKAction.scale(to: 2.5, duration: 0.2)
-            let fade = SKAction.fadeOut(withDuration: 0.2)
-            flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))
+        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
+           let scene = spriteNode.scene as? InPlaySKScene {
+            // Animated explosion if available
+            let textures = AnimationTextureCache.shared.smallExplosion
+            if !textures.isEmpty {
+                let node = scene.acquireExplosionNode()
+                node.texture = textures[0]
+                node.size = CGSize(width: 24, height: 24)
+                node.color = .white; node.colorBlendFactor = 0
+                node.position = spriteNode.position
+                node.zPosition = scene.isNightWave ? Constants.NightWave.nightEffectZPosition : 55
+                node.alpha = 1.0; node.setScale(1.0)
+                scene.addChild(node)
+                node.run(SKAction.sequence([
+                    SKAction.animate(with: textures, timePerFrame: 0.05, resize: false, restore: false),
+                    SKAction.run { [weak scene, weak node] in
+                        guard let scene, let node else { return }
+                        scene.releaseExplosionNode(node)
+                    }
+                ]))
+            } else {
+                let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
+                flash.position = spriteNode.position
+                flash.zPosition = scene.isNightWave ? Constants.NightWave.nightEffectZPosition : 55
+                flash.alpha = 0.9
+                scene.addChild(flash)
+                flash.run(SKAction.sequence([
+                    SKAction.group([SKAction.scale(to: 2.5, duration: 0.2), SKAction.fadeOut(withDuration: 0.2)]),
+                    SKAction.removeFromParent()
+                ]))
+            }
 
             spriteNode.run(SKAction.sequence([
                 SKAction.fadeOut(withDuration: 0.1),

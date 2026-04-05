@@ -62,7 +62,10 @@ class GameViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view = SKView(frame: view.frame)
-        
+
+        // Preload all sprite textures (safe no-op if assets not yet generated)
+        AnimationTextureCache.shared.preload()
+
         setupView()
     }
     private func setupGun() -> GunEntity{

@@ -42,10 +42,18 @@ final class EWDroneEntity: AttackDroneEntity {
 
         // Purple/magenta EW drone
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 24, height: 24)
-            spriteNode.color = UIColor(red: 0.6, green: 0.2, blue: 0.8, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = CGSize(width: Constants.SpriteSize.ewDrone, height: Constants.SpriteSize.ewDrone)
+            if let tex = AnimationTextureCache.shared.droneTextures["drone_ew"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(red: 0.6, green: 0.2, blue: 0.8, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
         }
+
+        addNavLights(wingspan: 20)
     }
 
     required init(damage: CGFloat, speed: CGFloat, imageName: String, flyingPath: FlyingPath) {

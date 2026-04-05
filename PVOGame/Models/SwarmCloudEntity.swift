@@ -40,12 +40,20 @@ final class SwarmDroneEntity: AttackDroneEntity {
         removeComponent(ofType: FlyingProjectileComponent.self)
         configureHealth(Constants.AdvancedEnemies.swarmDroneHealth)
 
-        // Tiny dot
+        // Tiny swarm micro-drone
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 4, height: 4)
-            spriteNode.color = UIColor(white: 0.4, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = CGSize(width: Constants.SpriteSize.swarmUnit, height: Constants.SpriteSize.swarmUnit)
+            if let tex = AnimationTextureCache.shared.droneTextures["drone_swarm"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(white: 0.4, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
         }
+
+        addPropellerBuzz()
     }
 
     required init(damage: CGFloat, speed: CGFloat, imageName: String, flyingPath: FlyingPath) {

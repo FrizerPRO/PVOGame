@@ -53,10 +53,18 @@ final class OrlanDroneEntity: AttackDroneEntity {
 
         // Distinct cyan/blue appearance — recon drone
         if let spriteNode = drone.component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 20, height: 20)
-            spriteNode.color = UIColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = CGSize(width: Constants.SpriteSize.orlan, height: Constants.SpriteSize.orlan)
+            if let tex = AnimationTextureCache.shared.droneTextures["drone_orlan"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
         }
+
+        drone.addNavLights(wingspan: 16)
 
         // Patrol points — figure-8 across the field
         let midY = sceneFrame.height * 0.6

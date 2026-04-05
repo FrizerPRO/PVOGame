@@ -66,7 +66,7 @@ class SettlementEntity: GKEntity {
         self.currentHP = Constants.Settlement.baseHP
         super.init()
 
-        let size: CGFloat = 28
+        let size: CGFloat = Constants.SpriteSize.settlement
         let spriteComponent = SpriteComponent(color: type.color, size: CGSize(width: size, height: size))
         spriteComponent.spriteNode.position = worldPosition
         spriteComponent.spriteNode.zPosition = Constants.Settlement.spriteZPosition

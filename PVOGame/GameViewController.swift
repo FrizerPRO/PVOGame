@@ -24,7 +24,9 @@ class GameViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view = SKView(frame: view.frame)
-        
+
+        AnimationTextureCache.shared.preload()
+
         setupView()
     }
     

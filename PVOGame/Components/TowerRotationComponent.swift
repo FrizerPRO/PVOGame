@@ -27,6 +27,9 @@ class TowerRotationComponent: GKComponent {
               let spriteNode = tower.component(ofType: SpriteComponent.self)?.spriteNode
         else { return }
 
+        // Rotate the turret child node if available, otherwise the root sprite (fallback)
+        let rotatingNode: SKNode = tower.turretNode ?? spriteNode
+
         let desiredAngle: CGFloat
         let speed: CGFloat
 
@@ -41,12 +44,12 @@ class TowerRotationComponent: GKComponent {
             speed = returnSpeed
         }
 
-        var angleDiff = desiredAngle - spriteNode.zRotation
+        var angleDiff = desiredAngle - rotatingNode.zRotation
         while angleDiff > .pi { angleDiff -= 2 * .pi }
         while angleDiff < -.pi { angleDiff += 2 * .pi }
 
         let maxStep = speed * seconds
         let step = max(-maxStep, min(maxStep, angleDiff))
-        spriteNode.zRotation += step
+        rotatingNode.zRotation += step
     }
 }

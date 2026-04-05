@@ -109,6 +109,14 @@ class CampaignManager {
             definition: LevelDefinition.campaignLevel10,
             requiredLevel: "lancets"
         ),
+        CampaignLevel(
+            id: "test_heavy",
+            name: "TEST: Heavy Drones",
+            subtitle: "3 waves — sandbox",
+            waveCount: 3,
+            definition: LevelDefinition.testHeavyDrones,
+            requiredLevel: nil
+        ),
     ]
 
     // MARK: - Progress

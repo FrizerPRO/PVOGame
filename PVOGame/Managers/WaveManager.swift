@@ -10,7 +10,7 @@ class WaveManager {
     private(set) var isWaveInProgress = false
     private var spawnTimer: TimeInterval = 0
     private var dronesSpawnedThisWave = 0
-    private var currentWaveDef: WaveDefinition?
+    private(set) var currentWaveDef: WaveDefinition?
     private weak var scene: InPlaySKScene?
     private let levelDef: LevelDefinition
 
@@ -144,7 +144,7 @@ class WaveManager {
         swarmsSpawnedThisWave = 0
         swarmTimer = 10.0
         shahedsSpawnedThisWave = 0
-        shahedTimer = Constants.Shahed.batchDelay
+        // shahedTimer set after waveDef is computed below
         lancetsSpawnedThisWave = 0
         lancetTimer = Constants.Lancet.spawnDelay
         orlansSpawnedThisWave = 0
@@ -158,6 +158,11 @@ class WaveManager {
         }
         currentWaveDef = waveDef
         isCurrentWaveNight = waveDef.isNight
+
+        // Set shahed timer based on formation type
+        shahedTimer = waveDef.shahedFormation == .scattered
+            ? Constants.Shahed.batchDelay
+            : Constants.Shahed.formationDelay
     }
 
     func update(deltaTime: TimeInterval) {
@@ -167,7 +172,7 @@ class WaveManager {
         if mineLayersSpawnedThisWave < waveDef.mineLayerCount {
             mineLayerTimer -= deltaTime
             if mineLayerTimer <= 0 {
-                scene.spawnMineLayer(health: waveDef.droneHealth * 2)
+                scene.spawnMineLayer(health: Constants.GameBalance.droneHealth * 2)
                 mineLayersSpawnedThisWave += 1
                 mineLayerTimer = Constants.GameBalance.mineLayerSpawnInterval
             }
@@ -269,23 +274,34 @@ class WaveManager {
             }
         }
 
-        // Shahed-136 spawning — large staggered batches
+        // Shahed-136 spawning
         if shahedsSpawnedThisWave < waveDef.shahedCount {
             shahedTimer -= deltaTime
             if shahedTimer <= 0 {
-                let remaining = waveDef.shahedCount - shahedsSpawnedThisWave
-                let batch = min(Constants.Shahed.batchSize, remaining)
-                for i in 0..<batch {
-                    let delay = TimeInterval(i) * Constants.Shahed.spawnInterval
-                    scene.run(SKAction.sequence([
-                        SKAction.wait(forDuration: delay),
-                        SKAction.run { [weak scene] in
-                            scene?.spawnShahed()
-                        }
-                    ]))
+                switch waveDef.shahedFormation {
+                case .scattered:
+                    // Original staggered batch behavior
+                    let remaining = waveDef.shahedCount - shahedsSpawnedThisWave
+                    let batch = min(Constants.Shahed.batchSize, remaining)
+                    scene.pendingShahedSpawns += batch
+                    for i in 0..<batch {
+                        let delay = TimeInterval(i) * Constants.Shahed.spawnInterval
+                        scene.run(SKAction.sequence([
+                            SKAction.wait(forDuration: delay),
+                            SKAction.run { [weak scene] in
+                                scene?.spawnShahed()
+                            }
+                        ]))
+                    }
+                    shahedsSpawnedThisWave += batch
+                    shahedTimer = Constants.Shahed.batchDelay
+
+                case .chevron, .triangle, .tripleTriangle:
+                    // Spawn entire formation at once
+                    let count = waveDef.shahedCount - shahedsSpawnedThisWave
+                    scene.spawnShahedFormation(count: count, formation: waveDef.shahedFormation)
+                    shahedsSpawnedThisWave = waveDef.shahedCount
                 }
-                shahedsSpawnedThisWave += batch
-                shahedTimer = Constants.Shahed.batchDelay
             }
         }
 
@@ -321,7 +337,7 @@ class WaveManager {
             let allShahedDone = shahedsSpawnedThisWave >= waveDef.shahedCount
             let allLancetDone = lancetsSpawnedThisWave >= waveDef.lancetCount
             let allOrlanDone = orlansSpawnedThisWave >= waveDef.orlanCount
-            if scene.activeDronesForTowers.isEmpty && allMineLayersDone && allSalvosDone && allHarmSalvosDone && allKamikazeDone && allEWDone && allHeavyDone && allCruiseDone && allSwarmDone && allShahedDone && allLancetDone && allOrlanDone && scene.pendingMissileSpawns == 0 && scene.pendingHarmSpawns == 0 {
+            if scene.activeDronesForTowers.isEmpty && allMineLayersDone && allSalvosDone && allHarmSalvosDone && allKamikazeDone && allEWDone && allHeavyDone && allCruiseDone && allSwarmDone && allShahedDone && allLancetDone && allOrlanDone && scene.pendingMissileSpawns == 0 && scene.pendingHarmSpawns == 0 && scene.pendingShahedSpawns == 0 {
                 isWaveInProgress = false
             }
             return
@@ -331,62 +347,79 @@ class WaveManager {
         if spawnTimer <= 0 {
             spawnTimer = waveDef.spawnInterval
             let batch = min(waveDef.spawnBatchSize, waveDef.droneCount - dronesSpawnedThisWave)
-            for _ in 0..<batch {
-                spawnDrone(waveDef: waveDef)
-            }
+            spawnFormationBatch(count: batch, waveDef: waveDef)
         }
     }
 
-    private func spawnDrone(waveDef: WaveDefinition) {
-        guard let scene else { return }
-        guard let gridMap = scene.gridMap else { return }
+    private func spawnFormationBatch(count: Int, waveDef: WaveDefinition) {
+        guard let scene, let gridMap = scene.gridMap else { return }
+        let formation = waveDef.formation
 
-        // Randomize altitude based on wave (exclude .micro — only for bomber drones)
-        let altitude: DroneAltitude
-        if currentWave <= 2 {
-            altitude = .low
-        } else if currentWave <= 4 {
-            altitude = Bool.random() ? .low : .medium
-        } else {
-            altitude = DroneAltitude.regularCases.randomElement() ?? .low
-        }
+        // Altitude is defined per enemy type, not randomized
+        let altitude = waveDef.altitude
 
-        // Assign target settlement (drone flies THROUGH it on the way to HQ)
-        let targetSettlement = scene.settlementManager?.assignTarget(
-            towers: scene.towerPlacement?.towers ?? []
-        )
-
-        // HQ center — always the final destination
         let hqRow = Constants.TowerDefense.gridRows - 1
         let hqCol = Constants.TowerDefense.gridCols / 2
         let hqPoint = gridMap.worldPosition(forRow: hqRow, col: hqCol)
 
-        // Random spawn from top (simpler, more reliable for path-following)
-        let spawnPoint = CGPoint(
-            x: CGFloat.random(in: 20...(scene.frame.width - 20)),
-            y: scene.frame.height + CGFloat.random(in: 20...50)
-        )
+        // Formation leader spawn point
+        let leaderX = CGFloat.random(in: 40...(scene.frame.width - 40))
+        let leaderY = scene.frame.height + CGFloat.random(in: 20...50)
 
-        // Build path: spawn → jitter → settlement → jitter → HQ
-        let waypoints: [CGPoint]
-        if let settlement = targetSettlement {
-            let settlementPoint = settlement.worldPosition
-            waypoints = buildPathThroughSettlement(
-                from: spawnPoint, through: settlementPoint, to: hqPoint
+        for i in 0..<count {
+            let offset = formationOffset(index: i, count: count, formation: formation, screenWidth: scene.frame.width)
+            let spawnPoint = CGPoint(
+                x: min(max(leaderX + offset.x, 10), scene.frame.width - 10),
+                y: leaderY + offset.y
             )
-        } else {
-            // No settlement — fly straight to HQ with jitter (like old behavior)
-            waypoints = buildDirectPath(from: spawnPoint, to: hqPoint)
+
+            let targetSettlement = scene.settlementManager?.assignTarget(
+                towers: scene.towerPlacement?.towers ?? []
+            )
+
+            let waypoints: [CGPoint]
+            if let settlement = targetSettlement {
+                waypoints = buildPathThroughSettlement(
+                    from: spawnPoint, through: settlement.worldPosition, to: hqPoint
+                )
+            } else {
+                waypoints = buildDirectPath(from: spawnPoint, to: hqPoint)
+            }
+
+            let flightPath = DroneFlightPath(waypoints: waypoints, altitude: altitude, spawnEdge: .top)
+            scene.spawnDrone(flightPath: flightPath, altitude: altitude, targetSettlement: targetSettlement)
+            dronesSpawnedThisWave += 1
         }
+    }
 
-        let flightPath = DroneFlightPath(
-            waypoints: waypoints,
-            altitude: altitude,
-            spawnEdge: .top
-        )
-
-        scene.spawnDrone(flightPath: flightPath, speed: waveDef.speed, altitude: altitude, health: waveDef.droneHealth, targetSettlement: targetSettlement)
-        dronesSpawnedThisWave += 1
+    private func formationOffset(index: Int, count: Int, formation: FormationPattern, screenWidth: CGFloat) -> CGPoint {
+        let spacing: CGFloat = 20
+        switch formation {
+        case .scattered:
+            return CGPoint(
+                x: CGFloat.random(in: -40...40),
+                y: CGFloat.random(in: -20...20)
+            )
+        case .vFormation:
+            // V-shape: leader at front, wings behind
+            let side: CGFloat = index % 2 == 0 ? -1 : 1
+            let depth = CGFloat((index + 1) / 2)
+            return CGPoint(x: side * depth * spacing, y: -depth * spacing * 0.7)
+        case .column:
+            // Single file: all at same X, spaced vertically
+            return CGPoint(x: 0, y: -CGFloat(index) * spacing)
+        case .carpet:
+            // Wide horizontal spread
+            let halfCount = CGFloat(count) / 2.0
+            let x = (CGFloat(index) - halfCount) * spacing * 1.5
+            return CGPoint(x: x, y: CGFloat.random(in: -5...5))
+        case .escort:
+            // First drone is center, rest form a ring
+            if index == 0 { return .zero }
+            let angle = CGFloat(index - 1) * (2 * .pi / CGFloat(count - 1))
+            let radius: CGFloat = spacing * 1.5
+            return CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+        }
     }
 
     /// Path: spawn → 2 jitter → settlement → 2 jitter → HQ

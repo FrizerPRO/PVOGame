@@ -36,16 +36,24 @@ final class KamikazeDroneEntity: AttackDroneEntity {
         removeComponent(ofType: FlyingProjectileComponent.self)
         configureHealth(Constants.Kamikaze.health)
 
-        // Small triangular kamikaze sprite
+        // Small FPV kamikaze quadcopter sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 12, height: 14)
-            spriteNode.color = UIColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = Constants.SpriteSize.kamikaze
+            if let tex = AnimationTextureCache.shared.droneTextures["drone_kamikaze"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
         }
         // Add tower contact detection
         if let geoNode = component(ofType: GeometryComponent.self)?.geometryNode {
             geoNode.physicsBody?.contactTestBitMask |= Constants.towerBitMask
         }
+
+        addPropellerBuzz()
     }
 
     required init(damage: CGFloat, speed: CGFloat, imageName: String, flyingPath: FlyingPath) {

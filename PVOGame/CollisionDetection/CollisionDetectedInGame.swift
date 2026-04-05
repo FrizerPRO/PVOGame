@@ -42,6 +42,7 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             shell.detonateWithAnimation()
             if heavyDrone.isHit {
                 gameScene?.onDroneDestroyed(drone: heavyDrone)
+                gameScene?.logKill(weapon: "Gun", enemy: "Heavy")
             }
             return
         }
@@ -50,6 +51,10 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
         shell.detonateWithAnimation()
         if let drone = droneProjectile as? AttackDroneEntity, drone.isHit {
             gameScene?.onDroneDestroyed(drone: drone)
+            gameScene?.logKill(
+                weapon: InPlaySKScene.shellTypeName(shell),
+                enemy: InPlaySKScene.droneTypeName(drone)
+            )
         }
     }
 
@@ -79,6 +84,8 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             drone.takeDamage(blastDamage)
             if drone.isHit {
                 gameScene?.onDroneDestroyed(drone: drone)
+                let weapon = nodeA.name == Self.mineBombBlastNodeName ? "Bomb" : "Blast"
+                gameScene?.logKill(weapon: weapon, enemy: InPlaySKScene.droneTypeName(drone))
             }
             return true
         }
@@ -104,6 +111,8 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             drone.takeDamage(blastDamage)
             if drone.isHit {
                 gameScene?.onDroneDestroyed(drone: drone)
+                let weapon = nodeB.name == Self.mineBombBlastNodeName ? "Bomb" : "Blast"
+                gameScene?.logKill(weapon: weapon, enemy: InPlaySKScene.droneTypeName(drone))
             }
             return true
         }

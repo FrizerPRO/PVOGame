@@ -6,6 +6,21 @@
 import Foundation
 import CoreGraphics
 
+enum FormationPattern: CaseIterable {
+    case scattered    // current random behavior
+    case vFormation   // V-shape, 5-7 drones, leader in front
+    case column       // single file, tight spacing
+    case carpet       // wide horizontal spread
+    case escort       // ring of drones protecting center HeavyDrone/EW
+}
+
+enum ShahedFormation {
+    case scattered       // wave 1: one-by-one random spawning
+    case chevron         // V-shape ("галка")
+    case triangle        // filled triangle
+    case tripleTriangle  // three triangles side by side
+}
+
 struct WaveDefinition {
     let droneCount: Int
     let mineLayerCount: Int
@@ -25,6 +40,8 @@ struct WaveDefinition {
     let shahedCount: Int
     let lancetCount: Int
     let orlanCount: Int
+    let formation: FormationPattern
+    let shahedFormation: ShahedFormation
 
     /// Convenience factory for campaign waves with explicit types
     static func campaign(
@@ -33,7 +50,9 @@ struct WaveDefinition {
         miners: Int = 0, missiles: Int = 0, harms: Int = 0,
         kamikaze: Int = 0, night: Bool = false, ew: Int = 0,
         heavy: Int = 0, cruise: Int = 0, swarm: Int = 0,
-        shahed: Int = 0, lancet: Int = 0, orlan: Int = 0
+        shahed: Int = 0, lancet: Int = 0, orlan: Int = 0,
+        formation: FormationPattern = .scattered,
+        shahedFormation: ShahedFormation = .scattered
     ) -> WaveDefinition {
         WaveDefinition(
             droneCount: drones, mineLayerCount: miners,
@@ -42,7 +61,9 @@ struct WaveDefinition {
             altitude: altitude, droneHealth: health,
             kamikazeCount: kamikaze, isNight: night, ewDroneCount: ew,
             heavyDroneCount: heavy, cruiseMissileCount: cruise, swarmCount: swarm,
-            shahedCount: shahed, lancetCount: lancet, orlanCount: orlan
+            shahedCount: shahed, lancetCount: lancet, orlanCount: orlan,
+            formation: formation,
+            shahedFormation: shahedFormation
         )
     }
 
@@ -51,14 +72,7 @@ struct WaveDefinition {
         let speed: CGFloat = Constants.GameBalance.droneBaseSpeed
             + Constants.GameBalance.droneMaxSpeedBonus
             * (1 - exp(-CGFloat(number) * Constants.GameBalance.droneSpeedGrowthRate))
-        let altitude: DroneAltitude
-        if number <= 2 {
-            altitude = .low
-        } else if number <= 4 {
-            altitude = [.low, .medium].randomElement()!
-        } else {
-            altitude = DroneAltitude.regularCases.randomElement()!
-        }
+        let altitude: DroneAltitude = .low
         let health = 2 + (number - 1) / 2
         let batch = min(3 + number / 2, 6)
         let firstMissileWave = Constants.GameBalance.enemyMissileFirstWave
@@ -115,10 +129,19 @@ struct WaveDefinition {
         }
         // Shahed-136: wave 6+, large batches that grow
         let shahedCount: Int
+        let shahedFormation: ShahedFormation
         if number >= Constants.Shahed.firstWave {
-            shahedCount = Constants.Shahed.batchSize + (number - Constants.Shahed.firstWave) * 2
+            shahedCount = max(13, Constants.Shahed.batchSize + (number - Constants.Shahed.firstWave) * 2)
+            // Cycle formations in infinite mode
+            let cycle = (number - Constants.Shahed.firstWave) % 3
+            switch cycle {
+            case 0: shahedFormation = .chevron
+            case 1: shahedFormation = .triangle
+            default: shahedFormation = .tripleTriangle
+            }
         } else {
             shahedCount = 0
+            shahedFormation = .scattered
         }
         // Lancet: wave 8+
         let lancetCount: Int
@@ -134,6 +157,19 @@ struct WaveDefinition {
         } else {
             orlanCount = 0
         }
+        // Formation: waves 1-2 scattered, 3-6 scattered/V, 7+ any
+        let formation: FormationPattern
+        if number <= 2 {
+            formation = .scattered
+        } else if number <= 6 {
+            formation = [.scattered, .vFormation].randomElement()!
+        } else {
+            let options: [FormationPattern] = heavyDroneCount > 0 || ewDroneCount > 0
+                ? [.scattered, .vFormation, .column, .carpet, .escort]
+                : [.scattered, .vFormation, .column, .carpet]
+            formation = options.randomElement()!
+        }
+
         return WaveDefinition(
             droneCount: baseCount,
             mineLayerCount: number >= 3 ? 1 : 0,
@@ -152,7 +188,9 @@ struct WaveDefinition {
             swarmCount: swarmCount,
             shahedCount: shahedCount,
             lancetCount: lancetCount,
-            orlanCount: orlanCount
+            orlanCount: orlanCount,
+            formation: formation,
+            shahedFormation: shahedFormation
         )
     }
 }
@@ -165,12 +203,14 @@ struct LevelDefinition {
     let availableTowers: [TowerType]
     let settlementCount: Int
     let guaranteedTowers: [TowerType]
+    let conveyorSlotCount: Int
 
     init(gridLayout: [[Int]], dronePaths: [DronePathDefinition],
          waves: [WaveDefinition], startingResources: Int,
          availableTowers: [TowerType] = TowerType.allCases,
          settlementCount: Int = Constants.Settlement.count,
-         guaranteedTowers: [TowerType] = []) {
+         guaranteedTowers: [TowerType] = [],
+         conveyorSlotCount: Int = 5) {
         self.gridLayout = gridLayout
         self.dronePaths = dronePaths
         self.waves = waves
@@ -178,28 +218,29 @@ struct LevelDefinition {
         self.availableTowers = availableTowers
         self.settlementCount = settlementCount
         self.guaranteedTowers = guaranteedTowers
+        self.conveyorSlotCount = conveyorSlotCount
     }
 
-    // 0 = ground (placeable), 1 = flight path, 2 = blocked, 3 = headquarters
+    // 0 = ground, 1 = highGround (+range), 2 = blocked, 3 = HQ, 5 = concealed (HARM-immune), 6 = valley (drone speed)
     static let level1: LevelDefinition = {
         // 16 rows x 10 cols, portrait orientation
-        // Drones fly top to bottom through the flight path
+        // Terrain zones replace the old flight path
         let layout: [[Int]] = [
-            [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],  // row 0 (top)
-            [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
-            [0, 0, 1, 1, 1, 0, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 0, 1, 1, 1, 1, 1, 1, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 1, 1, 1, 1, 1, 0, 0],
-            [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 0, 1, 1, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 6, 6, 0, 0, 0, 0],  // row 0 (top) — valley entry
+            [0, 1, 0, 0, 6, 6, 0, 0, 1, 0],  // high ground on flanks
+            [0, 0, 0, 0, 6, 0, 0, 0, 0, 0],
+            [0, 0, 0, 6, 6, 0, 0, 0, 0, 0],
+            [0, 1, 0, 6, 0, 0, 0, 0, 0, 0],  // high ground left
+            [0, 0, 0, 6, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 6, 6, 6, 6, 0, 0, 0],  // valley corridor across
+            [0, 0, 0, 0, 0, 0, 6, 0, 1, 0],  // high ground right
+            [0, 0, 0, 0, 0, 0, 6, 0, 0, 0],
+            [0, 0, 0, 0, 6, 6, 6, 0, 0, 0],
+            [0, 0, 0, 0, 6, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 6, 0, 0, 0, 1, 0],  // high ground right
+            [0, 0, 5, 0, 0, 0, 0, 0, 0, 0],  // concealed near HQ
+            [0, 0, 0, 0, 0, 0, 0, 5, 0, 0],  // concealed near HQ
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             [0, 0, 0, 0, 3, 3, 0, 0, 0, 0],  // row 15 (bottom) — HQ
         ]
 
@@ -279,13 +320,13 @@ struct LevelDefinition {
     private static var sharedPaths: [DronePathDefinition] { level1.dronePaths }
     private static var sharedLayout: [[Int]] { level1.gridLayout }
 
-    // MARK: - Campaign Level 1: First Contact (4 waves — ZU only, basic drones)
+    // MARK: - Campaign Level 1: First Contact (4 waves — ZU only, Shaheds)
     static let campaignLevel1: LevelDefinition = {
         let w: [WaveDefinition] = [
-            .campaign(drones: 15, speed: 55, interval: 1.2, batch: 2, health: 1),
-            .campaign(drones: 20, speed: 58, interval: 1.0, batch: 2, health: 1),
-            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1),
-            .campaign(drones: 30, speed: 64, interval: 0.8, batch: 3, health: 2),
+            .campaign(drones: 0, speed: 55, interval: 1.2, batch: 2, health: 1, shahed: 8),
+            .campaign(drones: 0, speed: 58, interval: 1.0, batch: 2, health: 1, shahed: 13, shahedFormation: .chevron),
+            .campaign(drones: 0, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 15, shahedFormation: .triangle),
+            .campaign(drones: 0, speed: 64, interval: 0.8, batch: 3, health: 2, shahed: 24, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 300,
@@ -330,10 +371,10 @@ struct LevelDefinition {
     static let campaignLevel4: LevelDefinition = {
         let w: [WaveDefinition] = [
             .campaign(drones: 22, speed: 58, interval: 1.0, batch: 2, health: 1),
-            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 8),
-            .campaign(drones: 28, speed: 64, interval: 0.8, batch: 3, health: 2, kamikaze: 4, shahed: 10),
-            .campaign(drones: 30, speed: 67, interval: 0.7, batch: 4, health: 2, kamikaze: 6, shahed: 12),
-            .campaign(drones: 35, speed: 70, interval: 0.6, batch: 4, health: 2, kamikaze: 8, night: true, shahed: 14),
+            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 13, shahedFormation: .chevron),
+            .campaign(drones: 28, speed: 64, interval: 0.8, batch: 3, health: 2, kamikaze: 4, shahed: 15, shahedFormation: .triangle),
+            .campaign(drones: 30, speed: 67, interval: 0.7, batch: 4, health: 2, kamikaze: 6, shahed: 24, shahedFormation: .tripleTriangle),
+            .campaign(drones: 35, speed: 70, interval: 0.6, batch: 4, health: 2, kamikaze: 8, night: true, shahed: 27, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 400,
@@ -346,11 +387,11 @@ struct LevelDefinition {
     static let campaignLevel5: LevelDefinition = {
         let w: [WaveDefinition] = [
             .campaign(drones: 20, speed: 58, interval: 1.0, batch: 2, health: 1),
-            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 6),
-            .campaign(drones: 28, speed: 64, interval: 0.8, batch: 3, health: 2, missiles: 1, shahed: 8),
+            .campaign(drones: 25, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 11, shahedFormation: .chevron),
+            .campaign(drones: 28, speed: 64, interval: 0.8, batch: 3, health: 2, missiles: 1, shahed: 15, shahedFormation: .triangle),
             .campaign(drones: 30, speed: 67, interval: 0.7, batch: 4, health: 2, kamikaze: 4, night: true),
-            .campaign(drones: 33, speed: 70, interval: 0.6, batch: 4, health: 2, missiles: 1, kamikaze: 6, shahed: 10),
-            .campaign(drones: 35, speed: 73, interval: 0.6, batch: 4, health: 3, missiles: 2, kamikaze: 8, shahed: 12),
+            .campaign(drones: 33, speed: 70, interval: 0.6, batch: 4, health: 2, missiles: 1, kamikaze: 6, shahed: 21, shahedFormation: .tripleTriangle),
+            .campaign(drones: 35, speed: 73, interval: 0.6, batch: 4, health: 3, missiles: 2, kamikaze: 8, shahed: 24, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 350,
@@ -364,10 +405,10 @@ struct LevelDefinition {
         let w: [WaveDefinition] = [
             .campaign(drones: 25, speed: 60, interval: 0.9, batch: 3, health: 2),
             .campaign(drones: 28, speed: 63, interval: 0.8, batch: 3, health: 2, kamikaze: 5, ew: 1),
-            .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, kamikaze: 7, night: true, ew: 1, shahed: 8),
+            .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, kamikaze: 7, night: true, ew: 1, shahed: 15, shahedFormation: .triangle),
             .campaign(drones: 33, speed: 69, interval: 0.7, batch: 4, health: 3, missiles: 1, kamikaze: 8, ew: 1),
-            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 4, health: 3, kamikaze: 10, night: true, ew: 2, shahed: 10),
-            .campaign(drones: 38, speed: 75, interval: 0.5, batch: 5, health: 3, missiles: 1, kamikaze: 12, ew: 2, shahed: 12),
+            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 4, health: 3, kamikaze: 10, night: true, ew: 2, shahed: 21, shahedFormation: .tripleTriangle),
+            .campaign(drones: 38, speed: 75, interval: 0.5, batch: 5, health: 3, missiles: 1, kamikaze: 12, ew: 2, shahed: 24, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 400,
@@ -380,12 +421,12 @@ struct LevelDefinition {
     static let campaignLevel7: LevelDefinition = {
         let w: [WaveDefinition] = [
             .campaign(drones: 25, speed: 60, interval: 0.9, batch: 3, health: 2),
-            .campaign(drones: 28, speed: 63, interval: 0.8, batch: 3, health: 2, missiles: 2, shahed: 8),
+            .campaign(drones: 28, speed: 63, interval: 0.8, batch: 3, health: 2, missiles: 2, shahed: 13, shahedFormation: .chevron),
             .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, missiles: 2, harms: 1, night: true),
-            .campaign(drones: 33, speed: 69, interval: 0.7, batch: 4, health: 3, missiles: 3, kamikaze: 5, ew: 1, shahed: 10),
-            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 5, health: 3, missiles: 3, harms: 1, kamikaze: 7, shahed: 12),
+            .campaign(drones: 33, speed: 69, interval: 0.7, batch: 4, health: 3, missiles: 3, kamikaze: 5, ew: 1, shahed: 21, shahedFormation: .tripleTriangle),
+            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 5, health: 3, missiles: 3, harms: 1, kamikaze: 7, shahed: 21, shahedFormation: .tripleTriangle),
             .campaign(drones: 38, speed: 75, interval: 0.5, batch: 5, health: 3, missiles: 4, kamikaze: 8, night: true, ew: 1),
-            .campaign(drones: 40, speed: 78, interval: 0.5, batch: 5, health: 4, missiles: 4, harms: 2, kamikaze: 10, shahed: 14),
+            .campaign(drones: 40, speed: 78, interval: 0.5, batch: 5, health: 4, missiles: 4, harms: 2, kamikaze: 10, shahed: 27, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 500,
@@ -399,11 +440,11 @@ struct LevelDefinition {
         let w: [WaveDefinition] = [
             .campaign(drones: 28, speed: 62, interval: 0.8, batch: 3, health: 2, shahed: 8),
             .campaign(drones: 30, speed: 65, interval: 0.7, batch: 4, health: 2, heavy: 1, cruise: 1),
-            .campaign(drones: 33, speed: 68, interval: 0.7, batch: 4, health: 3, missiles: 2, night: true, cruise: 1, shahed: 10),
+            .campaign(drones: 33, speed: 68, interval: 0.7, batch: 4, health: 3, missiles: 2, night: true, cruise: 1, shahed: 15, shahedFormation: .triangle),
             .campaign(drones: 35, speed: 71, interval: 0.6, batch: 4, health: 3, miners: 1, kamikaze: 6, heavy: 1, cruise: 2),
-            .campaign(drones: 38, speed: 74, interval: 0.5, batch: 5, health: 3, missiles: 2, harms: 1, kamikaze: 8, cruise: 2, shahed: 12),
+            .campaign(drones: 38, speed: 74, interval: 0.5, batch: 5, health: 3, missiles: 2, harms: 1, kamikaze: 8, cruise: 2, shahed: 21, shahedFormation: .tripleTriangle),
             .campaign(drones: 40, speed: 77, interval: 0.5, batch: 5, health: 4, miners: 1, kamikaze: 10, night: true, heavy: 2, cruise: 2),
-            .campaign(drones: 42, speed: 80, interval: 0.4, batch: 5, health: 4, missiles: 3, harms: 1, kamikaze: 12, heavy: 2, cruise: 3, shahed: 14),
+            .campaign(drones: 42, speed: 80, interval: 0.4, batch: 5, health: 4, missiles: 3, harms: 1, kamikaze: 12, heavy: 2, cruise: 3, shahed: 27, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 500,
@@ -417,11 +458,11 @@ struct LevelDefinition {
         let w: [WaveDefinition] = [
             .campaign(drones: 25, speed: 60, interval: 0.9, batch: 3, health: 2),
             .campaign(drones: 28, speed: 63, interval: 0.8, batch: 3, health: 2, lancet: 1),
-            .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, kamikaze: 5, shahed: 8, lancet: 2),
+            .campaign(drones: 30, speed: 66, interval: 0.7, batch: 4, health: 2, kamikaze: 5, shahed: 15, lancet: 2, shahedFormation: .triangle),
             .campaign(drones: 33, speed: 69, interval: 0.7, batch: 4, health: 3, missiles: 1, night: true, lancet: 2, orlan: 1),
-            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 4, health: 3, kamikaze: 7, ew: 1, shahed: 10, lancet: 3),
+            .campaign(drones: 35, speed: 72, interval: 0.6, batch: 4, health: 3, kamikaze: 7, ew: 1, shahed: 21, lancet: 3, shahedFormation: .tripleTriangle),
             .campaign(drones: 38, speed: 75, interval: 0.5, batch: 5, health: 3, missiles: 2, harms: 1, kamikaze: 8, lancet: 3, orlan: 1),
-            .campaign(drones: 40, speed: 78, interval: 0.5, batch: 5, health: 4, kamikaze: 10, night: true, cruise: 1, shahed: 12, lancet: 4),
+            .campaign(drones: 40, speed: 78, interval: 0.5, batch: 5, health: 4, kamikaze: 10, night: true, cruise: 1, shahed: 24, lancet: 4, shahedFormation: .tripleTriangle),
             .campaign(drones: 42, speed: 80, interval: 0.4, batch: 5, health: 4, missiles: 2, kamikaze: 12, ew: 1, heavy: 1, lancet: 4, orlan: 1),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
@@ -435,20 +476,43 @@ struct LevelDefinition {
     static let campaignLevel10: LevelDefinition = {
         let w: [WaveDefinition] = [
             .campaign(drones: 30, speed: 62, interval: 0.8, batch: 3, health: 2, shahed: 8),
-            .campaign(drones: 33, speed: 65, interval: 0.7, batch: 4, health: 2, kamikaze: 6, swarm: 1, shahed: 10),
+            .campaign(drones: 33, speed: 65, interval: 0.7, batch: 4, health: 2, kamikaze: 6, swarm: 1, shahed: 13, shahedFormation: .chevron),
             .campaign(drones: 35, speed: 68, interval: 0.7, batch: 4, health: 3, missiles: 2, kamikaze: 8, night: true, swarm: 1),
-            .campaign(drones: 38, speed: 71, interval: 0.6, batch: 4, health: 3, miners: 1, kamikaze: 10, cruise: 1, swarm: 1, shahed: 12, lancet: 1),
+            .campaign(drones: 38, speed: 71, interval: 0.6, batch: 4, health: 3, miners: 1, kamikaze: 10, cruise: 1, swarm: 1, shahed: 21, lancet: 1, shahedFormation: .tripleTriangle),
             .campaign(drones: 40, speed: 74, interval: 0.5, batch: 5, health: 3, missiles: 2, harms: 1, kamikaze: 12, ew: 1, swarm: 2, lancet: 2),
-            .campaign(drones: 42, speed: 77, interval: 0.5, batch: 5, health: 4, kamikaze: 14, night: true, heavy: 1, cruise: 2, swarm: 2, shahed: 14, orlan: 1),
+            .campaign(drones: 42, speed: 77, interval: 0.5, batch: 5, health: 4, kamikaze: 14, night: true, heavy: 1, cruise: 2, swarm: 2, shahed: 24, orlan: 1, shahedFormation: .tripleTriangle),
             .campaign(drones: 45, speed: 80, interval: 0.4, batch: 5, health: 4, missiles: 3, harms: 1, kamikaze: 16, ew: 1, cruise: 2, swarm: 2, lancet: 3),
-            .campaign(drones: 48, speed: 82, interval: 0.4, batch: 6, health: 4, miners: 1, kamikaze: 18, night: true, heavy: 2, cruise: 3, swarm: 3, shahed: 16),
-            .campaign(drones: 50, speed: 84, interval: 0.35, batch: 6, health: 5, missiles: 3, harms: 2, kamikaze: 20, ew: 2, cruise: 3, swarm: 3, shahed: 18, lancet: 3, orlan: 1),
-            .campaign(drones: 55, speed: 86, interval: 0.35, batch: 6, health: 5, missiles: 4, harms: 2, kamikaze: 24, night: true, heavy: 2, cruise: 3, swarm: 4, shahed: 20, lancet: 4, orlan: 1),
+            .campaign(drones: 48, speed: 82, interval: 0.4, batch: 6, health: 4, miners: 1, kamikaze: 18, night: true, heavy: 2, cruise: 3, swarm: 3, shahed: 27, shahedFormation: .tripleTriangle),
+            .campaign(drones: 50, speed: 84, interval: 0.35, batch: 6, health: 5, missiles: 3, harms: 2, kamikaze: 20, ew: 2, cruise: 3, swarm: 3, shahed: 30, lancet: 3, orlan: 1, shahedFormation: .tripleTriangle),
+            .campaign(drones: 55, speed: 86, interval: 0.35, batch: 6, health: 5, missiles: 4, harms: 2, kamikaze: 24, night: true, heavy: 2, cruise: 3, swarm: 4, shahed: 33, lancet: 4, orlan: 1, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 600,
                                availableTowers: TowerType.allCases,
                                settlementCount: 5,
                                guaranteedTowers: [.radar, .interceptor, .gepard])
+    }()
+
+    // MARK: - Test Level: Heavy Drones (debug/sandbox)
+    static let testHeavyDrones: LevelDefinition = {
+        let w: [WaveDefinition] = [
+            // Wave 1: only heavy armored drones, slow, high HP — to test damage visuals
+            .campaign(drones: 0, speed: 0, interval: 1.0, batch: 1, health: 1,
+                      heavy: 5),
+            // Wave 2: more heavy + some regular high-HP
+            .campaign(drones: 10, speed: 40, interval: 0.8, batch: 2, health: 8,
+                      heavy: 8),
+            // Wave 3: heavy + cruise missiles
+            .campaign(drones: 5, speed: 45, interval: 0.7, batch: 2, health: 10,
+                      heavy: 10, cruise: 3),
+        ]
+        return LevelDefinition(
+            gridLayout: sharedLayout, dronePaths: sharedPaths,
+            waves: w, startingResources: 99999,
+            availableTowers: TowerType.allCases,
+            settlementCount: 0,
+            guaranteedTowers: TowerType.allCases,
+            conveyorSlotCount: TowerType.allCases.count
+        )
     }()
 }

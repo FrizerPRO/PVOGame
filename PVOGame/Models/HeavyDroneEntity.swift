@@ -9,6 +9,8 @@ import SpriteKit
 
 final class HeavyDroneEntity: AttackDroneEntity {
 
+    override var isBossType: Bool { true }
+
     private(set) var armorPoints: Int = Constants.AdvancedEnemies.heavyDroneArmor
     private var bombsRemaining: Int = Constants.AdvancedEnemies.heavyDroneBombCount
     private var hasBombed = false
@@ -29,13 +31,30 @@ final class HeavyDroneEntity: AttackDroneEntity {
         removeComponent(ofType: FlyingProjectileComponent.self)
         configureHealth(Constants.AdvancedEnemies.heavyDroneHealth)
 
-        // Large winged drone sprite
+        // Large hexacopter drone sprite
+        let spriteScale = Constants.AdvancedEnemies.heavyDroneSpriteScale
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            let scale = Constants.AdvancedEnemies.heavyDroneSpriteScale
-            spriteNode.size = CGSize(width: 30 * scale, height: 30 * scale)
-            spriteNode.color = UIColor(red: 0.35, green: 0.4, blue: 0.3, alpha: 1)
+            spriteNode.size = CGSize(width: Constants.SpriteSize.heavyDroneBase * spriteScale, height: Constants.SpriteSize.heavyDroneBase * spriteScale)
+            // TODO: HeavyDroneEntity uses placeholder "Drone" sprite until it gets a distinct role
+            spriteNode.color = UIColor(red: 0.23, green: 0.23, blue: 0.23, alpha: 1)
             spriteNode.colorBlendFactor = 1.0
+
+            // 6 spinning propellers at arm tips (hexacopter layout)
+            let armLength: CGFloat = 12 * spriteScale
+            let propSize = CGSize(width: 7 * spriteScale, height: 2 * spriteScale)
+            for i in 0..<6 {
+                let angle = CGFloat(i) * (.pi / 3) - .pi / 2 // start from top
+                let pos = CGPoint(x: cos(angle) * armLength, y: sin(angle) * armLength)
+                let prop = SKSpriteNode(color: UIColor(white: 0.2, alpha: 0.8), size: propSize)
+                prop.position = pos
+                prop.zPosition = 1
+                let spin = SKAction.repeatForever(SKAction.rotate(byAngle: .pi * 2, duration: 0.12))
+                prop.run(spin)
+                spriteNode.addChild(prop)
+            }
         }
+
+        addNavLights(wingspan: 28 * spriteScale)
     }
 
     required init(damage: CGFloat, speed: CGFloat, imageName: String, flyingPath: FlyingPath) {
@@ -48,11 +67,23 @@ final class HeavyDroneEntity: AttackDroneEntity {
 
     /// Armor system: bullets blocked if armor > 0, rockets pierce
     override func takeDamage(_ amount: Int) {
-        // This will be called from collision handling
-        // Armor logic handled externally via armorPoints check
-        health -= amount
+        guard !isHit else { return }
+        health = max(0, health - amount)
         if health <= 0 {
             didHit()
+        } else {
+            // White hit flash — restores damage tint after
+            if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+                spriteNode.removeAction(forKey: "hitFlash")
+                let savedColor = spriteNode.color
+                let savedBlend = spriteNode.colorBlendFactor
+                let flash = SKAction.sequence([
+                    SKAction.colorize(with: .white, colorBlendFactor: 1.0, duration: 0.03),
+                    SKAction.colorize(with: savedColor, colorBlendFactor: savedBlend, duration: 0.08)
+                ])
+                spriteNode.run(flash, withKey: "hitFlash")
+            }
+            updateDamageVisuals()
         }
         updateHPBar()
     }

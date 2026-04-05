@@ -57,6 +57,8 @@ class TowerTargetingComponent: GKComponent {
                 if wasKill {
                     fireCooldown = min(fireCooldown, 0.1)
                 }
+                // Notify animation component that target is lost
+                (entity as? TowerEntity)?.component(ofType: TowerAnimationComponent.self)?.onTargetLost()
             }
         }
 
@@ -87,6 +89,17 @@ class TowerTargetingComponent: GKComponent {
 
         // Range check: always use full range
         guard distSq <= stats.range * stats.range else { return false }
+
+        // HighGround LOS: towers below highGround can't see drones behind it
+        if let tower = entity as? TowerEntity,
+           let gridPos = tower.component(ofType: GridPositionComponent.self),
+           let scene = tower.component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene,
+           let gridMap = scene.gridMap {
+            let onHigh = gridMap.cell(atRow: gridPos.row, col: gridPos.col)?.terrain == .highGround
+            if gridMap.isLineOfSightBlocked(from: towerPos, to: dronePos, towerOnHighGround: onHigh) {
+                return false
+            }
+        }
 
         // Night radar gate: gun-based AA and IR-guided ПЗРК require radar coverage at night
         if stats.towerType == .autocannon || stats.towerType == .ciws
@@ -168,17 +181,20 @@ class TowerTargetingComponent: GKComponent {
 
     @discardableResult
     private func fire(from towerPos: CGPoint, toward targetPos: CGPoint, in scene: InPlaySKScene, stats: TowerStatsComponent) -> Bool {
+        let animComp = (entity as? TowerEntity)?.component(ofType: TowerAnimationComponent.self)
+
         switch stats.towerType {
         case .autocannon, .ciws:
             fireBullet(from: towerPos, toward: targetPos, in: scene, stats: stats)
+            animComp?.onBulletFired()
             return true
         case .samLauncher:
             let fired = fireRocket(from: towerPos, toward: targetPos, in: scene, spec: Constants.GameBalance.standardRocketSpec)
-            if fired { stats.consumeAmmo() }
+            if fired { stats.consumeAmmo(); animComp?.onRocketFired() }
             return fired
         case .interceptor:
             let fired = fireRocket(from: towerPos, toward: targetPos, in: scene, spec: Constants.GameBalance.interceptorRocketBaseSpec)
-            if fired { stats.consumeAmmo() }
+            if fired { stats.consumeAmmo(); animComp?.onRocketFired() }
             return fired
         case .radar:
             return false
@@ -186,10 +202,11 @@ class TowerTargetingComponent: GKComponent {
             return false  // EW tower doesn't fire; effects handled by EWTowerComponent
         case .pzrk:
             let fired = fireRocket(from: towerPos, toward: targetPos, in: scene, spec: Constants.GameBalance.interceptorRocketBaseSpec)
-            if fired { stats.consumeAmmo() }
+            if fired { stats.consumeAmmo(); animComp?.onRocketFired() }
             return fired
         case .gepard:
             fireBullet(from: towerPos, toward: targetPos, in: scene, stats: stats)
+            animComp?.onBulletFired()
             return true
         }
     }
@@ -332,7 +349,12 @@ class TowerTargetingComponent: GKComponent {
         scene.addEntity(rocket)
 
         // Ignition flame at launcher
-        let flame = SKSpriteNode(color: .orange, size: CGSize(width: 14, height: 14))
+        let flame: SKSpriteNode
+        if let flameTex = AnimationTextureCache.shared.flameGlow {
+            flame = SKSpriteNode(texture: flameTex, size: CGSize(width: 14, height: 14))
+        } else {
+            flame = SKSpriteNode(color: .orange, size: CGSize(width: 14, height: 14))
+        }
         flame.position = origin
         flame.zPosition = scene.isNightWave
             ? Constants.NightWave.nightEffectZPosition : 44
@@ -340,8 +362,12 @@ class TowerTargetingComponent: GKComponent {
         scene.addChild(flame)
         flame.run(SKAction.sequence([
             SKAction.group([
-                SKAction.scale(to: 1.8, duration: 0.15),
-                SKAction.fadeOut(withDuration: 0.15)
+                SKAction.scale(to: 2.2, duration: 0.08),
+                SKAction.colorize(with: .white, colorBlendFactor: 0.6, duration: 0.04)
+            ]),
+            SKAction.group([
+                SKAction.scale(to: 1.8, duration: 0.07),
+                SKAction.fadeOut(withDuration: 0.10)
             ]),
             SKAction.removeFromParent()
         ]))
@@ -368,8 +394,15 @@ class TowerTargetingComponent: GKComponent {
     }
 
     private func spawnLaunchSmoke(at position: CGPoint, in scene: SKScene) {
+        let smokeTex = AnimationTextureCache.shared.smokePuffGray ?? AnimationTextureCache.shared.smokePuff
         for i in 0..<3 {
-            let puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.6), size: CGSize(width: 10, height: 10))
+            let puff: SKSpriteNode
+            if let tex = smokeTex {
+                puff = SKSpriteNode(texture: tex, size: CGSize(width: 10, height: 10))
+                puff.alpha = 0.6
+            } else {
+                puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.6), size: CGSize(width: 10, height: 10))
+            }
             puff.position = position
             puff.zPosition = 24
             scene.addChild(puff)

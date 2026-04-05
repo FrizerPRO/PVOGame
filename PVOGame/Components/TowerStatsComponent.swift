@@ -173,11 +173,11 @@ enum TowerType: String, CaseIterable {
         switch self {
         case .autocannon: return 120
         case .ciws: return 80
-        case .samLauncher: return 400
-        case .interceptor: return 300
+        case .samLauncher: return Constants.GameBalance.standardRocketSpec.maxFlightDistance
+        case .interceptor: return Constants.GameBalance.interceptorRocketBaseSpec.maxFlightDistance
         case .radar: return 130
         case .ewTower: return Constants.EW.ewTowerRange
-        case .pzrk: return 80
+        case .pzrk: return 80  // short detection range; missile chases further
         case .gepard: return 100
         }
     }

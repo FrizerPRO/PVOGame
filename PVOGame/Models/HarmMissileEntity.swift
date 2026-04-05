@@ -58,11 +58,17 @@ final class HarmMissileEntity: AttackDroneEntity {
         )
         removeComponent(ofType: FlyingProjectileComponent.self)
 
-        // Olive green missile sprite
+        // HARM anti-radiation missile sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 7, height: 20)
-            spriteNode.color = UIColor(red: 0.4, green: 0.5, blue: 0.35, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = Constants.SpriteSize.harmMissile
+            if let tex = AnimationTextureCache.shared.projectileTextures["missile_harm"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(red: 0.4, green: 0.5, blue: 0.35, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
         }
     }
 
@@ -127,17 +133,20 @@ final class HarmMissileEntity: AttackDroneEntity {
         if nightMode {
             spriteNode.color = .clear
             if nightFlameNode == nil {
-                let flame = SKSpriteNode(texture: Self.smokePuffTexture)
+                let flameTex = AnimationTextureCache.shared.flameGlow ?? Self.smokePuffTexture
+                let flame = SKSpriteNode(texture: flameTex)
                 flame.size = CGSize(width: 6, height: 6)
                 flame.color = UIColor(red: 1, green: 0.35, blue: 0.1, alpha: 1)
-                flame.colorBlendFactor = 1.0
+                flame.colorBlendFactor = AnimationTextureCache.shared.flameGlow != nil ? 0 : 1.0
                 flame.alpha = 0.85
                 flame.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
                 flame.zPosition = Constants.NightWave.nightEffectZPosition - spriteNode.zPosition
                 spriteNode.addChild(flame)
                 let flicker = SKAction.sequence([
-                    SKAction.fadeAlpha(to: 0.5, duration: 0.12),
-                    SKAction.fadeAlpha(to: 0.85, duration: 0.12)
+                    SKAction.group([SKAction.fadeAlpha(to: 0.5, duration: 0.08), SKAction.scale(to: 0.85, duration: 0.08)]),
+                    SKAction.group([SKAction.fadeAlpha(to: 0.9, duration: 0.06), SKAction.scale(to: 1.15, duration: 0.06)]),
+                    SKAction.group([SKAction.fadeAlpha(to: 0.6, duration: 0.10), SKAction.scale(to: 0.9, duration: 0.10)]),
+                    SKAction.group([SKAction.fadeAlpha(to: 0.85, duration: 0.06), SKAction.scale(to: 1.05, duration: 0.06)])
                 ])
                 flame.run(SKAction.repeatForever(flicker))
                 nightFlameNode = flame

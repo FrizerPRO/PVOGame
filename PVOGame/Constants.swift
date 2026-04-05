@@ -68,6 +68,7 @@ class Constants{
         static let waveSpeedIncrease: CGFloat = 25
         static let waveDroneIncrease = 10
         // Asymptotic drone speed curve: baseSpeed + maxBonus * (1 - exp(-wave * rate))
+        static let droneHealth = 3
         static let droneBaseSpeed: CGFloat = 40
         static let droneMaxSpeedBonus: CGFloat = 55
         static let droneSpeedGrowthRate: CGFloat = 0.12
@@ -188,7 +189,7 @@ class Constants{
             initialSpeed: 65,
             acceleration: 1600,
             maxSpeed: 1750,
-            maxFlightDistance: 200,
+            maxFlightDistance: 300,
             turnSpeed: .pi * 2.2,
             retargetInterval: 0.12,
             cooldown: 0.32,
@@ -356,8 +357,7 @@ class Constants{
         static let cruiseMissileHealth = 3
         static let cruiseMissileHQDamage = 4
         static let cruiseMissileEvasionRadius: CGFloat = 60
-        static let cruiseMissileMaxEvasions = 3
-        static let cruiseMissileEvasionAngle: CGFloat = .pi / 3  // 60°
+        static let cruiseMissileTurnRate: CGFloat = .pi / 6  // 30° per second
         static let cruiseMissileDiveChance: CGFloat = 0.3
         static let cruiseMissileDiveDuration: TimeInterval = 1.5
         static let cruiseMissileScore = 250
@@ -386,6 +386,10 @@ class Constants{
         static let batchSize = 10      // drones per spawn batch
         static let spawnInterval: TimeInterval = 0.5  // between drones in a batch
         static let batchDelay: TimeInterval = 8.0     // between batches
+        // Formation constants
+        static let formationSpacing: CGFloat = 32     // px between drone centers
+        static let formationDelay: TimeInterval = 3.0 // delay before formation spawns
+        static let formationStagger: TimeInterval = 0.01 // near-instant spawn for tight formation
     }
 
     // MARK: - Lancet Constants
@@ -446,6 +450,30 @@ class Constants{
 
         // Visual
         static let spriteZPosition: CGFloat = 15
+    }
+
+    // MARK: - Sprite Sizes
+    struct SpriteSize {
+        static let towerBase: CGFloat = 38
+        static let towerPreview: CGFloat = 32
+        static let settlement: CGFloat = 34
+        static let shahed: CGFloat = 28
+        static let kamikaze = CGSize(width: 16, height: 18)
+        static let ewDrone: CGFloat = 30
+        static let lancet = CGSize(width: 18, height: 22)
+        static let orlan: CGFloat = 26
+        static let heavyDroneBase: CGFloat = 36
+        static let cruiseMissile = CGSize(width: 10, height: 28)
+        static let harmMissile = CGSize(width: 9, height: 26)
+        static let enemyMissile = CGSize(width: 8, height: 24)
+        static let swarmUnit: CGFloat = 5
+        static let attackDrone: CGFloat = 30
+    }
+
+    // MARK: - Terrain Zone Constants
+    struct TerrainZone {
+        static let highGroundRangeMultiplier: CGFloat = 1.2
+        static let valleySpeedMultiplier: CGFloat = 1.3
     }
 
     static let hqName = "headquarters"

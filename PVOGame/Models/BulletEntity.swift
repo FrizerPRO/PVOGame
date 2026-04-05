@@ -312,6 +312,7 @@ class RocketEntity: BulletEntity {
 
         let gameScene = scene as? InPlaySKScene
         let nightMode = gameScene?.isNightWave == true
+        let cache = AnimationTextureCache.shared
 
         // Night mode: persistent flame glow on rocket tail, no smoke puffs
         if nightMode {
@@ -319,17 +320,33 @@ class RocketEntity: BulletEntity {
             spriteNode.colorBlendFactor = 1.0
             spriteNode.color = .clear
             if nightFlameNode == nil {
-                let flame = SKSpriteNode(texture: Self.smokePuffTexture)
+                let flameTex = cache.flameGlow ?? Self.smokePuffTexture
+                let flame = SKSpriteNode(texture: flameTex)
                 flame.size = CGSize(width: 8, height: 8)
                 flame.color = UIColor(red: 1, green: 0.3, blue: 0.1, alpha: 1)
-                flame.colorBlendFactor = 1.0
+                flame.colorBlendFactor = cache.flameGlow != nil ? 0 : 1.0
                 flame.alpha = 0.9
                 flame.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
                 flame.zPosition = Constants.NightWave.nightEffectZPosition - spriteNode.zPosition
                 spriteNode.addChild(flame)
+                // Enhanced flicker: vary both alpha and scale for more dynamic flame
                 let flicker = SKAction.sequence([
-                    SKAction.fadeAlpha(to: 0.6, duration: 0.15),
-                    SKAction.fadeAlpha(to: 0.9, duration: 0.15)
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 0.5, duration: 0.08),
+                        SKAction.scale(to: 0.85, duration: 0.08)
+                    ]),
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 1.0, duration: 0.06),
+                        SKAction.scale(to: 1.15, duration: 0.06)
+                    ]),
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 0.7, duration: 0.10),
+                        SKAction.scale(to: 0.95, duration: 0.10)
+                    ]),
+                    SKAction.group([
+                        SKAction.fadeAlpha(to: 0.9, duration: 0.06),
+                        SKAction.scale(to: 1.05, duration: 0.06)
+                    ])
                 ])
                 flame.run(SKAction.repeatForever(flicker))
                 nightFlameNode = flame
@@ -358,7 +375,7 @@ class RocketEntity: BulletEntity {
         puff.position = tailPoint
         puff.zPosition = 40
         puff.color = UIColor(white: 1, alpha: 0.95)
-        puff.colorBlendFactor = 1.0
+        puff.colorBlendFactor = cache.smokePuff != nil ? 0 : 1.0
         puff.alpha = 0.75
         puff.xScale = 0.75
         puff.yScale = 0.75

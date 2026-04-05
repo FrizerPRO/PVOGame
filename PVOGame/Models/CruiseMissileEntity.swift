@@ -9,11 +9,12 @@ import SpriteKit
 
 final class CruiseMissileEntity: AttackDroneEntity {
 
+    override var isBossType: Bool { true }
+
     private var targetPoint: CGPoint = .zero
     private var velocity: CGVector = .zero
     private var smokeAccumulator: TimeInterval = 0
     private var nightFlameNode: SKSpriteNode?
-    private var evasionsRemaining: Int = Constants.AdvancedEnemies.cruiseMissileMaxEvasions
     private var isDiving = false
     private var diveTimer: TimeInterval = 0
 
@@ -62,9 +63,15 @@ final class CruiseMissileEntity: AttackDroneEntity {
 
         // Gray cruise missile sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 8, height: 22)
-            spriteNode.color = UIColor(white: 0.55, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = Constants.SpriteSize.cruiseMissile
+            if let tex = AnimationTextureCache.shared.projectileTextures["missile_cruise"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(white: 0.55, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
         }
     }
 
@@ -115,19 +122,45 @@ final class CruiseMissileEntity: AttackDroneEntity {
             }
         }
 
-        // Evasion check: check nearby rockets
-        if evasionsRemaining > 0, let scene = spriteNode.scene as? InPlaySKScene {
+        // Continuous arc-based steering
+        let currentAngle = atan2(velocity.dy, velocity.dx)
+        var desiredAngle = atan2(targetPoint.y - spriteNode.position.y,
+                                 targetPoint.x - spriteNode.position.x)
+
+        // Evasion: if rocket nearby, steer perpendicular to dodge
+        if let scene = spriteNode.scene as? InPlaySKScene {
             let evasionRadius = Constants.AdvancedEnemies.cruiseMissileEvasionRadius
             for rocket in scene.entities.compactMap({ $0 as? RocketEntity }) {
                 guard let rocketPos = rocket.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
-                let dx = rocketPos.x - spriteNode.position.x
-                let dy = rocketPos.y - spriteNode.position.y
-                if dx * dx + dy * dy < evasionRadius * evasionRadius {
-                    performEvasion()
+                let rdx = rocketPos.x - spriteNode.position.x
+                let rdy = rocketPos.y - spriteNode.position.y
+                if rdx * rdx + rdy * rdy < evasionRadius * evasionRadius {
+                    let rocketAngle = atan2(rdy, rdx)
+                    let perpLeft = rocketAngle + .pi / 2
+                    let perpRight = rocketAngle - .pi / 2
+                    desiredAngle = abs(angleDiff(currentAngle, perpLeft)) < abs(angleDiff(currentAngle, perpRight))
+                        ? perpLeft : perpRight
                     break
                 }
             }
         }
+
+        // Apply turn rate limit
+        let maxTurn = Constants.AdvancedEnemies.cruiseMissileTurnRate * CGFloat(seconds)
+        let diff = angleDiff(currentAngle, desiredAngle)
+        let clampedDiff = max(-maxTurn, min(maxTurn, diff))
+        var newAngle = currentAngle + clampedDiff
+
+        // Constraint: velocity.y must always be negative (flying downward toward HQ)
+        // Clamp angle to [-π, 0] range (lower half-plane)
+        let candidateDy = sin(newAngle)
+        if candidateDy > 0 {
+            // Would fly upward — clamp to horizontal
+            newAngle = velocity.dx >= 0 ? 0 : .pi
+        }
+
+        let currentSpeed = sqrt(velocity.dx * velocity.dx + velocity.dy * velocity.dy)
+        velocity = CGVector(dx: cos(newAngle) * currentSpeed, dy: sin(newAngle) * currentSpeed)
 
         // Move
         spriteNode.position.x += velocity.dx * CGFloat(seconds)
@@ -165,17 +198,20 @@ final class CruiseMissileEntity: AttackDroneEntity {
         if nightMode {
             spriteNode.color = .clear
             if nightFlameNode == nil {
-                let flame = SKSpriteNode(texture: Self.smokePuffTexture)
+                let flameTex = AnimationTextureCache.shared.flameGlow ?? Self.smokePuffTexture
+                let flame = SKSpriteNode(texture: flameTex)
                 flame.size = CGSize(width: 6, height: 6)
                 flame.color = UIColor(red: 1, green: 0.35, blue: 0.1, alpha: 1)
-                flame.colorBlendFactor = 1.0
+                flame.colorBlendFactor = AnimationTextureCache.shared.flameGlow != nil ? 0 : 1.0
                 flame.alpha = 0.85
                 flame.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.55)
                 flame.zPosition = Constants.NightWave.nightEffectZPosition - spriteNode.zPosition
                 spriteNode.addChild(flame)
                 let flicker = SKAction.sequence([
-                    SKAction.fadeAlpha(to: 0.5, duration: 0.12),
-                    SKAction.fadeAlpha(to: 0.85, duration: 0.12)
+                    SKAction.group([SKAction.fadeAlpha(to: 0.5, duration: 0.08), SKAction.scale(to: 0.85, duration: 0.08)]),
+                    SKAction.group([SKAction.fadeAlpha(to: 0.9, duration: 0.06), SKAction.scale(to: 1.15, duration: 0.06)]),
+                    SKAction.group([SKAction.fadeAlpha(to: 0.6, duration: 0.10), SKAction.scale(to: 0.9, duration: 0.10)]),
+                    SKAction.group([SKAction.fadeAlpha(to: 0.85, duration: 0.06), SKAction.scale(to: 1.05, duration: 0.06)])
                 ])
                 flame.run(SKAction.repeatForever(flicker))
                 nightFlameNode = flame
@@ -213,15 +249,11 @@ final class CruiseMissileEntity: AttackDroneEntity {
         }
     }
 
-    private func performEvasion() {
-        evasionsRemaining -= 1
-        let evasionAngle = Constants.AdvancedEnemies.cruiseMissileEvasionAngle
-        let currentAngle = atan2(velocity.dy, velocity.dx)
-        let deviation = Bool.random() ? evasionAngle : -evasionAngle
-        let newAngle = currentAngle + deviation
-
-        let currentSpeed = sqrt(velocity.dx * velocity.dx + velocity.dy * velocity.dy)
-        velocity = CGVector(dx: cos(newAngle) * currentSpeed, dy: sin(newAngle) * currentSpeed)
+    private func angleDiff(_ from: CGFloat, _ to: CGFloat) -> CGFloat {
+        var diff = to - from
+        while diff > .pi { diff -= 2 * .pi }
+        while diff < -.pi { diff += 2 * .pi }
+        return diff
     }
 
     override func didHit() {

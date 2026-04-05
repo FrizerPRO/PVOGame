@@ -12,7 +12,8 @@ import SpriteKit
 
 class ConveyorBeltManager {
 
-    static let slotCount = 5
+    static let defaultSlotCount = 5
+    private(set) var slotCount = 5
     static let buildInterval: TimeInterval = 2.5
     static let combatInterval: TimeInterval = 5.0
 
@@ -30,13 +31,13 @@ class ConveyorBeltManager {
     private var availableTowers: [TowerType] = TowerType.allCases
     private var guaranteedQueue: [TowerType] = []
 
-    private(set) var slots: [TowerType?] = Array(repeating: nil, count: slotCount)
+    private(set) var slots: [TowerType?] = Array(repeating: nil, count: defaultSlotCount)
     private var spawnTimer: TimeInterval = 0
     private var selectedSlot: Int? = nil
 
     // Visual nodes
     private var slotNodes: [SKSpriteNode] = []
-    private var cardNodes: [SKNode?] = Array(repeating: nil, count: slotCount)
+    private var cardNodes: [SKNode?] = Array(repeating: nil, count: defaultSlotCount)
     private var radarSweep: SKShapeNode?
     private var radarSweepSlot: Int = -1
     private weak var container: SKNode?
@@ -59,21 +60,21 @@ class ConveyorBeltManager {
         container = node
 
         // Reset all state
-        slots = Array(repeating: nil, count: ConveyorBeltManager.slotCount)
+        slots = Array(repeating: nil, count: slotCount)
         selectedSlot = nil
         spawnTimer = 0
 
-        slotSize = min(56, (scene.frame.width - 40) / CGFloat(ConveyorBeltManager.slotCount) - 8)
+        slotSize = min(56, (scene.frame.width - 40) / CGFloat(slotCount) - 8)
         let spacing: CGFloat = 8
-        let totalWidth = CGFloat(ConveyorBeltManager.slotCount) * slotSize
-            + CGFloat(ConveyorBeltManager.slotCount - 1) * spacing
+        let totalWidth = CGFloat(slotCount) * slotSize
+            + CGFloat(slotCount - 1) * spacing
         let startX = (scene.frame.width - totalWidth) / 2 + slotSize / 2
         let yPos: CGFloat = safeBottom + 42
 
         slotNodes.removeAll()
-        cardNodes = Array(repeating: nil, count: ConveyorBeltManager.slotCount)
+        cardNodes = Array(repeating: nil, count: slotCount)
 
-        for i in 0..<ConveyorBeltManager.slotCount {
+        for i in 0..<slotCount {
             let x = startX + CGFloat(i) * (slotSize + spacing)
             let bg = SKSpriteNode(color: UIColor.darkGray.withAlphaComponent(0.5),
                                   size: CGSize(width: slotSize, height: slotSize))
@@ -95,7 +96,7 @@ class ConveyorBeltManager {
             card?.removeAllActions()
             card?.removeFromParent()
         }
-        cardNodes = Array(repeating: nil, count: ConveyorBeltManager.slotCount)
+        cardNodes = Array(repeating: nil, count: slotCount)
 
         radarSweep?.removeFromParent()
         radarSweep = nil
@@ -202,6 +203,10 @@ class ConveyorBeltManager {
         self.guaranteedQueue = towers
     }
 
+    func setSlotCount(_ count: Int) {
+        self.slotCount = count
+    }
+
     private func weightedRandom() -> TowerType {
         let filtered = ConveyorBeltManager.weights.filter { availableTowers.contains($0.0) }
         guard !filtered.isEmpty else { return .autocannon }
@@ -280,14 +285,14 @@ class ConveyorBeltManager {
     /// with a smooth slide animation in world coordinates.
     private func compactSlots(removedAt idx: Int) {
         // Shift data
-        for i in idx..<(ConveyorBeltManager.slotCount - 1) {
+        for i in idx..<(slotCount - 1) {
             slots[i] = slots[i + 1]
         }
-        slots[ConveyorBeltManager.slotCount - 1] = nil
+        slots[slotCount - 1] = nil
 
         // Animate visuals: each card slides from its old slot position to the new one
         let duration: TimeInterval = 0.25
-        for i in idx..<(ConveyorBeltManager.slotCount - 1) {
+        for i in idx..<(slotCount - 1) {
             let card = cardNodes[i + 1]
             cardNodes[i + 1] = nil
             cardNodes[i] = card
@@ -313,7 +318,7 @@ class ConveyorBeltManager {
             card.run(slide)
         }
 
-        cardNodes[ConveyorBeltManager.slotCount - 1] = nil
+        cardNodes[slotCount - 1] = nil
 
         updateCardNames()
 
@@ -364,8 +369,16 @@ class ConveyorBeltManager {
     /// Consume the selected card (after tower placed). Returns the type that was consumed.
     @discardableResult
     func consumeSelected() -> TowerType? {
-        guard let idx = selectedSlot, let type = slots[idx] else { return nil }
+        guard let idx = selectedSlot else { return nil }
         selectedSlot = nil
+        return consumeCard(at: idx)
+    }
+
+    /// Consume a specific card by index (used by drag-and-drop). Returns the type that was consumed.
+    @discardableResult
+    func consumeCard(at idx: Int) -> TowerType? {
+        guard idx >= 0, idx < slots.count, let type = slots[idx] else { return nil }
+        if selectedSlot == idx { selectedSlot = nil }
         slots[idx] = nil
 
         // Animate consumed card: shrink + fly up, then remove
@@ -409,6 +422,41 @@ class ConveyorBeltManager {
         compactSlots(removedAt: index)
     }
 
+    // MARK: - Drag-and-Drop Helpers
+
+    /// Returns the slot index at a given scene-space point, if it contains a card.
+    func slotIndex(at scenePoint: CGPoint, in scene: SKScene) -> Int? {
+        guard let container else { return nil }
+        for (i, slot) in slotNodes.enumerated() {
+            guard slots[i] != nil else { continue }
+            let slotPos = container.convert(slot.position, to: scene)
+            let halfW = slotSize / 2
+            let halfH = slotSize / 2
+            let rect = CGRect(x: slotPos.x - halfW, y: slotPos.y - halfH,
+                              width: slotSize, height: slotSize)
+            if rect.contains(scenePoint) { return i }
+        }
+        return nil
+    }
+
+    /// Tower type at a given slot index.
+    func towerType(at index: Int) -> TowerType? {
+        guard index >= 0, index < slots.count else { return nil }
+        return slots[index]
+    }
+
+    /// Gray out a card to indicate it's being dragged.
+    func grayOutCard(at index: Int) {
+        guard index >= 0, index < cardNodes.count, let card = cardNodes[index] else { return }
+        card.alpha = 0.3
+    }
+
+    /// Restore a card after a cancelled drag.
+    func restoreCard(at index: Int) {
+        guard index >= 0, index < cardNodes.count, let card = cardNodes[index] else { return }
+        card.alpha = 1.0
+    }
+
     // MARK: - Night mode
 
     func setNightMode(_ night: Bool) {
@@ -417,7 +465,7 @@ class ConveyorBeltManager {
     }
 
     func reset() {
-        slots = Array(repeating: nil, count: ConveyorBeltManager.slotCount)
+        slots = Array(repeating: nil, count: slotCount)
         selectedSlot = nil
         spawnTimer = 0
         availableTowers = TowerType.allCases
@@ -427,7 +475,7 @@ class ConveyorBeltManager {
             card?.removeAllActions()
             card?.removeFromParent()
         }
-        cardNodes = Array(repeating: nil, count: ConveyorBeltManager.slotCount)
+        cardNodes = Array(repeating: nil, count: slotCount)
         for node in slotNodes {
             node.color = UIColor.darkGray.withAlphaComponent(0.5)
         }

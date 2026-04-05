@@ -54,11 +54,25 @@ final class LancetDroneEntity: AttackDroneEntity {
         removeComponent(ofType: FlyingProjectileComponent.self)
         configureHealth(Constants.Lancet.health)
 
-        // Small dark triangular sprite — loitering munition
+        // Lancet loitering munition sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.size = CGSize(width: 14, height: 16)
-            spriteNode.color = UIColor(red: 0.5, green: 0.15, blue: 0.15, alpha: 1)
-            spriteNode.colorBlendFactor = 1.0
+            spriteNode.size = Constants.SpriteSize.lancet
+            if let tex = AnimationTextureCache.shared.droneTextures["drone_lancet"] {
+                spriteNode.texture = tex
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = UIColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+                spriteNode.colorBlendFactor = 1.0
+            }
+
+            // Spinning propeller at the rear (same as Shahed)
+            let propeller = SKSpriteNode(color: UIColor(white: 0.25, alpha: 1), size: CGSize(width: 5, height: 1.5))
+            propeller.position = CGPoint(x: 0, y: -7) // rear of drone
+            propeller.zPosition = 1
+            let spin = SKAction.repeatForever(SKAction.rotate(byAngle: .pi * 2, duration: 0.15))
+            propeller.run(spin)
+            spriteNode.addChild(propeller)
         }
     }
 

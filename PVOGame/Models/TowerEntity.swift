@@ -15,6 +15,10 @@ class TowerEntity: GKEntity {
     private var wasDisabled = false
     private var smokeEmitter: SKNode?
 
+    // Multi-layer sprite nodes (nil when fallback colored squares are used)
+    private(set) var turretNode: SKSpriteNode?
+    private(set) var muzzleNode: SKSpriteNode?
+
     // Magazine visual indicators
     private var ammoDots: [SKShapeNode] = []
     private var reloadArc: SKShapeNode?
@@ -23,12 +27,41 @@ class TowerEntity: GKEntity {
         self.towerType = towerType
         super.init()
 
-        let size: CGFloat = 28
-        let towerColor = towerType.color
-        let spriteComponent = SpriteComponent(color: towerColor, size: CGSize(width: size, height: size))
+        let size: CGFloat = 38
+        let cache = AnimationTextureCache.shared
+        let towerTex = cache.towerTextures[towerType]
+
+        // Base sprite: use texture if available, otherwise fall back to colored square
+        let spriteComponent: SpriteComponent
+        if let baseTex = towerTex?.base {
+            spriteComponent = SpriteComponent(color: .white, size: CGSize(width: size, height: size))
+            spriteComponent.spriteNode.texture = baseTex
+        } else {
+            spriteComponent = SpriteComponent(color: towerType.color, size: CGSize(width: size, height: size))
+        }
         spriteComponent.spriteNode.position = worldPosition
         spriteComponent.spriteNode.zPosition = 25
         addComponent(spriteComponent)
+
+        // Turret / launcher / antenna / soldier child node
+        if let turretTex = towerTex?.turret {
+            let turret = SKSpriteNode(texture: turretTex, size: towerTex!.turretSize)
+            turret.anchorPoint = towerTex!.turretAnchor
+            turret.zPosition = 2  // above base
+            turret.position = .zero
+            spriteComponent.spriteNode.addChild(turret)
+            self.turretNode = turret
+
+            // Muzzle flash child (gun towers only)
+            if let muzzleTex = towerTex?.muzzle {
+                let muzzle = SKSpriteNode(texture: muzzleTex, size: towerTex!.muzzleSize)
+                muzzle.zPosition = 3  // above turret
+                muzzle.position = towerTex!.muzzleOffsetLeft  // default position
+                muzzle.isHidden = true
+                turret.addChild(muzzle)
+                self.muzzleNode = muzzle
+            }
+        }
 
         // Physics body for bomb collision detection
         let body = SKPhysicsBody(rectangleOf: CGSize(width: size, height: size))
@@ -52,6 +85,12 @@ class TowerEntity: GKEntity {
 
         addComponent(TowerTargetingComponent())
         addComponent(TowerRotationComponent())
+
+        // Animation component
+        let animComp = TowerAnimationComponent(towerType: towerType)
+        animComp.turretNode = turretNode
+        animComp.muzzleNode = muzzleNode
+        addComponent(animComp)
 
         // EW tower: add EW component
         if towerType == .ewTower {
@@ -86,21 +125,45 @@ class TowerEntity: GKEntity {
 
     func showRangeIndicator() {
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
+              let scene = spriteNode.scene,
               let range = stats?.range,
               rangeIndicator == nil else { return }
+
         let towerColor = towerType.color
-        let circle = SKShapeNode(circleOfRadius: range)
+        let towerWorldPos = spriteNode.position
+
+        // Check if tower is on highGround for LOS occlusion
+        let onHighGround: Bool
+        if let gridPos = component(ofType: GridPositionComponent.self),
+           let gameScene = scene as? InPlaySKScene,
+           let cell = gameScene.gridMap?.cell(atRow: gridPos.row, col: gridPos.col) {
+            onHighGround = cell.terrain == .highGround
+        } else {
+            onHighGround = false
+        }
+
+        let circle: SKShapeNode
+        if let gameScene = scene as? InPlaySKScene,
+           let gridMap = gameScene.gridMap,
+           !onHighGround {
+            let occludedPath = gridMap.rangePathWithOcclusion(radius: range, towerWorldPos: towerWorldPos, towerOnHighGround: false)
+            circle = SKShapeNode(path: occludedPath)
+        } else {
+            circle = SKShapeNode(circleOfRadius: range)
+        }
+
         circle.strokeColor = towerColor.withAlphaComponent(0.4)
         circle.fillColor = towerColor.withAlphaComponent(0.08)
         circle.lineWidth = 1.5
         circle.zPosition = 22
-        circle.position = .zero
+        // Add to scene at tower world position — not as child of spriteNode, so it won't rotate
+        circle.position = towerWorldPos
         let pattern: [CGFloat] = [6, 4]
         if let originalPath = circle.path {
             let dashed = originalPath.copy(dashingWithPhase: 0, lengths: pattern)
             circle.path = dashed
         }
-        spriteNode.addChild(circle)
+        scene.addChild(circle)
         rangeIndicator = circle
     }
 
@@ -133,14 +196,26 @@ class TowerEntity: GKEntity {
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
         spriteNode.colorBlendFactor = 0.7
         spriteNode.color = .darkGray
+        turretNode?.colorBlendFactor = 0.7
+        turretNode?.color = .darkGray
 
+        // Notify animation component
+        component(ofType: TowerAnimationComponent.self)?.onDisabled()
+
+        let damageTex = AnimationTextureCache.shared.damageSmokeTexture
         if smokeEmitter == nil {
             let smoke = SKNode()
             smoke.name = "towerSmoke"
             let smokeAction = SKAction.repeatForever(SKAction.sequence([
-                SKAction.run { [weak spriteNode, weak smoke] in
+                SKAction.run { [weak spriteNode, weak smoke, damageTex] in
                     guard spriteNode != nil, let smoke else { return }
-                    let puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.5), size: CGSize(width: 8, height: 8))
+                    let puff: SKSpriteNode
+                    if let tex = damageTex {
+                        puff = SKSpriteNode(texture: tex, size: CGSize(width: 8, height: 8))
+                        puff.alpha = 0.5
+                    } else {
+                        puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.5), size: CGSize(width: 8, height: 8))
+                    }
                     puff.position = CGPoint(
                         x: CGFloat.random(in: -6...6),
                         y: CGFloat.random(in: -2...4)
@@ -167,18 +242,25 @@ class TowerEntity: GKEntity {
         smokeEmitter?.removeFromParent()
         smokeEmitter = nil
 
+        let hasTexture = AnimationTextureCache.shared.towerTextures[towerType]?.base != nil
+
         // Repair flash: white → original color
         let originalColor = towerType.color
         spriteNode.color = .white
         spriteNode.colorBlendFactor = 0
+        turretNode?.colorBlendFactor = 0
         let flash = SKAction.sequence([
             SKAction.wait(forDuration: 0.15),
-            SKAction.run { [weak spriteNode] in
-                spriteNode?.color = originalColor
+            SKAction.run { [weak spriteNode, weak self] in
+                spriteNode?.color = hasTexture ? .white : originalColor
                 spriteNode?.colorBlendFactor = 0
+                self?.turretNode?.colorBlendFactor = 0
             }
         ])
         spriteNode.run(flash)
+
+        // Notify animation component to restart persistent animations
+        component(ofType: TowerAnimationComponent.self)?.onRepaired()
     }
 
     override func update(deltaTime seconds: TimeInterval) {

@@ -61,6 +61,31 @@ class InPlaySKScene: SKScene {
     private var gameSpeed: CGFloat = 1.0
     private(set) var pendingMissileSpawns = 0
     private(set) var pendingHarmSpawns = 0
+    var pendingShahedSpawns = 0
+
+    // Wave statistics for summary overlay
+    private var waveKills = 0
+    private var waveLeaked = 0
+    private var waveKillsByType = [String: Int]()
+    private var waveLeakedByType = [String: Int]()
+    private var waveTotalSpawned = 0
+    private var waveSettlementHits = 0
+    private var waveTowerKills = [ObjectIdentifier: Int]()  // tower ID -> kills
+    // Per-game stats for game over recap
+    private var gameWaveResults = [(wave: Int, kills: Int, leaked: Int, livesLost: Int)]()
+    private var gameTotalKillsByType = [String: Int]()
+    private var gameTotalLeakedByType = [String: Int]()
+    private var waveLivesAtStart = 0
+
+    // Kill combo system
+    private var comboCount = 0
+    private var comboTimer: TimeInterval = 0
+    private let comboWindow: TimeInterval = 1.5  // seconds between kills to maintain combo
+    private var comboLabel: SKLabelNode?
+
+    // Slow-motion system
+    private var slowMoTimer: TimeInterval = 0
+    private var normalSpeed: CGFloat = 1.0
 
     var activeDroneCount: Int { activeDrones.count }
     var activeDronesForTowers: [AttackDroneEntity] { aliveDrones }
@@ -83,6 +108,9 @@ class InPlaySKScene: SKScene {
     private var livesLabel: SKLabelNode?
     private var startWaveButton: SKSpriteNode?
     private var startWaveLabel: SKLabelNode?
+    private var debugWaveInfoLabel: SKLabelNode?
+    private var debugKillLogLabel: SKLabelNode?
+    private var debugKillLogLines: [String] = []
 
     // Tower palette
     private let conveyorBelt = ConveyorBeltManager()
@@ -120,6 +148,7 @@ class InPlaySKScene: SKScene {
     // Node pools for recycling frequently created/destroyed nodes
     private var tracerPool = [SKSpriteNode]()
     private var smokePuffPool = [SKSpriteNode]()
+    private var explosionPool = [SKSpriteNode]()
     private let nodePoolCapacity = 100
 
     // Fire control sync guard — ensures sync runs at most once per frame
@@ -194,7 +223,7 @@ class InPlaySKScene: SKScene {
                 let pos = gridMap.worldPosition(forRow: row, col: col)
 
                 let tile = SKSpriteNode(
-                    color: colorForTerrain(cell.terrain),
+                    color: colorForTerrain(cell.terrain, row: row, col: col),
                     size: CGSize(width: cellSize.width - 1, height: cellSize.height - 1)
                 )
                 tile.position = pos
@@ -225,18 +254,24 @@ class InPlaySKScene: SKScene {
         droneLayer = drones
     }
 
-    private func colorForTerrain(_ terrain: CellTerrain) -> UIColor {
+    private func colorForTerrain(_ terrain: CellTerrain, row: Int = 0, col: Int = 0) -> UIColor {
         switch terrain {
         case .ground:
-            return UIColor(red: 0.18, green: 0.22, blue: 0.18, alpha: 1)
-        case .flightPath:
-            return UIColor(red: 0.30, green: 0.34, blue: 0.26, alpha: 1)
+            // Subtle checkerboard variation
+            let base: CGFloat = (row + col) % 2 == 0 ? 0.18 : 0.19
+            return UIColor(red: base, green: base + 0.04, blue: base, alpha: 1)
+        case .highGround:
+            return UIColor(red: 0.28, green: 0.24, blue: 0.16, alpha: 1)
         case .blocked:
             return UIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
         case .headquarters:
             return UIColor(red: 0.7, green: 0.2, blue: 0.15, alpha: 1)
         case .settlement:
             return UIColor(red: 0.25, green: 0.35, blue: 0.25, alpha: 1)
+        case .concealed:
+            return UIColor(red: 0.12, green: 0.20, blue: 0.12, alpha: 1)
+        case .valley:
+            return UIColor(red: 0.22, green: 0.26, blue: 0.20, alpha: 1)
         }
     }
 
@@ -320,6 +355,104 @@ class InPlaySKScene: SKScene {
         resourceLabel?.text = "DP: \(economyManager?.resources ?? 0)"
         waveLabel?.text = "Wave \(waveManager?.currentWave ?? 0)"
         livesLabel?.text = "HP: \(lives)"
+    }
+
+    // MARK: - Debug Wave Info
+
+    private func showDebugWaveInfo() {
+        debugWaveInfoLabel?.removeFromParent()
+
+        guard let waveDef = waveManager?.currentWaveDef else { return }
+
+        var lines: [String] = []
+        if waveDef.droneCount > 0 { lines.append("Shahed: \(waveDef.droneCount)") }
+        if waveDef.shahedCount > 0 { lines.append("Shahed+: \(waveDef.shahedCount)") }
+        if waveDef.kamikazeCount > 0 { lines.append("FPV: \(waveDef.kamikazeCount)") }
+        if waveDef.mineLayerCount > 0 { lines.append("Bomber: \(waveDef.mineLayerCount)") }
+        if waveDef.missileSalvoCount > 0 { lines.append("GRAD: \(waveDef.missileSalvoCount) salvo") }
+        if waveDef.harmSalvoCount > 0 { lines.append("HARM: \(waveDef.harmSalvoCount) salvo") }
+        if waveDef.cruiseMissileCount > 0 { lines.append("Cruise: \(waveDef.cruiseMissileCount)") }
+        if waveDef.ewDroneCount > 0 { lines.append("EW: \(waveDef.ewDroneCount)") }
+        if waveDef.heavyDroneCount > 0 { lines.append("Heavy: \(waveDef.heavyDroneCount)") }
+        if waveDef.swarmCount > 0 { lines.append("Swarm: \(waveDef.swarmCount)") }
+        if waveDef.lancetCount > 0 { lines.append("Lancet: \(waveDef.lancetCount)") }
+        if waveDef.orlanCount > 0 { lines.append("Orlan: \(waveDef.orlanCount)") }
+        if waveDef.isNight { lines.append("NIGHT") }
+
+        let label = SKLabelNode(fontNamed: "Courier")
+        label.numberOfLines = 0
+        label.text = lines.joined(separator: "\n")
+        label.fontSize = 10
+        label.fontColor = .green
+        label.horizontalAlignmentMode = .left
+        label.verticalAlignmentMode = .top
+        label.position = CGPoint(x: 8, y: frame.height - (safeTop + 85))
+        label.zPosition = 200
+        label.alpha = 0.8
+        addChild(label)
+        debugWaveInfoLabel = label
+
+        // Removed on next wave start via debugWaveInfoLabel?.removeFromParent()
+    }
+
+    // MARK: - Debug Kill Log
+
+    func logKill(weapon: String, enemy: String) {
+        debugKillLogLines.append("\(weapon) → \(enemy)")
+        if debugKillLogLines.count > 12 { debugKillLogLines.removeFirst() }
+        updateDebugKillLog()
+    }
+
+    func logEnemyReachedTarget(enemy: String, target: String) {
+        debugKillLogLines.append("⚠ \(enemy) → \(target)")
+        if debugKillLogLines.count > 12 { debugKillLogLines.removeFirst() }
+        updateDebugKillLog()
+    }
+
+    private func updateDebugKillLog() {
+        debugKillLogLabel?.removeFromParent()
+
+        let label = SKLabelNode(fontNamed: "Courier")
+        label.numberOfLines = 0
+        label.text = debugKillLogLines.joined(separator: "\n")
+        label.fontSize = 9
+        label.fontColor = .yellow
+        label.horizontalAlignmentMode = .right
+        label.verticalAlignmentMode = .top
+        label.position = CGPoint(x: frame.width - 8, y: frame.height - (safeTop + 85))
+        label.zPosition = 200
+        label.alpha = 0.85
+        addChild(label)
+        debugKillLogLabel = label
+    }
+
+    static func droneTypeName(_ drone: AttackDroneEntity) -> String {
+        switch drone {
+        case is ShahedDroneEntity: return "Shahed"
+        case is OrlanDroneEntity: return "Orlan"
+        case is KamikazeDroneEntity: return "FPV"
+        case is EWDroneEntity: return "EW"
+        case is HeavyDroneEntity: return "Heavy"
+        case is LancetDroneEntity: return "Lancet"
+        case is SwarmDroneEntity: return "Swarm"
+        case is CruiseMissileEntity: return "Cruise"
+        case is EnemyMissileEntity: return "GRAD"
+        case is HarmMissileEntity: return "HARM"
+        case is MineLayerDroneEntity: return "Bomber"
+        default: return "Drone"
+        }
+    }
+
+    static func shellTypeName(_ shell: Shell) -> String {
+        if let rocket = shell as? RocketEntity {
+            switch rocket.imageName {
+            case let name where name.contains("sam"): return "S-300"
+            case let name where name.contains("interceptor"): return "Patriot"
+            case let name where name.contains("pzrk"): return "PZRK"
+            default: return "Rocket"
+            }
+        }
+        return "Gun"
     }
 
     // MARK: - Tower Palette
@@ -682,6 +815,11 @@ class InPlaySKScene: SKScene {
         elapsedGameplayTime = 0
         fireControl.reset()
 
+        // Reset game stats for recap
+        gameWaveResults.removeAll()
+        gameTotalKillsByType.removeAll()
+        gameTotalLeakedByType.removeAll()
+
         // Force-remove night overlay (may still be fading from previous game)
         isNightWave = false
         nightOverlay?.removeAllActions()
@@ -725,6 +863,7 @@ class InPlaySKScene: SKScene {
         activeRockets.removeAll()
 
         hudNode?.isHidden = false
+        conveyorBelt.setSlotCount(selectedLevel.conveyorSlotCount)
         conveyorBelt.setAvailableTowers(selectedLevel.availableTowers)
         conveyorBelt.setGuaranteedTowers(selectedLevel.guaranteedTowers)
         conveyorBelt.setup(in: self, safeBottom: safeBottom)
@@ -800,6 +939,19 @@ class InPlaySKScene: SKScene {
         fireControl.reset()
         pendingMissileSpawns = 0
         pendingHarmSpawns = 0
+        pendingShahedSpawns = 0
+
+        // Reset wave stats
+        let livesAtStart = lives
+        waveKills = 0
+        waveLeaked = 0
+        waveKillsByType.removeAll()
+        waveLeakedByType.removeAll()
+        waveSettlementHits = 0
+        waveTowerKills.removeAll()
+        waveTotalSpawned = 0
+        // Store lives at wave start to compute loss
+        waveLivesAtStart = livesAtStart
 
         // Repair all towers and replenish magazines at wave start
         towerPlacement.towers.forEach {
@@ -817,6 +969,9 @@ class InPlaySKScene: SKScene {
         }
 
         updateHUD()
+        debugKillLogLines.removeAll()
+        debugKillLogLabel?.removeFromParent()
+        showDebugWaveInfo()
     }
 
     private func onWaveComplete() {
@@ -827,6 +982,16 @@ class InPlaySKScene: SKScene {
         let waveBonus = Constants.TowerDefense.waveCompletionBonus
         let settlementIncome = settlementManager?.totalWaveIncome() ?? 0
         economyManager.earn(waveBonus + settlementIncome)
+
+        // Record wave results for game over recap
+        let livesLost = waveLivesAtStart - lives
+        gameWaveResults.append((wave: waveManager.currentWave, kills: waveKills, leaked: waveLeaked, livesLost: livesLost))
+        for (type, count) in waveKillsByType {
+            gameTotalKillsByType[type, default: 0] += count
+        }
+        for (type, count) in waveLeakedByType {
+            gameTotalLeakedByType[type, default: 0] += count
+        }
 
         // Deactivate shield if it was active
         if militaryAidManager.isShieldActive {
@@ -990,15 +1155,11 @@ class InPlaySKScene: SKScene {
 
     // MARK: - Drone Spawning
 
-    func spawnDrone(flightPath: DroneFlightPath, speed: CGFloat, altitude: DroneAltitude, health: Int = 1, targetSettlement: SettlementEntity? = nil) {
+    // TODO: AttackDroneEntity temporarily replaced by ShahedDroneEntity for all regular waves.
+    // Restore AttackDroneEntity here once it gets a distinct gameplay role.
+    func spawnDrone(flightPath: DroneFlightPath, altitude: DroneAltitude, targetSettlement: SettlementEntity? = nil) {
         let flyingPath = flightPath.toFlyingPath()
-        let drone = AttackDroneEntity(
-            damage: 1,
-            speed: speed,
-            imageName: "Drone",
-            flyingPath: flyingPath
-        )
-        drone.configureHealth(health)
+        let drone = ShahedDroneEntity.create(flyingPath: flyingPath)
         drone.targetSettlement = targetSettlement
 
         // Add altitude component
@@ -1011,8 +1172,9 @@ class InPlaySKScene: SKScene {
 
         // Scale drone based on altitude
         if let spriteNode = drone.component(ofType: SpriteComponent.self)?.spriteNode {
+            let baseSize: CGFloat = Constants.SpriteSize.shahed
             let scale = altitude.droneVisualScale
-            spriteNode.size = CGSize(width: 30 * scale, height: 30 * scale)
+            spriteNode.size = CGSize(width: baseSize * scale, height: baseSize * scale)
             spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
         }
 
@@ -1066,6 +1228,220 @@ class InPlaySKScene: SKScene {
 
         activeDrones.append(drone)
         addEntity(drone)
+        pendingShahedSpawns -= 1
+    }
+
+    // MARK: - Shahed Formation Spawning
+
+    func spawnShahedFormation(count: Int, formation: ShahedFormation) {
+        guard let gridMap else { return }
+
+        let hqRow = Constants.TowerDefense.gridRows - 1
+        let hqCol = Constants.TowerDefense.gridCols / 2
+        let hqPoint = gridMap.worldPosition(forRow: hqRow, col: hqCol)
+
+        // Formation center — keep away from edges so wings fit
+        // centerY must stay below frame.height + 100 even with max offsets (ghost cleanup threshold)
+        let centerX = CGFloat.random(in: 60...(frame.width - 60))
+        let centerY = frame.height + 20
+        let leaderSpawn = CGPoint(x: centerX, y: centerY)
+
+        let offsets = shahedFormationOffsets(for: formation, count: count)
+
+        // Shared target for the entire formation
+        let target = settlementManager?.assignTarget(
+            towers: towerPlacement?.towers ?? []
+        )
+
+        // Generate ONE reference path (leader) — shared jitter for all drones
+        let referencePath: [CGPoint]
+        if let target {
+            referencePath = generateSettlementPath(from: leaderSpawn, through: target.worldPosition, to: hqPoint)
+        } else {
+            referencePath = generateSettlementPath(from: leaderSpawn, to: hqPoint)
+        }
+
+        let wpCount = referencePath.count
+
+        pendingShahedSpawns += offsets.count
+
+        for (i, offset) in offsets.enumerated() {
+            // Apply formation offset to each waypoint, fading toward HQ
+            var waypoints = [CGPoint]()
+            for (wpIdx, wp) in referencePath.enumerated() {
+                let progress = CGFloat(wpIdx) / CGFloat(max(wpCount - 1, 1))
+                // Offset fully present at start, fades out over the last 30% of path
+                let fade = min(1.0, max(0, (1.0 - progress) / 0.3))
+                waypoints.append(CGPoint(
+                    x: min(max(wp.x + offset.x * fade, 10), frame.width - 10),
+                    y: wp.y + offset.y * fade
+                ))
+            }
+            // Final waypoint: always exact HQ, no offset
+            waypoints[wpCount - 1] = hqPoint
+
+            let altitude: DroneAltitude = .low
+            let flightPath = DroneFlightPath(waypoints: waypoints, altitude: altitude, spawnEdge: .top)
+            let flyingPath = flightPath.toFlyingPath()
+
+            // Build CGPath for SKAction-based deterministic movement
+            let cgPath = CGMutablePath()
+            cgPath.move(to: waypoints[0])
+            for wpIdx in 1..<waypoints.count {
+                cgPath.addLine(to: waypoints[wpIdx])
+            }
+
+            let capturedPath = flyingPath
+            let capturedCGPath = cgPath
+            let capturedTarget = target
+            let capturedWaypoints = waypoints
+
+            // Spawn all at once (no stagger) — they appear as a coherent shape
+            run(SKAction.sequence([
+                SKAction.wait(forDuration: TimeInterval(i) * Constants.Shahed.formationStagger),
+                SKAction.run { [weak self] in
+                    guard let self else { return }
+                    let drone = ShahedDroneEntity.create(flyingPath: capturedPath)
+                    drone.targetSettlement = capturedTarget
+                    drone.isFormationFlight = true
+
+                    // Disable GKAgent steering — SKAction drives position
+                    if let flight = drone.component(ofType: FlyingProjectileComponent.self) {
+                        flight.behavior = GKBehavior()
+                        flight.maxSpeed = 0
+                    }
+
+                    drone.addComponent(AltitudeComponent(altitude: altitude))
+                    let shadow = ShadowComponent()
+                    drone.addComponent(shadow)
+                    self.shadowLayer?.addChild(shadow.shadowNode)
+
+                    if let spriteNode = drone.component(ofType: SpriteComponent.self)?.spriteNode {
+                        spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
+                        spriteNode.position = capturedWaypoints[0]
+
+                        // Initial rotation: face from wp[0] toward wp[1]
+                        if capturedWaypoints.count >= 2 {
+                            let dx = capturedWaypoints[1].x - capturedWaypoints[0].x
+                            let dy = capturedWaypoints[1].y - capturedWaypoints[0].y
+                            spriteNode.zRotation = atan2(dy, dx) - .pi / 2
+                        }
+
+                        // Deterministic path follow — no orientToPath (we handle rotation manually)
+                        let followAction = SKAction.follow(
+                            capturedCGPath,
+                            asOffset: false,
+                            orientToPath: false,
+                            speed: Constants.Shahed.speed
+                        )
+
+                        // Track movement direction for rotation (with -pi/2 correction for nose-up sprite)
+                        var lastPos = capturedWaypoints[0]
+                        let rotateAction = SKAction.customAction(withDuration: followAction.duration) { node, _ in
+                            let dx = node.position.x - lastPos.x
+                            let dy = node.position.y - lastPos.y
+                            if dx * dx + dy * dy > 0.5 {
+                                node.zRotation = atan2(dy, dx) - .pi / 2
+                                lastPos = node.position
+                            }
+                        }
+
+                        spriteNode.run(SKAction.group([followAction, rotateAction]))
+                    }
+
+                    self.activeDrones.append(drone)
+                    self.addEntity(drone)
+                    self.pendingShahedSpawns -= 1
+                }
+            ]))
+        }
+    }
+
+    // MARK: - Shahed Formation Offset Calculators
+
+    private func shahedFormationOffsets(for formation: ShahedFormation, count: Int) -> [CGPoint] {
+        switch formation {
+        case .scattered:
+            return (0..<count).map { _ in
+                CGPoint(x: CGFloat.random(in: -80...80), y: CGFloat.random(in: -30...30))
+            }
+        case .chevron:
+            return chevronOffsets(count: count)
+        case .triangle:
+            return triangleOffsets(count: count)
+        case .tripleTriangle:
+            return tripleTriangleOffsets(count: count)
+        }
+    }
+
+    /// V-shape: leader at tip (front), wings extend back and outward
+    /// Y positive = further above screen = behind leader when flying down
+    private func chevronOffsets(count: Int) -> [CGPoint] {
+        let spacing = Constants.Shahed.formationSpacing
+        var offsets = [CGPoint]()
+        offsets.append(.zero) // leader at tip
+        let maxDepth = CGFloat(count / 2)
+        // Fit wings within ~280px width (±140 from center)
+        let adaptiveSpacing = maxDepth > 0 ? min(spacing, 140 / maxDepth) : spacing
+        for i in 1..<count {
+            let depth = CGFloat((i + 1) / 2)
+            let side: CGFloat = i % 2 == 0 ? -1 : 1
+            offsets.append(CGPoint(
+                x: side * depth * adaptiveSpacing,
+                y: depth * adaptiveSpacing * 0.35  // shallow depth — V visible quickly
+            ))
+        }
+        return offsets
+    }
+
+    /// Filled triangle: row 0 = 1 drone (tip), row 1 = 2, row 2 = 3, etc.
+    private func triangleOffsets(count: Int) -> [CGPoint] {
+        let spacing = Constants.Shahed.formationSpacing
+        var offsets = [CGPoint]()
+        var placed = 0
+        var row = 0
+        while placed < count {
+            let dronesInRow = row + 1
+            let toPlace = min(dronesInRow, count - placed)
+            let rowWidth = CGFloat(toPlace - 1) * spacing
+            for col in 0..<toPlace {
+                let x = -rowWidth / 2 + CGFloat(col) * spacing
+                let y = CGFloat(row) * spacing * 0.4  // compact Y to stay within ghost cleanup threshold
+                offsets.append(CGPoint(x: x, y: y))
+                placed += 1
+            }
+            row += 1
+        }
+        return offsets
+    }
+
+    /// Three triangles: center, left, right
+    private func tripleTriangleOffsets(count: Int) -> [CGPoint] {
+        let spacing = Constants.Shahed.formationSpacing
+        let centerCount = count / 3 + count % 3
+        let sideCount = count / 3
+
+        var offsets = [CGPoint]()
+
+        // Center triangle
+        let center = triangleOffsets(count: centerCount)
+        offsets.append(contentsOf: center)
+
+        // Left triangle — offset left and slightly back
+        let lateralOffset: CGFloat = min(120, frame.width * 0.28)
+        let backOffset = spacing * 0.4  // small Y offset, stays within threshold
+        let left = triangleOffsets(count: sideCount)
+        for pt in left {
+            offsets.append(CGPoint(x: pt.x - lateralOffset, y: pt.y + backOffset))
+        }
+
+        // Right triangle — offset right and slightly back
+        let right = triangleOffsets(count: sideCount)
+        for pt in right {
+            offsets.append(CGPoint(x: pt.x + lateralOffset, y: pt.y + backOffset))
+        }
+
+        return offsets
     }
 
     // MARK: - Settlement Path Helpers
@@ -1218,7 +1594,7 @@ class InPlaySKScene: SKScene {
         let kamikaze = KamikazeDroneEntity(sceneFrame: frame)
         kamikaze.targetSettlement = targetSettlementRef
 
-        let altitude: DroneAltitude = Bool.random() ? .low : .micro
+        let altitude: DroneAltitude = .micro
         kamikaze.addComponent(AltitudeComponent(altitude: altitude))
         let shadow = ShadowComponent()
         kamikaze.addComponent(shadow)
@@ -1316,9 +1692,8 @@ class InPlaySKScene: SKScene {
     // MARK: - Cruise Missile Spawn
 
     func spawnCruiseMissile() {
-        let spawnEdge = Bool.random() // true = left, false = right
-        let spawnX: CGFloat = spawnEdge ? -20 : frame.width + 20
-        let spawnY = CGFloat.random(in: frame.height * 0.4...frame.height * 0.8)
+        let spawnX = CGFloat.random(in: 40...(frame.width - 40))
+        let spawnY = frame.height + 30
         let spawnPoint = CGPoint(x: spawnX, y: spawnY)
 
         let hqCenter: CGPoint
@@ -1389,6 +1764,22 @@ class InPlaySKScene: SKScene {
         guard currentPhase == .combat else { return }
         if let drone, !activeDrones.contains(drone) { return }
 
+        // Wreckage + screen shake for significant kills
+        if let drone,
+           let spriteNode = drone.component(ofType: SpriteComponent.self)?.spriteNode {
+            spawnWreckage(at: spriteNode.position, rotation: spriteNode.zRotation, size: spriteNode.size)
+            if drone is HeavyDroneEntity || drone is CruiseMissileEntity {
+                screenShake(intensity: 6, duration: 0.25)
+            }
+        }
+
+        // Track stats for wave summary
+        waveKills += 1
+        if let drone {
+            let typeName = Self.droneTypeName(drone)
+            waveKillsByType[typeName, default: 0] += 1
+        }
+
         let scoreDelta: Int
         let resourceDelta: Int
         if drone is OrlanDroneEntity {
@@ -1428,6 +1819,23 @@ class InPlaySKScene: SKScene {
         score += scoreDelta
         dronesDestroyed += 1
         economyManager.earn(resourceDelta)
+
+        // Kill combo system
+        comboCount += 1
+        comboTimer = comboWindow
+        if comboCount >= 5 {
+            showComboLabel(count: comboCount, at: drone?.component(ofType: SpriteComponent.self)?.spriteNode.position ?? CGPoint(x: frame.midX, y: frame.midY))
+            // Bonus DP every 10 kills in combo
+            if comboCount % 10 == 0 {
+                economyManager.earn(10)
+            }
+        }
+
+        // Slow-mo on significant kills
+        if drone is CruiseMissileEntity || drone is HeavyDroneEntity {
+            triggerSlowMo(duration: 0.3, speed: 0.3)
+        }
+
         updateHUD()
     }
 
@@ -1436,6 +1844,12 @@ class InPlaySKScene: SKScene {
         if let drone {
             if drone.isHit { return }
             if !activeDrones.contains(drone) { return }
+        }
+        // Track leaked drones for wave summary
+        waveLeaked += 1
+        if let drone {
+            let typeName = Self.droneTypeName(drone)
+            waveLeakedByType[typeName, default: 0] += 1
         }
         // Shield blocks all HQ damage
         if militaryAidManager.isShieldActive {
@@ -1453,18 +1867,24 @@ class InPlaySKScene: SKScene {
             if let pos = drone?.component(ofType: SpriteComponent.self)?.spriteNode.position {
                 spawnBombExplosion(at: pos)
             }
+            screenShake(intensity: 5, duration: 0.2)
         } else if drone is CruiseMissileEntity {
             lives -= Constants.AdvancedEnemies.cruiseMissileHQDamage
             if let pos = drone?.component(ofType: SpriteComponent.self)?.spriteNode.position {
                 spawnBombExplosion(at: pos)
             }
+            screenShake(intensity: 8, duration: 0.3)
         } else if drone is EnemyMissileEntity {
             lives -= Constants.GameBalance.enemyMissileHQDamage
             if let pos = drone?.component(ofType: SpriteComponent.self)?.spriteNode.position {
                 spawnBombExplosion(at: pos)
             }
+            screenShake(intensity: 6, duration: 0.25)
         } else {
             lives -= 1
+        }
+        if let drone {
+            logEnemyReachedTarget(enemy: Self.droneTypeName(drone), target: "HQ")
         }
         updateHUD()
         if lives <= 0 {
@@ -1487,8 +1907,15 @@ class InPlaySKScene: SKScene {
             return
         }
 
+        // Track for wave summary
+        waveLeaked += 1
+        waveSettlementHits += 1
+        let typeName = Self.droneTypeName(drone)
+        waveLeakedByType[typeName, default: 0] += 1
+
         // Damage settlement
         let wasDestroyed = settlementManager?.damageSettlement(settlement, amount: 1) ?? false
+        logEnemyReachedTarget(enemy: typeName, target: "Settlement")
 
         // Reduce global lives based on drone type
         if drone is KamikazeDroneEntity {
@@ -1500,6 +1927,7 @@ class InPlaySKScene: SKScene {
         }
 
         spawnBombExplosion(at: settlement.worldPosition)
+        screenShake(intensity: 5, duration: 0.2)
 
         if wasDestroyed {
             onSettlementDestroyed(settlement)
@@ -1581,43 +2009,133 @@ class InPlaySKScene: SKScene {
     }
 
     private func showGameOverOverlay() {
+        // Record final wave result if in combat
+        if waveKills > 0 || waveLeaked > 0 {
+            let livesLost = waveLivesAtStart - max(lives, 0)
+            gameWaveResults.append((wave: waveManager?.currentWave ?? 0, kills: waveKills, leaked: waveLeaked, livesLost: livesLost))
+            for (type, count) in waveKillsByType { gameTotalKillsByType[type, default: 0] += count }
+            for (type, count) in waveLeakedByType { gameTotalLeakedByType[type, default: 0] += count }
+        }
+
         let overlay = SKNode()
         overlay.name = "gameOverOverlay"
         overlay.zPosition = 100
         addChild(overlay)
 
-        let bg = SKSpriteNode(color: UIColor.black.withAlphaComponent(0.75), size: frame.size)
+        let bg = SKSpriteNode(color: UIColor.black.withAlphaComponent(0.85), size: frame.size)
         bg.position = CGPoint(x: frame.midX, y: frame.midY)
         overlay.addChild(bg)
 
-        let title = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        title.text = "GAME OVER"
-        title.fontSize = 40
-        title.fontColor = .red
-        title.position = CGPoint(x: frame.midX, y: frame.midY + 80)
-        overlay.addChild(title)
+        var yPos = frame.midY + 220
 
-        let stats = [
-            "Score: \(score)",
-            "Wave: \(waveManager?.currentWave ?? 0)",
-            "Drones Destroyed: \(dronesDestroyed)"
+        // Title
+        let title = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+        title.text = "ОБОРОНА ПРОВАЛЕНА"
+        title.fontSize = 32
+        title.fontColor = .red
+        title.position = CGPoint(x: frame.midX, y: yPos)
+        overlay.addChild(title)
+        yPos -= 40
+
+        // Basic stats
+        let statsLines = [
+            "Очки: \(score)",
+            "Волна: \(waveManager?.currentWave ?? 0)",
+            "Уничтожено: \(dronesDestroyed)"
         ]
-        for (i, text) in stats.enumerated() {
+        for text in statsLines {
             let label = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
             label.text = text
-            label.fontSize = 20
+            label.fontSize = 16
             label.fontColor = .white
-            label.position = CGPoint(x: frame.midX, y: frame.midY + 20 - CGFloat(i * 30))
+            label.position = CGPoint(x: frame.midX, y: yPos)
             overlay.addChild(label)
+            yPos -= 22
+        }
+        yPos -= 10
+
+        // Wave timeline (colored dots)
+        if !gameWaveResults.isEmpty {
+            let timelineLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+            timelineLabel.text = "ТАЙМЛАЙН ВОЛН"
+            timelineLabel.fontSize = 13
+            timelineLabel.fontColor = UIColor(white: 0.7, alpha: 1)
+            timelineLabel.position = CGPoint(x: frame.midX, y: yPos)
+            overlay.addChild(timelineLabel)
+            yPos -= 20
+
+            let dotSize: CGFloat = 12
+            let spacing: CGFloat = 4
+            let totalWidth = CGFloat(gameWaveResults.count) * (dotSize + spacing) - spacing
+            let startX = frame.midX - totalWidth / 2
+            for (i, result) in gameWaveResults.enumerated() {
+                let color: UIColor
+                if result.livesLost == 0 && result.leaked == 0 {
+                    color = .green
+                } else if result.livesLost <= 2 {
+                    color = .yellow
+                } else {
+                    color = .red
+                }
+                let dot = SKSpriteNode(color: color, size: CGSize(width: dotSize, height: dotSize))
+                dot.position = CGPoint(x: startX + CGFloat(i) * (dotSize + spacing) + dotSize / 2, y: yPos)
+                overlay.addChild(dot)
+
+                // Wave number below dot
+                let numLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+                numLabel.text = "\(result.wave)"
+                numLabel.fontSize = 8
+                numLabel.fontColor = UIColor(white: 0.5, alpha: 1)
+                numLabel.position = CGPoint(x: dot.position.x, y: yPos - 12)
+                overlay.addChild(numLabel)
+            }
+            yPos -= 30
         }
 
+        // What leaked
+        if !gameTotalLeakedByType.isEmpty {
+            yPos -= 5
+            let leakedTitle = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+            leakedTitle.text = "ПРОРВАВШИЕСЯ УГРОЗЫ"
+            leakedTitle.fontSize = 13
+            leakedTitle.fontColor = UIColor(white: 0.7, alpha: 1)
+            leakedTitle.position = CGPoint(x: frame.midX, y: yPos)
+            overlay.addChild(leakedTitle)
+            yPos -= 18
+
+            let sorted = gameTotalLeakedByType.sorted { $0.value > $1.value }
+            for entry in sorted.prefix(4) {
+                let label = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+                label.text = "\(entry.key): \(entry.value)"
+                label.fontSize = 14
+                label.fontColor = UIColor(red: 1, green: 0.6, blue: 0.4, alpha: 1)
+                label.position = CGPoint(x: frame.midX, y: yPos)
+                overlay.addChild(label)
+                yPos -= 18
+            }
+        }
+
+        // Contextual tip
+        yPos -= 10
+        let tip = generateContextualTip()
+        let tipLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+        tipLabel.text = tip
+        tipLabel.fontSize = 12
+        tipLabel.fontColor = UIColor(red: 0.6, green: 0.85, blue: 1, alpha: 1)
+        tipLabel.numberOfLines = 2
+        tipLabel.preferredMaxLayoutWidth = frame.width - 60
+        tipLabel.position = CGPoint(x: frame.midX, y: yPos)
+        overlay.addChild(tipLabel)
+        yPos -= 40
+
+        // Buttons
         let restartBtn = SKSpriteNode(color: .darkGray, size: CGSize(width: 180, height: 44))
-        restartBtn.position = CGPoint(x: frame.midX, y: frame.midY - 80)
+        restartBtn.position = CGPoint(x: frame.midX, y: yPos)
         restartBtn.name = "playAgainButton"
         overlay.addChild(restartBtn)
 
         let restartLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        restartLabel.text = "Play Again"
+        restartLabel.text = "Играть снова"
         restartLabel.fontSize = 18
         restartLabel.fontColor = .green
         restartLabel.verticalAlignmentMode = .center
@@ -1625,17 +2143,41 @@ class InPlaySKScene: SKScene {
         restartBtn.addChild(restartLabel)
 
         let menuBtn = SKSpriteNode(color: .systemRed, size: CGSize(width: 180, height: 44))
-        menuBtn.position = CGPoint(x: frame.midX, y: frame.midY - 135)
+        menuBtn.position = CGPoint(x: frame.midX, y: yPos - 55)
         menuBtn.name = "menuButton_gameOver"
         overlay.addChild(menuBtn)
 
         let menuLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
-        menuLabel.text = "Menu"
+        menuLabel.text = "Меню"
         menuLabel.fontSize = 18
         menuLabel.fontColor = .white
         menuLabel.verticalAlignmentMode = .center
         menuLabel.name = "menuButton_gameOver"
         menuBtn.addChild(menuLabel)
+    }
+
+    private func generateContextualTip() -> String {
+        // Analyze what leaked most and suggest counter
+        let topLeaked = gameTotalLeakedByType.max(by: { $0.value < $1.value })?.key ?? ""
+        switch topLeaked {
+        case "Cruise":
+            return "Совет: ЗРПК эффективен против крылатых ракет"
+        case "FPV":
+            return "Совет: РЭБ-башня замедляет FPV-дроны"
+        case "Shahed":
+            return "Совет: автопушки ЗУ хорошо работают по Шахедам"
+        case "Heavy":
+            return "Совет: С-300 пробивает броню тяжёлых дронов"
+        case "Missile":
+            return "Совет: перехватчики ПРЧ защищают от ракетных залпов"
+        case "EW":
+            return "Совет: уничтожайте РЭБ-дроны в первую очередь"
+        default:
+            if waveManager?.isCurrentWaveNight == true {
+                return "Совет: ставьте РЛС для обнаружения целей ночью"
+            }
+            return "Совет: распределяйте башни для перекрытия всех направлений"
+        }
     }
 
     func playAgain() {
@@ -1892,17 +2434,39 @@ class InPlaySKScene: SKScene {
     }
 
     private func spawnAirstrikeExplosion(at pos: CGPoint) {
-        let flash = SKSpriteNode(color: .orange, size: CGSize(width: 30, height: 30))
-        flash.position = pos
-        flash.zPosition = 80
-        addChild(flash)
-        flash.run(SKAction.sequence([
-            SKAction.group([
-                SKAction.scale(to: 3.0, duration: 0.25),
-                SKAction.fadeOut(withDuration: 0.3)
-            ]),
-            SKAction.removeFromParent()
-        ]))
+        let textures = AnimationTextureCache.shared.largeExplosion
+        if !textures.isEmpty {
+            let node = acquireExplosionNode()
+            node.texture = textures[0]
+            node.size = CGSize(width: 40, height: 40)
+            node.color = .white
+            node.colorBlendFactor = 0
+            node.position = pos
+            node.zPosition = 80
+            node.alpha = 1.0
+            node.setScale(1.0)
+            addChild(node)
+            node.run(SKAction.sequence([
+                SKAction.animate(with: textures, timePerFrame: 0.057, resize: false, restore: false),
+                SKAction.run { [weak self, weak node] in
+                    guard let self, let node else { return }
+                    self.releaseExplosionNode(node)
+                }
+            ]))
+        } else {
+            // Fallback: original colored square
+            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 30, height: 30))
+            flash.position = pos
+            flash.zPosition = 80
+            addChild(flash)
+            flash.run(SKAction.sequence([
+                SKAction.group([
+                    SKAction.scale(to: 3.0, duration: 0.25),
+                    SKAction.fadeOut(withDuration: 0.3)
+                ]),
+                SKAction.removeFromParent()
+            ]))
+        }
     }
 
     private func showShieldEffect() {
@@ -2110,10 +2674,17 @@ class InPlaySKScene: SKScene {
     }
 
     func selectHarmTargets(salvoSize: Int) -> [TowerEntity] {
-        // Filter radar-emitting towers that are not disabled
+        // Filter radar-emitting towers that are not disabled and not concealed
         let radarEmitters = towerPlacement.towers.filter { tower in
             guard let stats = tower.stats, !stats.isDisabled else { return false }
-            return stats.towerType == .samLauncher || stats.towerType == .interceptor || stats.towerType == .radar
+            guard stats.towerType == .samLauncher || stats.towerType == .interceptor || stats.towerType == .radar else { return false }
+            // Concealed terrain: tower invisible to HARM
+            if let gridPos = tower.component(ofType: GridPositionComponent.self),
+               let cell = gridMap?.cell(atRow: gridPos.row, col: gridPos.col),
+               cell.terrain == .concealed {
+                return false
+            }
+            return true
         }
 
         // Exclude towers already targeted by in-flight HARMs
@@ -2356,14 +2927,156 @@ class InPlaySKScene: SKScene {
     }
 
     private func spawnBombExplosion(at position: CGPoint) {
-        let flash = SKSpriteNode(color: .orange, size: CGSize(width: 16, height: 16))
-        flash.position = position
-        flash.zPosition = isNightWave ? Constants.NightWave.nightEffectZPosition : 50
-        flash.alpha = 0.8
-        addChild(flash)
-        let expand = SKAction.scale(to: 2.0, duration: 0.15)
-        let fade = SKAction.fadeOut(withDuration: 0.15)
-        flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))
+        let textures = AnimationTextureCache.shared.smallExplosion
+        if !textures.isEmpty {
+            let node = acquireExplosionNode()
+            node.texture = textures[0]
+            node.size = CGSize(width: 21, height: 21)
+            node.color = .white
+            node.colorBlendFactor = 0
+            node.position = position
+            node.zPosition = isNightWave ? Constants.NightWave.nightEffectZPosition : 50
+            node.alpha = 1.0
+            node.setScale(1.0)
+            addChild(node)
+            node.run(SKAction.sequence([
+                SKAction.animate(with: textures, timePerFrame: 0.05, resize: false, restore: false),
+                SKAction.run { [weak self, weak node] in
+                    guard let self, let node else { return }
+                    self.releaseExplosionNode(node)
+                }
+            ]))
+        } else {
+            // Fallback: original colored square
+            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 16, height: 16))
+            flash.position = position
+            flash.zPosition = isNightWave ? Constants.NightWave.nightEffectZPosition : 50
+            flash.alpha = 0.8
+            addChild(flash)
+            let expand = SKAction.scale(to: 2.0, duration: 0.15)
+            let fade = SKAction.fadeOut(withDuration: 0.15)
+            flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))
+        }
+    }
+
+    // MARK: - Screen Shake
+
+    private func screenShake(intensity: CGFloat = 4, duration: TimeInterval = 0.2) {
+        guard childNode(withName: "//cameraShakeNode") == nil else { return }
+        let shakeNode = SKNode()
+        shakeNode.name = "cameraShakeNode"
+
+        let steps = Int(duration / 0.02)
+        var actions = [SKAction]()
+        for i in 0..<steps {
+            let decay = CGFloat(1.0 - Double(i) / Double(steps))
+            let dx = CGFloat.random(in: -intensity...intensity) * decay
+            let dy = CGFloat.random(in: -intensity...intensity) * decay
+            actions.append(SKAction.moveBy(x: dx, y: dy, duration: 0.02))
+        }
+        actions.append(SKAction.move(to: .zero, duration: 0.02))
+
+        // Move all children via a wrapper — avoid moving the scene itself
+        let wrapper = childNode(withName: "//shakeWrapper")
+        let target: SKNode = wrapper ?? self
+        target.run(SKAction.sequence(actions), withKey: "cameraShake")
+    }
+
+    // MARK: - Kill Combo Display
+
+    private func showComboLabel(count: Int, at position: CGPoint) {
+        comboLabel?.removeFromParent()
+
+        let label = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
+        label.text = "x\(count)"
+        label.fontSize = count >= 20 ? 28 : (count >= 10 ? 24 : 18)
+        label.fontColor = count >= 20 ? .red : (count >= 10 ? .orange : .yellow)
+        label.position = CGPoint(x: position.x, y: position.y + 20)
+        label.zPosition = 96
+        label.alpha = 1.0
+        addChild(label)
+        comboLabel = label
+
+        label.run(SKAction.sequence([
+            SKAction.group([
+                SKAction.moveBy(x: 0, y: 30, duration: 0.6),
+                SKAction.sequence([
+                    SKAction.scale(to: 1.3, duration: 0.1),
+                    SKAction.scale(to: 1.0, duration: 0.1)
+                ]),
+                SKAction.sequence([
+                    SKAction.wait(forDuration: 0.4),
+                    SKAction.fadeOut(withDuration: 0.2)
+                ])
+            ]),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func updateComboTimer(deltaTime: TimeInterval) {
+        guard comboTimer > 0 else { return }
+        comboTimer -= deltaTime
+        if comboTimer <= 0 {
+            comboCount = 0
+            comboTimer = 0
+        }
+    }
+
+    // MARK: - Slow Motion
+
+    private func triggerSlowMo(duration: TimeInterval, speed slowSpeed: CGFloat) {
+        guard slowMoTimer <= 0 else { return }
+        normalSpeed = gameSpeed
+        slowMoTimer = duration
+
+        self.speed = slowSpeed
+        physicsWorld.speed = slowSpeed
+    }
+
+    private func updateSlowMo(deltaTime: TimeInterval) {
+        guard slowMoTimer > 0 else { return }
+        slowMoTimer -= deltaTime
+        if slowMoTimer <= 0 {
+            slowMoTimer = 0
+            self.speed = gameSpeed
+            physicsWorld.speed = gameSpeed
+        }
+    }
+
+    // MARK: - Drone Wreckage
+
+    private func spawnWreckage(at position: CGPoint, rotation: CGFloat, size: CGSize) {
+        let wreck = SKSpriteNode(color: UIColor(white: 0.2, alpha: 0.8), size: CGSize(width: size.width * 0.6, height: size.height * 0.6))
+        wreck.position = position
+        wreck.zRotation = rotation + CGFloat.random(in: -0.3...0.3)
+        wreck.zPosition = 8 // just above ground
+        wreck.alpha = 0.7
+        addChild(wreck)
+
+        // Fade out over 4 seconds
+        wreck.run(SKAction.sequence([
+            SKAction.wait(forDuration: 2.0),
+            SKAction.fadeOut(withDuration: 2.0),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    // MARK: - Valley Speed Boost
+
+    private func applyValleySpeedBoost(deltaTime: TimeInterval) {
+        guard let gridMap else { return }
+        let boostFraction = Constants.TerrainZone.valleySpeedMultiplier - 1.0
+        for drone in aliveDrones {
+            guard let spriteNode = drone.component(ofType: SpriteComponent.self)?.spriteNode else { continue }
+            guard let gridPos = gridMap.gridPosition(for: spriteNode.position) else { continue }
+            guard let cell = gridMap.cell(atRow: gridPos.row, col: gridPos.col), cell.terrain == .valley else { continue }
+            // Extra displacement in drone's heading direction
+            let angle = spriteNode.zRotation + .pi / 2
+            let extraSpeed: CGFloat = 50 * boostFraction // base push
+            let extra = extraSpeed * CGFloat(deltaTime)
+            spriteNode.position.x += cos(angle) * extra
+            spriteNode.position.y += sin(angle) * extra
+        }
     }
 
     // MARK: - Cleanup
@@ -2392,9 +3105,19 @@ class InPlaySKScene: SKScene {
                 let hitRadius = gridMap.cellSize.width * 1.5
                 if dist < hitRadius {
                     onDroneReachedSettlement(drone: drone, settlement: target)
-                    // Clear target so we don't damage it again on subsequent frames
+                    // Kamikaze-type enemies self-destruct on impact with settlement
+                    if drone is ShahedDroneEntity
+                        || drone is KamikazeDroneEntity
+                        || drone is LancetDroneEntity
+                        || drone is EnemyMissileEntity
+                        || drone is HarmMissileEntity
+                        || drone is CruiseMissileEntity {
+                        drone.didHit()
+                        removeEntity(drone)
+                        continue
+                    }
+                    // Non-kamikaze drones: clear target, continue flying to HQ
                     drone.targetSettlement = nil
-                    // Don't remove drone — it continues flying to HQ
                 }
             }
 
@@ -2632,6 +3355,7 @@ class InPlaySKScene: SKScene {
     }()
 
     func spawnRocketBlast(at position: CGPoint, radius: CGFloat, damage: Int = 1) {
+        // Physics blast node (detects drone contacts)
         let blast = SKSpriteNode(texture: Self.blastTexture)
         blast.size = CGSize(width: radius * 2, height: radius * 2)
         blast.name = "rocketBlastNode"
@@ -2651,6 +3375,28 @@ class InPlaySKScene: SKScene {
         let fade = SKAction.fadeOut(withDuration: 0.15)
         let remove = SKAction.removeFromParent()
         blast.run(SKAction.sequence([SKAction.group([scale, fade]), remove]))
+
+        // Visual explosion animation overlay
+        let textures = AnimationTextureCache.shared.mediumExplosion
+        if !textures.isEmpty {
+            let node = acquireExplosionNode()
+            node.texture = textures[0]
+            node.size = CGSize(width: 32, height: 32)
+            node.color = .white
+            node.colorBlendFactor = 0
+            node.position = position
+            node.zPosition = (isNightWave ? Constants.NightWave.nightEffectZPosition : 50) + 1
+            node.alpha = 1.0
+            node.setScale(1.0)
+            addChild(node)
+            node.run(SKAction.sequence([
+                SKAction.animate(with: textures, timePerFrame: 0.05, resize: false, restore: false),
+                SKAction.run { [weak self, weak node] in
+                    guard let self, let node else { return }
+                    self.releaseExplosionNode(node)
+                }
+            ]))
+        }
     }
 
     /// Rebuild per-frame caches from activeDrones in a single pass.
@@ -2738,13 +3484,32 @@ class InPlaySKScene: SKScene {
             puff.removeAllActions()
             return puff
         }
-        return SKSpriteNode(texture: Self.sharedSmokePuffTexture)
+        let tex = AnimationTextureCache.shared.smokePuff ?? Self.sharedSmokePuffTexture
+        return SKSpriteNode(texture: tex)
     }
 
     func releaseSmokePuff(_ puff: SKSpriteNode) {
         puff.removeFromParent()
         if smokePuffPool.count < nodePoolCapacity {
             smokePuffPool.append(puff)
+        }
+    }
+
+    func acquireExplosionNode() -> SKSpriteNode {
+        if let node = explosionPool.popLast() {
+            node.alpha = 1.0
+            node.isHidden = false
+            node.setScale(1.0)
+            node.removeAllActions()
+            return node
+        }
+        return SKSpriteNode()
+    }
+
+    func releaseExplosionNode(_ node: SKSpriteNode) {
+        node.removeFromParent()
+        if explosionPool.count < nodePoolCapacity {
+            explosionPool.append(node)
         }
     }
 
@@ -2772,6 +3537,34 @@ class InPlaySKScene: SKScene {
             currentTime: elapsedGameplayTime,
             sceneHeight: frame.height
         )
+    }
+
+    // MARK: - Drag State
+
+    private struct DragState {
+        let slotIndex: Int
+        let towerType: TowerType
+        let startLocation: CGPoint
+        var isDragActive: Bool = false
+        var currentGridPos: (row: Int, col: Int)?
+        var previewNode: SKSpriteNode?
+        var rangeNode: SKShapeNode?
+    }
+
+    private var dragState: DragState?
+    private let dragThreshold: CGFloat = 10
+    private let cellSnapDuration: TimeInterval = 0.08
+
+    private func cancelDrag() {
+        guard let state = dragState else { return }
+        if state.isDragActive {
+            conveyorBelt.restoreCard(at: state.slotIndex)
+            state.previewNode?.removeAllActions()
+            state.previewNode?.removeFromParent()
+            state.rangeNode?.removeAllActions()
+            state.rangeNode?.removeFromParent()
+        }
+        dragState = nil
     }
 
     // MARK: - Touch Handling
@@ -2858,15 +3651,144 @@ class InPlaySKScene: SKScene {
                 startCombatPhase()
                 return
             }
+
+            // Drag initiation: touch on conveyor card
+            if !isNightWave, let slotIdx = conveyorBelt.slotIndex(at: location, in: self),
+               let towerType = conveyorBelt.towerType(at: slotIdx) {
+                cancelDrag()
+                dragState = DragState(slotIndex: slotIdx, towerType: towerType, startLocation: location)
+                return
+            }
             handleTowerInteraction(touchedNode: touchedNode, location: location)
 
         case .combat:
             if abilityManager.handleTap(at: location) { return }
+
+            // Drag initiation: touch on conveyor card
+            if !isNightWave, let slotIdx = conveyorBelt.slotIndex(at: location, in: self),
+               let towerType = conveyorBelt.towerType(at: slotIdx) {
+                cancelDrag()
+                dragState = DragState(slotIndex: slotIdx, towerType: towerType, startLocation: location)
+                return
+            }
             handleTowerInteraction(touchedNode: touchedNode, location: location)
 
         case .waveComplete:
             break
         }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesMoved(touches, with: event)
+        guard let touch = touches.first, var state = dragState else { return }
+        let location = touch.location(in: self)
+
+        if !state.isDragActive {
+            // Check if finger moved far enough to activate drag
+            let dx = location.x - state.startLocation.x
+            let dy = location.y - state.startLocation.y
+            let distance = sqrt(dx * dx + dy * dy)
+            guard distance >= dragThreshold else { return }
+
+            // Activate drag
+            state.isDragActive = true
+            conveyorBelt.deselect()
+            towerPlacement.selectTowerType(nil)
+            towerPlacement.clearPreview()
+            conveyorBelt.grayOutCard(at: state.slotIndex)
+
+            // Create preview at nearest grid cell or at finger position
+            if let gridPos = gridMap.gridPosition(for: location) {
+                if let preview = towerPlacement.createDragPreview(type: state.towerType, at: gridPos) {
+                    state.previewNode = preview.sprite
+                    state.rangeNode = preview.range
+                    state.currentGridPos = gridPos
+                }
+            } else {
+                if let preview = towerPlacement.createDragPreviewFreeform(type: state.towerType, at: location) {
+                    state.previewNode = preview.sprite
+                    state.rangeNode = preview.range
+                    state.currentGridPos = nil
+                }
+            }
+            dragState = state
+            return
+        }
+
+        // Drag is active — update preview position
+        if let gridPos = gridMap.gridPosition(for: location) {
+            // On the grid — snap to cells
+            let sameCell = state.currentGridPos.map { $0.row == gridPos.row && $0.col == gridPos.col } ?? false
+            if !sameCell, let sprite = state.previewNode, let range = state.rangeNode {
+                towerPlacement.updateDragPreview(
+                    sprite: sprite, range: range,
+                    type: state.towerType, to: gridPos,
+                    duration: cellSnapDuration)
+                state.currentGridPos = gridPos
+                dragState = state
+            }
+        } else {
+            // Outside grid — follow finger
+            if let sprite = state.previewNode, let range = state.rangeNode {
+                towerPlacement.moveDragPreviewFreeform(sprite: sprite, range: range, to: location)
+                state.currentGridPos = nil
+                dragState = state
+            }
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+
+        guard let state = dragState else { return }
+
+        if !state.isDragActive {
+            // Was a tap, not a drag — forward to existing tap logic
+            dragState = nil
+            let touchedNode = atPoint(location)
+            if conveyorBelt.handleTap(nodeName: touchedNode.name) {
+                towerPlacement.selectTowerType(conveyorBelt.selectedTowerType)
+                towerPlacement.clearPreview()
+            } else {
+                handleTowerInteraction(touchedNode: touchedNode, location: location)
+            }
+            return
+        }
+
+        // Drag was active — attempt placement or cancel
+        defer {
+            state.previewNode?.removeAllActions()
+            state.previewNode?.removeFromParent()
+            state.rangeNode?.removeAllActions()
+            state.rangeNode?.removeFromParent()
+            dragState = nil
+        }
+
+        if let gridPos = state.currentGridPos,
+           gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col),
+           economyManager.canAfford(state.towerType.cost) {
+            // Place the tower
+            towerPlacement.selectTowerType(state.towerType)
+            if towerPlacement.placeTower(at: gridPos, economy: economyManager) != nil {
+                conveyorBelt.consumeCard(at: state.slotIndex)
+                towerPlacement.selectTowerType(nil)
+                synergyManager.recalculate(towers: towerPlacement.towers, in: self)
+                updateHUD()
+            } else {
+                conveyorBelt.restoreCard(at: state.slotIndex)
+                towerPlacement.selectTowerType(nil)
+            }
+        } else {
+            // Invalid placement — cancel drag
+            conveyorBelt.restoreCard(at: state.slotIndex)
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        cancelDrag()
     }
 
     private var selectedTower: TowerEntity?
@@ -3123,6 +4045,7 @@ class InPlaySKScene: SKScene {
 
         if currentPhase == .combat {
             waveManager.update(deltaTime: scaledDt)
+            applyValleySpeedBoost(deltaTime: scaledDt)
             cleanupDrones()
             updateMineLayerOffscreenIndicator()
 
@@ -3135,6 +4058,10 @@ class InPlaySKScene: SKScene {
             if isNightWave {
                 updateRadarNightDots()
             }
+
+            // Update combo and slow-mo timers
+            updateComboTimer(deltaTime: scaledDt)
+            updateSlowMo(deltaTime: dt) // slow-mo uses real time, not scaled
 
             // Check wave completion
             if let waveManager, !waveManager.isWaveInProgress && activeDrones.isEmpty {

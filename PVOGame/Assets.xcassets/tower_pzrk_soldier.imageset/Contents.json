@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "tower_pzrk_soldier.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

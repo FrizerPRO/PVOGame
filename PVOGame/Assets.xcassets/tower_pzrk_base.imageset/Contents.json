@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "tower_pzrk_base.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

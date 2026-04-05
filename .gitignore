@@ -6,3 +6,10 @@ xcuserdata/
 *.xcuserdatad/
 .codex_dd_sim_run/
 .codex*
+
+# Sprite generation intermediates
+generated_sprites/
+test_drone/
+test_shahed/
+test_zu/
+test_zu_v2/
