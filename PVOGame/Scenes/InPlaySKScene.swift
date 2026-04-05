@@ -1267,14 +1267,17 @@ class InPlaySKScene: SKScene {
 
         for (i, offset) in offsets.enumerated() {
             // Apply formation offset to each waypoint, fading toward HQ
+            // Add small per-drone jitter to intermediate waypoints for organic feel
             var waypoints = [CGPoint]()
             for (wpIdx, wp) in referencePath.enumerated() {
                 let progress = CGFloat(wpIdx) / CGFloat(max(wpCount - 1, 1))
-                // Offset fully present at start, fades out over the last 30% of path
                 let fade = min(1.0, max(0, (1.0 - progress) / 0.3))
+                let isEdge = wpIdx == 0 || wpIdx == wpCount - 1
+                let jitterX = isEdge ? CGFloat(0) : CGFloat.random(in: -6...6)
+                let jitterY = isEdge ? CGFloat(0) : CGFloat.random(in: -4...4)
                 waypoints.append(CGPoint(
-                    x: min(max(wp.x + offset.x * fade, 10), frame.width - 10),
-                    y: wp.y + offset.y * fade
+                    x: min(max(wp.x + offset.x * fade + jitterX, 10), frame.width - 10),
+                    y: wp.y + offset.y * fade + jitterY
                 ))
             }
             // Final waypoint: always exact HQ, no offset
@@ -1295,8 +1298,8 @@ class InPlaySKScene: SKScene {
             let capturedCGPath = cgPath
             let capturedTarget = target
             let capturedWaypoints = waypoints
+            let capturedSpeed = Constants.Shahed.speed
 
-            // Spawn all at once (no stagger) — they appear as a coherent shape
             run(SKAction.sequence([
                 SKAction.wait(forDuration: TimeInterval(i) * Constants.Shahed.formationStagger),
                 SKAction.run { [weak self] in
@@ -1327,15 +1330,15 @@ class InPlaySKScene: SKScene {
                             spriteNode.zRotation = atan2(dy, dx) - .pi / 2
                         }
 
-                        // Deterministic path follow — no orientToPath (we handle rotation manually)
+                        // Deterministic path follow with per-drone speed
                         let followAction = SKAction.follow(
                             capturedCGPath,
                             asOffset: false,
                             orientToPath: false,
-                            speed: Constants.Shahed.speed
+                            speed: capturedSpeed
                         )
 
-                        // Track movement direction for rotation (with -pi/2 correction for nose-up sprite)
+                        // Track movement direction for rotation
                         var lastPos = capturedWaypoints[0]
                         let rotateAction = SKAction.customAction(withDuration: followAction.duration) { node, _ in
                             let dx = node.position.x - lastPos.x
@@ -1381,8 +1384,8 @@ class InPlaySKScene: SKScene {
         var offsets = [CGPoint]()
         offsets.append(.zero) // leader at tip
         let maxDepth = CGFloat(count / 2)
-        // Fit wings within ~280px width (±140 from center)
-        let adaptiveSpacing = maxDepth > 0 ? min(spacing, 140 / maxDepth) : spacing
+        // Fit wings within screen width (±160 from center)
+        let adaptiveSpacing = maxDepth > 0 ? min(spacing, 160 / maxDepth) : spacing
         for i in 1..<count {
             let depth = CGFloat((i + 1) / 2)
             let side: CGFloat = i % 2 == 0 ? -1 : 1

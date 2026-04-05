@@ -387,7 +387,7 @@ class Constants{
         static let spawnInterval: TimeInterval = 0.5  // between drones in a batch
         static let batchDelay: TimeInterval = 8.0     // between batches
         // Formation constants
-        static let formationSpacing: CGFloat = 32     // px between drone centers
+        static let formationSpacing: CGFloat = 42     // px between drone centers
         static let formationDelay: TimeInterval = 3.0 // delay before formation spawns
         static let formationStagger: TimeInterval = 0.01 // near-instant spawn for tight formation
     }
