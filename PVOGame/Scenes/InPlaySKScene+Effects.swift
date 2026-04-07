@@ -184,11 +184,16 @@ extension InPlaySKScene {
             }
 
             // Remove drones that went far off screen (ghost cleanup)
-            if droneNode.position.y < -50 || droneNode.position.y > frame.height + 100 ||
-               droneNode.position.x < -100 || droneNode.position.x > frame.width + 100 {
-                let noDamageTypes: Bool = drone is HarmMissileEntity || drone is EWDroneEntity ||
-                    (drone is HeavyDroneEntity && droneNode.position.y > frame.height)
+            // Only drones that exit below or to the sides count as reaching HQ.
+            // Drones above the screen are still approaching — never count as HQ damage.
+            if droneNode.position.y < -50 || droneNode.position.x < -100 || droneNode.position.x > frame.width + 100 {
+                let noDamageTypes: Bool = drone is HarmMissileEntity || drone is EWDroneEntity
                 if !drone.isHit && !noDamageTypes { onDroneReachedHQ(drone: drone) }
+                removeEntity(drone)
+                continue
+            }
+            if droneNode.position.y > frame.height + 300 {
+                // Far above screen — silently remove without HQ damage
                 removeEntity(drone)
                 continue
             }

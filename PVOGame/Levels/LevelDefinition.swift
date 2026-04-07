@@ -323,10 +323,10 @@ struct LevelDefinition {
     // MARK: - Campaign Level 1: First Contact (4 waves — ZU only, Shaheds)
     static let campaignLevel1: LevelDefinition = {
         let w: [WaveDefinition] = [
-            .campaign(drones: 0, speed: 55, interval: 1.2, batch: 2, health: 1, shahed: 8),
-            .campaign(drones: 0, speed: 58, interval: 1.0, batch: 2, health: 1, shahed: 13, shahedFormation: .chevron),
-            .campaign(drones: 0, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 15, shahedFormation: .triangle),
-            .campaign(drones: 0, speed: 64, interval: 0.8, batch: 3, health: 2, shahed: 24, shahedFormation: .tripleTriangle),
+            .campaign(drones: 0, speed: 55, interval: 1.2, batch: 2, health: 1, shahed: 32),
+            .campaign(drones: 0, speed: 58, interval: 1.0, batch: 2, health: 1, shahed: 78, shahedFormation: .chevron),
+            .campaign(drones: 0, speed: 61, interval: 0.9, batch: 3, health: 1, shahed: 90, shahedFormation: .triangle),
+            .campaign(drones: 0, speed: 64, interval: 0.8, batch: 3, health: 2, shahed: 384, shahedFormation: .tripleTriangle),
         ]
         return LevelDefinition(gridLayout: sharedLayout, dronePaths: sharedPaths,
                                waves: w, startingResources: 300,

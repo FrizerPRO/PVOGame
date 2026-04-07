@@ -88,27 +88,113 @@ extension InPlaySKScene {
 
     // MARK: - Shahed Formation Spawning
 
+    /// Max drones per single chevron / triangle sub-group.
+    /// Groups larger than this are split into sequential waves.
+    private static let maxChevronGroupSize = 7
+    private static let maxTriangleGroupSize = 10
+
     func spawnShahedFormation(count: Int, formation: ShahedFormation) {
+        guard let gridMap else { return }
+
+        // Split large formations into sequential groups
+        let groups = splitIntoGroups(count: count, formation: formation)
+
+        // Reserve ALL drones upfront so WaveManager doesn't think wave is over
+        // between groups. Each spawnSingleFormationGroup will decrement as drones spawn.
+        pendingShahedSpawns += count
+
+        let spacing = Constants.Shahed.formationSpacing
+        let speed = Constants.Shahed.speed
+
+        // Delay between groups: time for previous group to clear its Y-depth
+        var groupDelay: TimeInterval = 0
+
+        for group in groups {
+            let capturedDelay = groupDelay
+            let capturedCount = group
+
+            run(SKAction.sequence([
+                SKAction.wait(forDuration: capturedDelay),
+                SKAction.run { [weak self] in
+                    self?.spawnSingleFormationGroup(
+                        count: capturedCount,
+                        formation: formation
+                    )
+                }
+            ]))
+
+            // Calculate Y-depth of this group to determine gap before next
+            let groupDepth = formationYDepth(count: group, formation: formation, spacing: spacing)
+            let gapBetweenGroups = spacing * 1.5  // breathing room between groups
+            groupDelay += TimeInterval((groupDepth + gapBetweenGroups) / speed)
+        }
+    }
+
+    /// Split total count into groups of manageable size
+    private func splitIntoGroups(count: Int, formation: ShahedFormation) -> [Int] {
+        let maxSize: Int
+        switch formation {
+        case .scattered:
+            return [count]  // scattered doesn't need splitting
+        case .chevron:
+            maxSize = Self.maxChevronGroupSize
+        case .triangle:
+            maxSize = Self.maxTriangleGroupSize
+        case .tripleTriangle:
+            // tripleTriangle is already 3 sub-triangles; limit total per wave
+            maxSize = Self.maxTriangleGroupSize * 3
+        }
+
+        guard count > maxSize else { return [count] }
+
+        var groups = [Int]()
+        var remaining = count
+        while remaining > 0 {
+            let groupSize = min(maxSize, remaining)
+            groups.append(groupSize)
+            remaining -= groupSize
+        }
+        return groups
+    }
+
+    /// Calculate Y-depth (in pixels) of a formation group
+    private func formationYDepth(count: Int, formation: ShahedFormation, spacing: CGFloat) -> CGFloat {
+        switch formation {
+        case .scattered:
+            return 60
+        case .chevron:
+            let maxDepth = CGFloat((count - 1 + 1) / 2)
+            let adaptiveSpacing = maxDepth > 0 ? min(spacing, 160 / maxDepth) : spacing
+            return maxDepth * adaptiveSpacing * 0.35
+        case .triangle:
+            // Triangle with N drones has ceil((-1+sqrt(1+8N))/2) rows
+            let rows = ceil((-1 + sqrt(1 + 8 * Double(count))) / 2)
+            return CGFloat(rows - 1) * spacing * 0.4
+        case .tripleTriangle:
+            let perTriangle = count / 3 + count % 3
+            let rows = ceil((-1 + sqrt(1 + 8 * Double(perTriangle))) / 2)
+            return CGFloat(rows - 1) * spacing * 0.4 + spacing * 0.4  // +backOffset
+        }
+    }
+
+    /// Spawn one formation group (original logic, unchanged)
+    private func spawnSingleFormationGroup(count: Int, formation: ShahedFormation) {
         guard let gridMap else { return }
 
         let hqRow = Constants.TowerDefense.gridRows - 1
         let hqCol = Constants.TowerDefense.gridCols / 2
         let hqPoint = gridMap.worldPosition(forRow: hqRow, col: hqCol)
 
-        // Formation center — keep away from edges so wings fit
-        // centerY must stay below frame.height + 100 even with max offsets (ghost cleanup threshold)
         let centerX = CGFloat.random(in: 60...(frame.width - 60))
         let centerY = frame.height + 20
         let leaderSpawn = CGPoint(x: centerX, y: centerY)
 
         let offsets = shahedFormationOffsets(for: formation, count: count)
 
-        // Shared target for the entire formation
         let target = settlementManager?.assignTarget(
             towers: towerPlacement?.towers ?? []
         )
 
-        // Generate ONE reference path (leader) — shared jitter for all drones
         let referencePath: [CGPoint]
         if let target {
             referencePath = generateSettlementPath(from: leaderSpawn, through: target.worldPosition, to: hqPoint)
@@ -118,11 +204,9 @@ extension InPlaySKScene {
 
         let wpCount = referencePath.count
 
-        pendingShahedSpawns += offsets.count
+        // pendingShahedSpawns already reserved by spawnShahedFormation
 
         for (i, offset) in offsets.enumerated() {
-            // Apply formation offset to each waypoint, fading toward HQ
-            // Add small per-drone jitter to intermediate waypoints for organic feel
             var waypoints = [CGPoint]()
             for (wpIdx, wp) in referencePath.enumerated() {
                 let progress = CGFloat(wpIdx) / CGFloat(max(wpCount - 1, 1))
@@ -135,14 +219,12 @@ extension InPlaySKScene {
                     y: wp.y + offset.y * fade + jitterY
                 ))
             }
-            // Final waypoint: always exact HQ, no offset
             waypoints[wpCount - 1] = hqPoint
 
             let altitude: DroneAltitude = .low
             let flightPath = DroneFlightPath(waypoints: waypoints, altitude: altitude, spawnEdge: .top)
             let flyingPath = flightPath.toFlyingPath()
 
-            // Build CGPath for SKAction-based deterministic movement
             let cgPath = CGMutablePath()
             cgPath.move(to: waypoints[0])
             for wpIdx in 1..<waypoints.count {
@@ -163,7 +245,6 @@ extension InPlaySKScene {
                     drone.targetSettlement = capturedTarget
                     drone.isFormationFlight = true
 
-                    // Disable GKAgent steering — SKAction drives position
                     if let flight = drone.component(ofType: FlyingProjectileComponent.self) {
                         flight.behavior = GKBehavior()
                         flight.maxSpeed = 0
@@ -178,14 +259,12 @@ extension InPlaySKScene {
                         spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
                         spriteNode.position = capturedWaypoints[0]
 
-                        // Initial rotation: face from wp[0] toward wp[1]
                         if capturedWaypoints.count >= 2 {
                             let dx = capturedWaypoints[1].x - capturedWaypoints[0].x
                             let dy = capturedWaypoints[1].y - capturedWaypoints[0].y
                             spriteNode.zRotation = atan2(dy, dx) - .pi / 2
                         }
 
-                        // Deterministic path follow with per-drone speed
                         let followAction = SKAction.follow(
                             capturedCGPath,
                             asOffset: false,
@@ -193,7 +272,6 @@ extension InPlaySKScene {
                             speed: capturedSpeed
                         )
 
-                        // Track movement direction for rotation
                         var lastPos = capturedWaypoints[0]
                         let rotateAction = SKAction.customAction(withDuration: followAction.duration) { node, _ in
                             let dx = node.position.x - lastPos.x
