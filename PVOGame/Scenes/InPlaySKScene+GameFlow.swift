@@ -4,6 +4,33 @@
 //
 
 import SpriteKit
+import simd
+
+/// A transient bright circle on the night overlay. The overlay's fragment
+/// shader reads up to `maxHoles` of these and knocks alpha to zero inside
+/// each one, so the scene under the blast becomes visible for a moment.
+struct NightHole {
+    static let maxHoles = 8
+
+    let position: CGPoint      // scene-space pixel position of the blast
+    let radius: CGFloat        // falloff radius in scene-space pixels
+    let spawnTime: TimeInterval
+    let lifetime: TimeInterval
+
+    /// Returns 0…1 strength at the given time: quick ramp-up, short hold,
+    /// then fade-out over the rest of the lifetime.
+    func strength(at now: TimeInterval) -> Float {
+        let age = now - spawnTime
+        if age < 0 { return 0 }
+        if age >= lifetime { return 0 }
+        let fadeIn: TimeInterval = 0.025
+        let holdEnd: TimeInterval = fadeIn + Constants.Explosion.nightHoleHold
+        if age < fadeIn { return Float(age / fadeIn) }
+        if age < holdEnd { return 1.0 }
+        let t = (age - holdEnd) / max(lifetime - holdEnd, 0.001)
+        return Float(max(0.0, 1.0 - t))
+    }
+}
 
 extension InPlaySKScene {
     // MARK: - Night Wave
@@ -12,13 +39,20 @@ extension InPlaySKScene {
         guard !isNightWave else { return }
         isNightWave = true
 
+        // Plain black overlay covering the whole scene. A fragment shader
+        // discards pixels inside active "hole" circles so explosions can
+        // reveal the ground, wreckage, towers and drones for a moment.
         let overlay = SKSpriteNode(color: .black, size: frame.size)
-        overlay.alpha = 0
         overlay.position = CGPoint(x: frame.midX, y: frame.midY)
+        overlay.alpha = 0
         overlay.zPosition = 90  // under HUD
         overlay.name = "nightOverlay"
+        let shader = makeNightOverlayShader()
+        overlay.shader = shader
         addChild(overlay)
         nightOverlay = overlay
+        nightOverlayShader = shader
+        nightHoles.removeAll()
 
         overlay.run(SKAction.fadeAlpha(to: Constants.NightWave.overlayAlpha, duration: Constants.NightWave.transitionDuration))
 
@@ -26,31 +60,112 @@ extension InPlaySKScene {
         towerPlacement?.selectTowerType(nil)
         conveyorBelt.deselect()
         conveyorBelt.setNightMode(true)
-
-        // Create radar indicator dots
-        updateRadarNightDots()
     }
 
     func transitionToDay() {
         guard isNightWave else { return }
         isNightWave = false
 
-        if let overlay = nightOverlay {
+        let overlay = nightOverlay
+        nightOverlay = nil
+        nightOverlayShader = nil
+        nightHoles.removeAll()
+
+        if let overlay = overlay {
+            overlay.removeAllActions()
             overlay.run(SKAction.sequence([
                 SKAction.fadeOut(withDuration: Constants.NightWave.transitionDuration),
                 SKAction.removeFromParent()
             ]))
-            nightOverlay = nil
         }
 
         // Restore tower placement
         conveyorBelt.setNightMode(false)
 
-        // Remove radar dots
-        for (_, dot) in radarNightDots {
-            dot.removeFromParent()
+        // Day = no radar blips. Clear so guns don't keep firing at last-known
+        // night positions.
+        nightBlips.removeAll()
+    }
+
+    // MARK: - Night Reveal Shader
+
+    /// Builds the SKShader attached to the night overlay. The shader reads
+    /// up to `NightHole.maxHoles` vec4 uniforms (`u_hole_0`…`u_hole_7`)
+    /// encoded as `(uv_x, uv_y, uv_radius, strength)` in UV space 0…1
+    /// across the sprite, and fades overlay alpha inside each hole. We
+    /// avoid `u_sprite_size` (its units differ by backend/device) and
+    /// avoid `SKDefaultShading()` (inconsistent for color-only sprites)
+    /// in favor of explicit output and `v_color_mix` to honour the
+    /// sprite's own alpha fade animation.
+    func makeNightOverlayShader() -> SKShader {
+        var body = """
+        void main() {
+            float maxHole = 0.0;
+            vec4 h;
+            vec2 delta;
+            float d;
+            float fall;
+        """
+        for i in 0..<NightHole.maxHoles {
+            body += """
+
+                h = u_hole_\(i);
+                if (h.w > 0.0) {
+                    delta = v_tex_coord - h.xy;
+                    // Correct for sprite aspect ratio so the hole stays
+                    // roughly circular on a portrait screen.
+                    delta.y *= u_aspect;
+                    d = length(delta);
+                    fall = 1.0 - smoothstep(h.z * 0.35, h.z, d);
+                    maxHole = max(maxHole, h.w * fall);
+                }
+            """
         }
-        radarNightDots.removeAll()
+        body += """
+
+            float a = v_color_mix.a * (1.0 - clamp(maxHole, 0.0, 1.0));
+            gl_FragColor = vec4(0.0, 0.0, 0.0, a);
+        }
+        """
+        let shader = SKShader(source: body)
+        var uniforms: [SKUniform] = (0..<NightHole.maxHoles).map { i in
+            SKUniform(name: "u_hole_\(i)", vectorFloat4: SIMD4<Float>(0, 0, 0, 0))
+        }
+        let aspect: Float = Float(frame.height / max(frame.width, 1))
+        uniforms.append(SKUniform(name: "u_aspect", float: aspect))
+        shader.uniforms = uniforms
+        return shader
+    }
+
+    /// Called every frame from the scene update loop. Drops expired holes
+    /// and copies the currently active ones into the shader uniforms in
+    /// UV space.
+    func updateNightHoles(currentTime: TimeInterval) {
+        guard isNightWave, let shader = nightOverlayShader else { return }
+
+        // Drop expired holes.
+        nightHoles.removeAll { currentTime - $0.spawnTime >= $0.lifetime }
+
+        let width = max(frame.width, 1)
+        let height = max(frame.height, 1)
+
+        // Push up to maxHoles into the shader; zero out the rest.
+        let active = nightHoles.suffix(NightHole.maxHoles)
+        var idx = 0
+        for hole in active {
+            let strength = hole.strength(at: currentTime)
+            shader.uniforms[idx].vectorFloat4Value = SIMD4<Float>(
+                Float(hole.position.x / width),
+                Float(hole.position.y / height),
+                Float(hole.radius / width),
+                strength
+            )
+            idx += 1
+        }
+        while idx < NightHole.maxHoles {
+            shader.uniforms[idx].vectorFloat4Value = SIMD4<Float>(repeating: 0)
+            idx += 1
+        }
     }
 
     /// Returns whether the given world-space point is within any active radar's coverage zone.
@@ -65,39 +180,6 @@ extension InPlaySKScene {
             }
         }
         return false
-    }
-
-    /// Update blinking green dots at radar positions during night.
-    func updateRadarNightDots() {
-        guard isNightWave, let towerPlacement else { return }
-
-        var currentIDs = Set<ObjectIdentifier>()
-        for tower in towerPlacement.towers {
-            guard let stats = tower.stats, stats.towerType == .radar, !stats.isDisabled else { continue }
-            let id = ObjectIdentifier(tower)
-            currentIDs.insert(id)
-
-            if radarNightDots[id] == nil {
-                let dot = SKSpriteNode(color: .green, size: CGSize(width: 6, height: 6))
-                dot.position = tower.worldPosition
-                dot.zPosition = Constants.NightWave.nightEffectZPosition
-                dot.alpha = 0.2
-                addChild(dot)
-
-                let pulse = SKAction.sequence([
-                    SKAction.fadeAlpha(to: 1.0, duration: 1.0),
-                    SKAction.fadeAlpha(to: 0.2, duration: 1.0)
-                ])
-                dot.run(SKAction.repeatForever(pulse))
-                radarNightDots[id] = dot
-            }
-        }
-
-        // Remove dots for destroyed/disabled radars
-        for (id, dot) in radarNightDots where !currentIDs.contains(id) {
-            dot.removeFromParent()
-            radarNightDots.removeValue(forKey: id)
-        }
     }
 
     // MARK: - EW Jamming
@@ -174,6 +256,30 @@ extension InPlaySKScene {
         endlessLabel.name = "startGameButton"
         endlessBtn.addChild(endlessLabel)
 
+    }
+
+    // MARK: - Pre-placed Towers
+
+    func placePrePlacedTowers() {
+        guard let towerPlacement else { return }
+        for def in selectedLevel.prePlacedTowers {
+            let footprint = def.type.footprint
+            guard gridMap.canPlaceTower(atRow: def.row, col: def.col, footprint: footprint) else { continue }
+            let worldPos = gridMap.worldPosition(forRow: def.row, col: def.col, footprint: footprint)
+            let tower = TowerEntity(towerType: def.type, at: (def.row, def.col), worldPosition: worldPos)
+            if let cell = gridMap.cell(atRow: def.row, col: def.col),
+               cell.terrain == .highGround,
+               let stats = tower.component(ofType: TowerStatsComponent.self) {
+                stats.range *= Constants.TerrainZone.highGroundRangeMultiplier
+            }
+            gridMap.placeTower(ObjectIdentifier(tower), atRow: def.row, col: def.col, footprint: footprint)
+            if let spriteNode = tower.component(ofType: SpriteComponent.self)?.spriteNode {
+                spriteNode.removeFromParent()
+                addChild(spriteNode)
+            }
+            towerPlacement.towers.append(tower)
+            entities.append(tower)
+        }
     }
 
     // MARK: - Level Selection
@@ -312,8 +418,9 @@ extension InPlaySKScene {
         nightOverlay?.removeAllActions()
         nightOverlay?.removeFromParent()
         nightOverlay = nil
-        for (_, dot) in radarNightDots { dot.removeFromParent() }
-        radarNightDots.removeAll()
+        nightOverlayShader = nil
+        nightHoles.removeAll()
+        nightBlips.removeAll()
 
         lives = Constants.TowerDefense.hqLives
 
@@ -353,7 +460,9 @@ extension InPlaySKScene {
         conveyorBelt.setSlotCount(selectedLevel.conveyorSlotCount)
         conveyorBelt.setAvailableTowers(selectedLevel.availableTowers)
         conveyorBelt.setGuaranteedTowers(selectedLevel.guaranteedTowers)
+        conveyorBelt.instantMode = selectedLevel.instantConveyor
         conveyorBelt.setup(in: self, safeBottom: safeBottom)
+        placePrePlacedTowers()
         startWaveButton?.isHidden = false
         speedButton?.isHidden = false
         settingsButton?.isHidden = false

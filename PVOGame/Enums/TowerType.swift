@@ -18,6 +18,7 @@ enum TowerType: String, CaseIterable {
     case ewTower
     case pzrk       // ПЗРК Stinger/Igla — cheap single-missile launcher
     case gepard      // Flakpanzer Gepard — 35mm twin autocannon, cruise-capable
+    case oilRefinery // Нафтопереробний завод — income building, enemy target
 
     var displayName: String {
         switch self {
@@ -29,6 +30,7 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return "REW"
         case .pzrk: return "PZRK"
         case .gepard: return "GEPD"
+        case .oilRefinery: return "NPZ"
         }
     }
 
@@ -42,6 +44,7 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return Constants.EW.ewTowerCost
         case .pzrk: return Constants.TowerDefense.pzrkCost
         case .gepard: return Constants.TowerDefense.gepardCost
+        case .oilRefinery: return Constants.TowerDefense.oilRefineryCost
         }
     }
 
@@ -55,6 +58,7 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return Constants.EW.ewTowerRange
         case .pzrk: return 80  // short detection range; missile chases further
         case .gepard: return 100
+        case .oilRefinery: return 0
         }
     }
 
@@ -68,6 +72,7 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return 0
         case .pzrk: return 1.0
         case .gepard: return 12
+        case .oilRefinery: return 0
         }
     }
 
@@ -81,19 +86,21 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return 0
         case .pzrk: return 2
         case .gepard: return 1
+        case .oilRefinery: return 0
         }
     }
 
     var reachableAltitudes: Set<DroneAltitude> {
         switch self {
         case .autocannon: return [.low, .medium, .micro]
-        case .ciws: return [.low, .micro, .cruise]
+        case .ciws: return [.low, .micro]
         case .samLauncher: return [.low, .medium, .high, .ballistic, .cruise]
         case .interceptor: return [.low, .medium, .high, .ballistic, .cruise]
         case .radar: return []
         case .ewTower: return []
-        case .pzrk: return [.low, .medium]
-        case .gepard: return [.low, .medium, .cruise]
+        case .pzrk: return [.low, .medium, .micro]
+        case .gepard: return [.low, .medium, .micro]
+        case .oilRefinery: return []
         }
     }
 
@@ -107,6 +114,7 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return 2
         case .pzrk: return 1
         case .gepard: return 2
+        case .oilRefinery: return 2
         }
     }
 
@@ -120,6 +128,7 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return 10
         case .pzrk: return 6
         case .gepard: return 10
+        case .oilRefinery: return 15
         }
     }
 
@@ -141,27 +150,45 @@ enum TowerType: String, CaseIterable {
         }
     }
 
+    /// Grid footprint (rows × cols) the tower occupies. Rocket launchers have long
+    /// chassis — SAM is a vertically oriented truck (cab on top, launcher in the
+    /// back), interceptor is horizontal (cab on the right, launcher on the left).
+    var footprint: (rows: Int, cols: Int) {
+        switch self {
+        case .samLauncher:  return (rows: 2, cols: 1)
+        case .interceptor:  return (rows: 1, cols: 2)
+        default:            return (rows: 1, cols: 1)
+        }
+    }
+
     /// Ствольные системы физически наводятся на цель.
     /// Ракетные (С-300, перехватчик, ПЗРК) — вертикальный пуск, наведение ракетой.
     var tracksTarget: Bool {
         switch self {
         case .autocannon, .ciws, .gepard: return true
-        case .samLauncher, .interceptor, .pzrk, .radar, .ewTower: return false
+        case .samLauncher, .interceptor, .pzrk, .radar, .ewTower, .oilRefinery: return false
         }
     }
 
     func accuracy(against altitude: DroneAltitude) -> CGFloat {
         switch self {
         case .autocannon:
-            return altitude == .micro ? 0.05 : 0.70
+            return altitude == .micro ? 0.22 : 0.70
         case .ciws:
-            if altitude == .micro { return 0.15 }
+            if altitude == .micro { return 0.35 }
             if altitude == .cruise { return 0.30 }
             return 0.90
         case .gepard:
-            if altitude == .micro { return 0.10 }
+            if altitude == .micro { return 0.45 }
             if altitude == .cruise { return 0.60 }
             return 0.85
+        case .pzrk:
+            // MANPADS are purpose-built against small, low-flying targets.
+            return altitude == .micro ? 0.75 : 1.0
+        case .samLauncher:
+            return altitude == .cruise ? 0.90 : 1.0
+        case .interceptor:
+            return altitude == .cruise ? 0.80 : 1.0
         default:
             return 1.0
         }
@@ -177,6 +204,7 @@ enum TowerType: String, CaseIterable {
         case .ewTower: return .systemTeal
         case .pzrk: return .systemBrown
         case .gepard: return .systemIndigo
+        case .oilRefinery: return .systemPurple
         }
     }
 }

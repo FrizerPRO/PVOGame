@@ -16,6 +16,7 @@ class ConveyorBeltManager {
     private(set) var slotCount = 5
     static let buildInterval: TimeInterval = 2.5
     static let combatInterval: TimeInterval = 5.0
+    var instantMode = false
 
     private static let weights: [(TowerType, Int)] = [
         (.pzrk, 10),
@@ -26,6 +27,7 @@ class ConveyorBeltManager {
         (.samLauncher, 2),
         (.radar, 5),
         (.ewTower, 4),
+        (.oilRefinery, 3),
     ]
 
     private var availableTowers: [TowerType] = TowerType.allCases
@@ -116,14 +118,19 @@ class ConveyorBeltManager {
 
         let hasEmptySlot = slots.contains(where: { $0 == nil })
         if hasEmptySlot {
-            spawnTimer += deltaTime
+            if instantMode {
+                while slots.contains(where: { $0 == nil }) { addRandomCard() }
+                removeRadarSweep()
+            } else {
+                spawnTimer += deltaTime
 
-            let progress = CGFloat(spawnTimer / interval)
-            updateRadarSweep(progress: min(progress, 1.0))
+                let progress = CGFloat(spawnTimer / interval)
+                updateRadarSweep(progress: min(progress, 1.0))
 
-            if spawnTimer >= interval {
-                spawnTimer = 0
-                addRandomCard()
+                if spawnTimer >= interval {
+                    spawnTimer = 0
+                    addRandomCard()
+                }
             }
         } else {
             removeRadarSweep()
@@ -455,6 +462,20 @@ class ConveyorBeltManager {
     func restoreCard(at index: Int) {
         guard index >= 0, index < cardNodes.count, let card = cardNodes[index] else { return }
         card.alpha = 1.0
+    }
+
+    /// Short shake animation for a card that failed to be placed.
+    /// Symmetric offsets return the card to its slot-local origin (0, 0).
+    func shakeCard(at index: Int) {
+        guard index >= 0, index < cardNodes.count, let card = cardNodes[index] else { return }
+        card.removeAction(forKey: "shake")
+        let shakeSeq = SKAction.sequence([
+            SKAction.moveBy(x: -4, y: 0, duration: 0.03),
+            SKAction.moveBy(x: 8, y: 0, duration: 0.04),
+            SKAction.moveBy(x: -8, y: 0, duration: 0.04),
+            SKAction.moveBy(x: 4, y: 0, duration: 0.03),
+        ])
+        card.run(shakeSeq, withKey: "shake")
     }
 
     // MARK: - Night mode

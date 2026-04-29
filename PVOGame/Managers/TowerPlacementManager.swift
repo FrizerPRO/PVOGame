@@ -10,7 +10,7 @@ class TowerPlacementManager {
     private(set) var selectedTowerType: TowerType?
     private var previewNode: SKSpriteNode?
     private var previewRangeNode: SKShapeNode?
-    private(set) var towers = [TowerEntity]()
+    var towers = [TowerEntity]()
 
     init(scene: InPlaySKScene) {
         self.scene = scene
@@ -25,13 +25,19 @@ class TowerPlacementManager {
         guard let scene, let type = selectedTowerType else { return }
         clearPreview()
 
-        let worldPos = scene.gridMap.worldPosition(forRow: gridPos.row, col: gridPos.col)
-        let canPlace = scene.gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col)
+        let footprint = type.footprint
+        let anchor = clampedAnchor(from: gridPos, footprint: footprint, in: scene.gridMap)
+        let worldPos = scene.gridMap.worldPosition(forRow: anchor.row, col: anchor.col, footprint: footprint)
+        let canPlace = scene.gridMap.canPlaceTower(atRow: anchor.row, col: anchor.col, footprint: footprint)
 
         let towerColor = type.color
 
+        let previewSize = CGSize(
+            width: Constants.SpriteSize.towerPreview * CGFloat(footprint.cols),
+            height: Constants.SpriteSize.towerPreview * CGFloat(footprint.rows)
+        )
         let preview = SKSpriteNode(color: canPlace ? towerColor.withAlphaComponent(0.5) : .red.withAlphaComponent(0.5),
-                                    size: CGSize(width: Constants.SpriteSize.towerPreview, height: Constants.SpriteSize.towerPreview))
+                                    size: previewSize)
         preview.position = worldPos
         preview.zPosition = 30
         scene.addChild(preview)
@@ -39,7 +45,7 @@ class TowerPlacementManager {
 
         var previewRange = type.baseRange
         // HighGround range bonus applies to preview too
-        let terrainCell = scene.gridMap.cell(atRow: gridPos.row, col: gridPos.col)
+        let terrainCell = scene.gridMap.cell(atRow: anchor.row, col: anchor.col)
         let onHighGround = terrainCell?.terrain == .highGround
         if onHighGround {
             previewRange *= Constants.TerrainZone.highGroundRangeMultiplier
@@ -72,20 +78,22 @@ class TowerPlacementManager {
     @discardableResult
     func placeTower(at gridPos: (row: Int, col: Int), economy: EconomyManager) -> TowerEntity? {
         guard let scene, let type = selectedTowerType else { return nil }
-        guard scene.gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col) else { return nil }
+        let footprint = type.footprint
+        let anchor = clampedAnchor(from: gridPos, footprint: footprint, in: scene.gridMap)
+        guard scene.gridMap.canPlaceTower(atRow: anchor.row, col: anchor.col, footprint: footprint) else { return nil }
         guard economy.canAfford(type.cost) else { return nil }
 
-        let worldPos = scene.gridMap.worldPosition(forRow: gridPos.row, col: gridPos.col)
-        let tower = TowerEntity(towerType: type, at: (gridPos.row, gridPos.col), worldPosition: worldPos)
+        let worldPos = scene.gridMap.worldPosition(forRow: anchor.row, col: anchor.col, footprint: footprint)
+        let tower = TowerEntity(towerType: type, at: (anchor.row, anchor.col), worldPosition: worldPos)
 
         // Terrain zone bonus: high ground gives +20% range
-        if let cell = scene.gridMap.cell(atRow: gridPos.row, col: gridPos.col),
+        if let cell = scene.gridMap.cell(atRow: anchor.row, col: anchor.col),
            cell.terrain == .highGround,
            let stats = tower.component(ofType: TowerStatsComponent.self) {
             stats.range *= Constants.TerrainZone.highGroundRangeMultiplier
         }
 
-        scene.gridMap.placeTower(ObjectIdentifier(tower), atRow: gridPos.row, col: gridPos.col)
+        scene.gridMap.placeTower(ObjectIdentifier(tower), atRow: anchor.row, col: anchor.col, footprint: footprint)
         economy.spend(type.cost)
 
         if let spriteNode = tower.component(ofType: SpriteComponent.self)?.spriteNode {
@@ -107,7 +115,8 @@ class TowerPlacementManager {
               let stats = tower.stats else { return }
 
         economy.earn(stats.sellValue)
-        scene?.gridMap.removeTower(atRow: gridPos.row, col: gridPos.col)
+        scene?.gridMap.removeTower(atRow: gridPos.row, col: gridPos.col,
+                                   footprint: (rows: gridPos.rowSpan, cols: gridPos.colSpan))
         tower.component(ofType: SpriteComponent.self)?.spriteNode.removeFromParent()
         tower.hideRangeIndicator()
         towers.removeAll { $0 === tower }
@@ -119,7 +128,8 @@ class TowerPlacementManager {
     func removeAllTowers() {
         for tower in towers {
             if let gridPos = tower.component(ofType: GridPositionComponent.self) {
-                scene?.gridMap.removeTower(atRow: gridPos.row, col: gridPos.col)
+                scene?.gridMap.removeTower(atRow: gridPos.row, col: gridPos.col,
+                                           footprint: (rows: gridPos.rowSpan, cols: gridPos.colSpan))
             }
             tower.component(ofType: SpriteComponent.self)?.spriteNode.removeFromParent()
             tower.hideRangeIndicator()
@@ -137,21 +147,23 @@ class TowerPlacementManager {
     /// Create a persistent drag preview. Range circle is a child of sprite — moves with it.
     func createDragPreview(type: TowerType, at gridPos: (row: Int, col: Int)) -> (sprite: SKSpriteNode, range: SKShapeNode)? {
         guard let scene else { return nil }
-        let worldPos = scene.gridMap.worldPosition(forRow: gridPos.row, col: gridPos.col)
-        let canPlace = scene.gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col)
+        let footprint = type.footprint
+        let anchor = clampedAnchor(from: gridPos, footprint: footprint, in: scene.gridMap)
+        let worldPos = scene.gridMap.worldPosition(forRow: anchor.row, col: anchor.col, footprint: footprint)
+        let canPlace = scene.gridMap.canPlaceTower(atRow: anchor.row, col: anchor.col, footprint: footprint)
         let affordable = scene.economyManager.canAfford(type.cost)
         let valid = canPlace && affordable
 
         let color = valid ? type.color.withAlphaComponent(0.5) : UIColor.red.withAlphaComponent(0.5)
         let sprite = SKSpriteNode(color: color,
-                                   size: CGSize(width: Constants.SpriteSize.towerPreview,
-                                                height: Constants.SpriteSize.towerPreview))
+                                   size: CGSize(width: Constants.SpriteSize.towerPreview * CGFloat(footprint.cols),
+                                                height: Constants.SpriteSize.towerPreview * CGFloat(footprint.rows)))
         sprite.position = worldPos
         sprite.zPosition = 110
         scene.addChild(sprite)
 
-        let range = effectiveRange(type: type, gridPos: gridPos)
-        let onHighGround = scene.gridMap.cell(atRow: gridPos.row, col: gridPos.col)?.terrain == .highGround
+        let range = effectiveRange(type: type, gridPos: anchor)
+        let onHighGround = scene.gridMap.cell(atRow: anchor.row, col: anchor.col)?.terrain == .highGround
         currentRadii = scene.gridMap.occlusionRadii(
             from: worldPos, radius: range,
             towerOnHighGround: onHighGround,
@@ -173,10 +185,11 @@ class TowerPlacementManager {
     /// Create drag preview at an arbitrary world point (when outside grid).
     func createDragPreviewFreeform(type: TowerType, at worldPos: CGPoint) -> (sprite: SKSpriteNode, range: SKShapeNode)? {
         guard let scene else { return nil }
+        let footprint = type.footprint
         let color = UIColor.red.withAlphaComponent(0.5)
         let sprite = SKSpriteNode(color: color,
-                                   size: CGSize(width: Constants.SpriteSize.towerPreview,
-                                                height: Constants.SpriteSize.towerPreview))
+                                   size: CGSize(width: Constants.SpriteSize.towerPreview * CGFloat(footprint.cols),
+                                                height: Constants.SpriteSize.towerPreview * CGFloat(footprint.rows)))
         sprite.position = worldPos
         sprite.zPosition = 110
         scene.addChild(sprite)
@@ -200,8 +213,10 @@ class TowerPlacementManager {
                            type: TowerType, to gridPos: (row: Int, col: Int),
                            duration: TimeInterval) {
         guard let scene else { return }
-        let worldPos = scene.gridMap.worldPosition(forRow: gridPos.row, col: gridPos.col)
-        let canPlace = scene.gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col)
+        let footprint = type.footprint
+        let anchor = clampedAnchor(from: gridPos, footprint: footprint, in: scene.gridMap)
+        let worldPos = scene.gridMap.worldPosition(forRow: anchor.row, col: anchor.col, footprint: footprint)
+        let canPlace = scene.gridMap.canPlaceTower(atRow: anchor.row, col: anchor.col, footprint: footprint)
         let affordable = scene.economyManager.canAfford(type.cost)
         let valid = canPlace && affordable
 
@@ -215,8 +230,8 @@ class TowerPlacementManager {
         sprite.run(moveAction)
 
         // Compute target polar radii for the new cell
-        let newEffective = effectiveRange(type: type, gridPos: gridPos)
-        let onHighGround = scene.gridMap.cell(atRow: gridPos.row, col: gridPos.col)?.terrain == .highGround
+        let newEffective = effectiveRange(type: type, gridPos: anchor)
+        let onHighGround = scene.gridMap.cell(atRow: anchor.row, col: anchor.col)?.terrain == .highGround
         let targetRadii = scene.gridMap.occlusionRadii(
             from: worldPos, radius: newEffective,
             towerOnHighGround: onHighGround,
@@ -271,7 +286,23 @@ class TowerPlacementManager {
     func towerAt(gridPos: (row: Int, col: Int)) -> TowerEntity? {
         towers.first { tower in
             guard let gp = tower.component(ofType: GridPositionComponent.self) else { return false }
-            return gp.row == gridPos.row && gp.col == gridPos.col
+            return gp.contains(row: gridPos.row, col: gridPos.col)
         }
+    }
+
+    /// Slide a multi-cell footprint inward so it never overflows the grid.
+    /// The anchor is the top-left cell of the footprint.
+    static func clampedAnchor(row: Int, col: Int,
+                              footprint: (rows: Int, cols: Int),
+                              in gridMap: GridMap) -> (row: Int, col: Int) {
+        let clampedCol = max(0, min(col, gridMap.cols - footprint.cols))
+        let clampedRow = max(0, min(row, gridMap.rows - footprint.rows))
+        return (clampedRow, clampedCol)
+    }
+
+    private func clampedAnchor(from gridPos: (row: Int, col: Int),
+                                footprint: (rows: Int, cols: Int),
+                                in gridMap: GridMap) -> (row: Int, col: Int) {
+        Self.clampedAnchor(row: gridPos.row, col: gridPos.col, footprint: footprint, in: gridMap)
     }
 }

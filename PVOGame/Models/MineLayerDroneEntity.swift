@@ -452,6 +452,8 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         let sceneFrame = scene.frame
         let yMin = scene.gridMap?.origin.y ?? 0
         let yMax = sceneFrame.height + 100
+        let xMin = sceneFrame.minX + Constants.GameBalance.mineLayerFrameMargin
+        let xMax = sceneFrame.maxX - Constants.GameBalance.mineLayerFrameMargin
 
         var waypoints = [CGPoint]()
         var current = start
@@ -502,8 +504,9 @@ final class MineLayerDroneEntity: AttackDroneEntity {
                     x: threat.position.x + cos(angle) * dangerRadius,
                     y: threat.position.y + sin(angle) * dangerRadius
                 )
-                // Soft Y clamp only — no X clamping (allow off-screen)
+                // Clamp both Y and X to keep the mine layer within the playfield.
                 wp.y = min(max(wp.y, yMin), yMax)
+                wp.x = min(max(wp.x, xMin), xMax)
                 waypoints.append(wp)
             }
 
@@ -555,6 +558,7 @@ final class MineLayerDroneEntity: AttackDroneEntity {
         case .autocannon:  return 5
         case .pzrk:        return 6
         case .ewTower:     return 7
+        case .oilRefinery: return 8
         }
     }
 

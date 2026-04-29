@@ -20,7 +20,23 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
     /// Formation drones: SKAction drives sprite, GKAgent syncs from sprite
     public var isFormationFlight = false
 
+    /// Whether player EW towers should affect this entity (visual lightning
+    /// and any future jamming/slow effects). Default true for drones; ballistic
+    /// and cruise missiles, FPV-Lancet, and Orlan recon override to false.
+    /// Override in subclasses — do not flip per-instance.
+    public var isJammableByEW: Bool { true }
+
     weak var targetSettlement: SettlementEntity?
+    weak var targetRefinery: TowerEntity?
+
+    // MARK: Leader-Follow (escort formations)
+
+    /// When non-nil, this drone's sprite is slaved to `leader.position + leaderOffset`
+    /// until the leader dies. Used for "Shahed shield around EW drone"-style escorts.
+    public weak var leader: AttackDroneEntity?
+    /// World-space offset from the leader's sprite, locked in at attach time.
+    public var leaderOffset: CGPoint = .zero
+    public var isLeaderFollower: Bool = false
 
     public var health: Int
     public var maxHealth: Int
@@ -339,7 +355,9 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
                     }
                 ]))
             } else {
-                let flash = SKSpriteNode(color: .orange, size: CGSize(width: 20, height: 20))
+                let flash = SKShapeNode(circleOfRadius: 5)
+                flash.fillColor = .orange
+                flash.strokeColor = .clear
                 flash.position = spriteNode.position
                 flash.zPosition = nightMode ? Constants.NightWave.nightEffectZPosition : 55
                 flash.alpha = 0.9
@@ -412,6 +430,63 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         else {return}
         scene.removeEntity(self)
     }
+    public override func update(deltaTime seconds: TimeInterval) {
+        super.update(deltaTime: seconds)
+        guard !isHit else { return }
+        if isLeaderFollower {
+            applyLeaderFollowTick()
+        }
+    }
+
+    /// Attach this drone to a leader. Disables its path-following behavior so the
+    /// GKAgent doesn't fight the sprite position we drive directly each frame.
+    /// `offset` is in world coordinates relative to the leader sprite at attach time.
+    public func attachToLeader(_ newLeader: AttackDroneEntity, offset: CGPoint) {
+        self.leader = newLeader
+        self.leaderOffset = offset
+        self.isLeaderFollower = true
+        self.isFormationFlight = true  // reuse the "sprite drives agent" sync path
+        component(ofType: FlyingProjectileComponent.self)?.behavior?.removeAllGoals()
+    }
+
+    /// Detach from leader. Caller is responsible for providing a fresh path via `retargetPath`.
+    public func detachFromLeader() {
+        self.leader = nil
+        self.isLeaderFollower = false
+        self.isFormationFlight = false
+    }
+
+    /// Called every frame when this drone is in leader-follow mode.
+    /// Default: offset-in-screen-space — hex shield remains axis-aligned as leader flies south.
+    /// When the leader dies, subclasses or callers can hook `onLeaderLost` to rebuild a path.
+    private func applyLeaderFollowTick() {
+        guard let leader = leader, !leader.isHit,
+              let leaderSprite = leader.component(ofType: SpriteComponent.self)?.spriteNode,
+              let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode
+        else {
+            if isLeaderFollower {
+                onLeaderLost()
+            }
+            return
+        }
+
+        spriteNode.position = CGPoint(
+            x: leaderSprite.position.x + leaderOffset.x,
+            y: leaderSprite.position.y + leaderOffset.y
+        )
+        spriteNode.zRotation = leaderSprite.zRotation
+    }
+
+    /// Hook for subclasses/callers: leader is gone. Default: just detach.
+    /// The shahed escort system overrides this via closure (see `onLeaderLostHandler`).
+    public var onLeaderLostHandler: ((AttackDroneEntity) -> Void)?
+
+    private func onLeaderLost() {
+        let handler = onLeaderLostHandler
+        detachFromLeader()
+        handler?(self)
+    }
+
     /// Retarget the drone mid-flight: rebuild GKAgent path from current position through new waypoints
     func retargetPath(waypoints: [CGPoint]) {
         guard !waypoints.isEmpty else { return }

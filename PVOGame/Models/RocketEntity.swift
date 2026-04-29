@@ -43,10 +43,14 @@ class RocketEntity: BulletEntity {
     private(set) var isCoastingAfterFuelExhaustion = false
     private var targetPoint = CGPoint.zero
     private var isGuided = false
-    private var smokeSpawnAccumulator: TimeInterval = 0
+    /// Distance-based smoke trail. Each 5pt of flight path gets a puff; gaps
+    /// between puffs are impossible regardless of rocket speed.
+    private var smokeSpawnDistance: CGFloat = 0
     private var nightFlameNode: SKSpriteNode?
     private var retargetAccumulator: TimeInterval = 0
     private var climbsWhenNoTargets = true
+    weak var trackedTarget: AttackDroneEntity?
+    var trackingLockGranted = false
     private var travelledDistance: CGFloat = 0
     private var previousTrackedPosition: CGPoint?
     private var guidedFlightTime: TimeInterval = 0
@@ -121,6 +125,7 @@ class RocketEntity: BulletEntity {
         self.targetPoint = targetPoint
         self.currentSpeed = max(0, initialSpeed)
         self.travelledDistance = 0
+        self.smokeSpawnDistance = 0
         self.previousTrackedPosition = nil
         self.isCoastingAfterFuelExhaustion = false
         self.climbsWhenNoTargets = climbsWhenNoTargets
@@ -164,6 +169,17 @@ class RocketEntity: BulletEntity {
             targetPoint.y - spriteNode.position.y
         )
         updateGuidancePhase(distanceToTarget: preRetargetDistance)
+
+        // Pure pursuit: track actual target position each frame
+        if detonatesOnDirectImpact,
+           let target = trackedTarget,
+           !target.isHit,
+           let targetSprite = target.component(ofType: SpriteComponent.self)?.spriteNode,
+           targetSprite.parent != nil {
+            targetPoint = targetSprite.position
+        } else if detonatesOnDirectImpact, trackedTarget != nil {
+            trackedTarget = nil
+        }
 
         emitSmokeIfNeeded(from: spriteNode, deltaTime: seconds)
         if !retargetIfNeeded(from: spriteNode, deltaTime: seconds) {
@@ -269,29 +285,61 @@ class RocketEntity: BulletEntity {
             nightFlameNode = nil
         }
 
-        smokeSpawnAccumulator -= seconds
-        guard smokeSpawnAccumulator <= 0 else { return }
-        smokeSpawnAccumulator += 0.12
+        // Distance-based spawn — guarantees no gap between puffs even at
+        // terminal-dive speeds. 5pt spacing vs ~8pt minimum puff diameter
+        // means every two consecutive puffs overlap by at least 40%.
+        let puffSpacing: CGFloat = 5.0
+        // Safety cap: at 60fps a teleporting frame could in theory request
+        // hundreds of puffs; bound it so one freak tick doesn't saturate the
+        // pool.
+        var perFrameSpawns = 0
+        let maxPerFrame = 8
+        while travelledDistance >= smokeSpawnDistance && perFrameSpawns < maxPerFrame {
+            spawnSmokePuff(spriteNode: spriteNode, scene: scene, gameScene: gameScene, cache: cache)
+            smokeSpawnDistance += puffSpacing
+            perFrameSpawns += 1
+        }
+        // If we hit the cap, jump smokeSpawnDistance forward so we don't
+        // replay the backlog next frame (the rocket moved too fast once).
+        if perFrameSpawns >= maxPerFrame {
+            smokeSpawnDistance = travelledDistance + puffSpacing
+        }
+    }
 
+    private func spawnSmokePuff(spriteNode: SKSpriteNode, scene: SKScene,
+                                 gameScene: InPlaySKScene?, cache: AnimationTextureCache) {
         var tailPoint = spriteNode.convert(CGPoint(x: 0, y: -spriteNode.size.height * 0.55), to: scene)
         tailPoint.x += CGFloat.random(in: -2...2)
         tailPoint.y += CGFloat.random(in: -2...2)
 
-        let baseRadius = CGFloat.random(in: 2.5...4.5)
-        let puff = gameScene?.acquireSmokePuff() ?? SKSpriteNode(texture: Self.smokePuffTexture)
+        // Use the warm "hot exhaust" puff for the first ~25pt of trail (≈ 5
+        // puffs at 5pt spacing) — that segment is right out of the motor and
+        // should glow warm. Beyond that, the motor exhaust has cooled to gray
+        // smoke (smokePuff).
+        let isHotExhaust = travelledDistance < 25
+        let texture: SKTexture
+        if isHotExhaust, let warm = cache.rocketTrailPuff {
+            texture = warm
+        } else {
+            texture = cache.smokePuff ?? Self.smokePuffTexture
+        }
+
+        let baseRadius = CGFloat.random(in: 4.0...7.0)
+        let puff = gameScene?.acquireSmokePuff() ?? SKSpriteNode(texture: texture)
+        puff.texture = texture
         puff.size = CGSize(width: baseRadius * 2, height: baseRadius * 2)
         puff.position = tailPoint
         puff.zPosition = 40
         puff.color = UIColor(white: 1, alpha: 0.95)
-        puff.colorBlendFactor = cache.smokePuff != nil ? 0 : 1.0
-        puff.alpha = 0.75
-        puff.xScale = 0.75
-        puff.yScale = 0.75
+        puff.colorBlendFactor = (cache.smokePuff != nil || cache.rocketTrailPuff != nil) ? 0 : 1.0
+        puff.alpha = 0.95
+        puff.xScale = 0.95
+        puff.yScale = 0.95
         scene.addChild(puff)
 
         puff.run(SKAction.sequence([
-            SKAction.wait(forDuration: 0.15),
-            SKAction.group([SKAction.scale(to: 2.5, duration: 0.45), SKAction.fadeOut(withDuration: 0.45)]),
+            SKAction.wait(forDuration: 0.60),
+            SKAction.group([SKAction.scale(to: 1.4, duration: 1.30), SKAction.fadeOut(withDuration: 1.30)]),
             SKAction.run { [weak gameScene, weak puff] in
                 guard let gameScene, let puff else { return }
                 gameScene.releaseSmokePuff(puff)
@@ -329,6 +377,9 @@ class RocketEntity: BulletEntity {
             ) {
                 targetPoint = updatedTarget
                 scene.updateRocketReservation(for: self, targetPoint: updatedTarget)
+                if detonatesOnDirectImpact, trackingLockGranted {
+                    trackedTarget = scene.nearestAliveDrone(to: updatedTarget)
+                }
                 return true
             }
         }

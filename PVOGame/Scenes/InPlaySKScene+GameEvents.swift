@@ -18,6 +18,7 @@ extension InPlaySKScene {
         if let drone,
            let spriteNode = drone.component(ofType: SpriteComponent.self)?.spriteNode {
             spawnWreckage(at: spriteNode.position, rotation: spriteNode.zRotation, size: spriteNode.size)
+            spawnKillExplosion(at: spriteNode.position, for: drone)
             if drone is HeavyDroneEntity || drone is CruiseMissileEntity {
                 screenShake(intensity: 6, duration: 0.25)
             }
@@ -70,20 +71,9 @@ extension InPlaySKScene {
         dronesDestroyed += 1
         economyManager.earn(resourceDelta)
 
-        // Kill combo system
-        comboCount += 1
-        comboTimer = comboWindow
-        if comboCount >= 5 {
-            showComboLabel(count: comboCount, at: drone?.component(ofType: SpriteComponent.self)?.spriteNode.position ?? CGPoint(x: frame.midX, y: frame.midY))
-            // Bonus DP every 10 kills in combo
-            if comboCount % 10 == 0 {
-                economyManager.earn(10)
-            }
-        }
-
-        // Slow-mo on significant kills
-        if drone is CruiseMissileEntity || drone is HeavyDroneEntity {
-            triggerSlowMo(duration: 0.3, speed: 0.3)
+        // Show reward label at kill position
+        if let pos = drone?.component(ofType: SpriteComponent.self)?.spriteNode.position {
+            showKillRewardLabel(resourceDelta, at: pos)
         }
 
         updateHUD()
@@ -130,9 +120,19 @@ extension InPlaySKScene {
                 spawnBombExplosion(at: pos)
             }
             screenShake(intensity: 6, duration: 0.25)
+        } else if drone is ShahedDroneEntity {
+            // Shahed-136 is a 50kg-warhead loitering munition — when it reaches
+            // HQ it actually detonates. Without this branch it leaks silently
+            // (no boom, no shake) which makes the impact invisible.
+            lives -= 1
+            if let pos = drone?.component(ofType: SpriteComponent.self)?.spriteNode.position {
+                spawnBombExplosion(at: pos)
+            }
+            screenShake(intensity: 4, duration: 0.2)
         } else {
             lives -= 1
         }
+        if selectedLevel.infiniteLives { lives = max(lives, 1) }
         if let drone {
             logEnemyReachedTarget(enemy: Self.droneTypeName(drone), target: "HQ")
         }
@@ -183,6 +183,7 @@ extension InPlaySKScene {
             onSettlementDestroyed(settlement)
         }
 
+        if selectedLevel.infiniteLives { lives = max(lives, 1) }
         updateHUD()
         if lives <= 0 {
             triggerGameOver()
@@ -194,11 +195,101 @@ extension InPlaySKScene {
         retargetDronesFrom(destroyedSettlement: settlement)
     }
 
+    // MARK: - Oil Refinery Events
+
+    func onDroneReachedRefinery(drone: AttackDroneEntity, refinery: TowerEntity) {
+        guard currentPhase == .combat else { return }
+        guard !drone.isHit else { return }
+
+        if militaryAidManager.isShieldActive {
+            if let shieldNode = childNode(withName: "//hqShield") {
+                shieldNode.run(SKAction.sequence([
+                    SKAction.scale(to: 1.4, duration: 0.1),
+                    SKAction.scale(to: 1.0, duration: 0.2)
+                ]))
+            }
+            return
+        }
+
+        waveLeaked += 1
+        let typeName = Self.droneTypeName(drone)
+        waveLeakedByType[typeName, default: 0] += 1
+
+        // Refinery hits damage the refinery building only — they do NOT cost
+        // player lives. Losing the refinery is already a harsh economic
+        // punishment (steady income gone), no need to stack HQ damage on top.
+        let refineryComp = refinery.component(ofType: OilRefineryComponent.self)
+        let wasDestroyed = refineryComp?.takeDamage(1) ?? false
+        logEnemyReachedTarget(enemy: typeName, target: "Refinery")
+
+        spawnBombExplosion(at: refinery.worldPosition)
+        screenShake(intensity: 5, duration: 0.2)
+
+        if wasDestroyed {
+            onRefineryDestroyed(refinery)
+        }
+
+        updateHUD()
+    }
+
+    func onRefineryDestroyed(_ refinery: TowerEntity) {
+        retargetDronesFromRefinery(refinery)
+    }
+
+    func retargetDronesFromRefinery(_ refinery: TowerEntity) {
+        guard gridMap != nil else { return }
+        let hqPoint = comboHQPoint()
+
+        // Find other alive refineries
+        let aliveRefineries = (towerPlacement?.towers ?? []).filter {
+            $0.towerType == .oilRefinery
+            && $0 !== refinery
+            && !($0.component(ofType: OilRefineryComponent.self)?.isDestroyed ?? true)
+            && !($0.stats?.isDisabled ?? true)
+        }
+        let aliveSettlements = settlementManager?.aliveSettlements() ?? []
+
+        for drone in activeDrones {
+            guard !drone.isHit, drone.targetRefinery === refinery else { continue }
+            guard let dronePos = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
+
+            // Try nearest alive refinery first
+            let nearestRefinery = aliveRefineries.min(by: { a, b in
+                let distA = hypot(dronePos.x - a.worldPosition.x, dronePos.y - a.worldPosition.y)
+                let distB = hypot(dronePos.x - b.worldPosition.x, dronePos.y - b.worldPosition.y)
+                return distA < distB
+            })
+
+            if let newRefinery = nearestRefinery {
+                drone.targetRefinery = newRefinery
+                drone.targetSettlement = nil
+                let waypoints = generateSettlementPath(
+                    from: dronePos, through: newRefinery.worldPosition, to: hqPoint
+                )
+                drone.retargetPath(waypoints: waypoints)
+            } else if let newSettlement = aliveSettlements.min(by: { a, b in
+                let distA = hypot(dronePos.x - a.worldPosition.x, dronePos.y - a.worldPosition.y)
+                let distB = hypot(dronePos.x - b.worldPosition.x, dronePos.y - b.worldPosition.y)
+                return distA < distB
+            }) {
+                drone.targetRefinery = nil
+                drone.targetSettlement = newSettlement
+                let waypoints = generateSettlementPath(
+                    from: dronePos, through: newSettlement.worldPosition, to: hqPoint
+                )
+                drone.retargetPath(waypoints: waypoints)
+            } else {
+                drone.targetRefinery = nil
+                drone.targetSettlement = nil
+                let waypoints = generateSettlementPath(from: dronePos, to: hqPoint)
+                drone.retargetPath(waypoints: waypoints)
+            }
+        }
+    }
+
     func retargetDronesFrom(destroyedSettlement: SettlementEntity) {
-        guard let gridMap else { return }
-        let hqRow = Constants.TowerDefense.gridRows - 1
-        let hqCol = Constants.TowerDefense.gridCols / 2
-        let hqPoint = gridMap.worldPosition(forRow: hqRow, col: hqCol)
+        guard gridMap != nil else { return }
+        let hqPoint = comboHQPoint()
 
         let aliveSettlements = settlementManager?.aliveSettlements() ?? []
 
@@ -846,16 +937,8 @@ extension InPlaySKScene {
         let spawnY = frame.height + CGFloat.random(in: 30...50)
         let spawnPoint = CGPoint(x: spawnX, y: spawnY)
 
-        // Target: HQ center + scatter
-        let hqCenter: CGPoint
-        if let gridMap {
-            // HQ is at bottom center of the grid
-            let hqRow = Constants.TowerDefense.gridRows - 1
-            let hqCol = Constants.TowerDefense.gridCols / 2
-            hqCenter = gridMap.worldPosition(forRow: hqRow, col: hqCol)
-        } else {
-            hqCenter = CGPoint(x: frame.midX, y: 60)
-        }
+        // Target: random HQ-row point + scatter
+        let hqCenter = comboHQPoint()
 
         let scatterAngle = CGFloat.random(in: 0...(2 * .pi))
         let scatterDist = CGFloat.random(in: 0...gb.enemyMissileScatterRadius)
@@ -874,10 +957,12 @@ extension InPlaySKScene {
         missile.addComponent(shadow)
         shadowLayer?.addChild(shadow.shadowNode)
 
-        // Scale and zPosition for ballistic altitude
+        // Scale and zPosition for ballistic altitude.
+        // Base size lives in Constants.SpriteSize.enemyMissile — do NOT hardcode here.
         if let spriteNode = missile.component(ofType: SpriteComponent.self)?.spriteNode {
             let scale = DroneAltitude.ballistic.droneVisualScale
-            spriteNode.size = CGSize(width: 6 * scale, height: 18 * scale)
+            let base = Constants.SpriteSize.enemyMissile
+            spriteNode.size = CGSize(width: base.width * scale, height: base.height * scale)
             spriteNode.zPosition = 61 + CGFloat(DroneAltitude.ballistic.rawValue) * 5
         }
 
@@ -1092,36 +1177,35 @@ extension InPlaySKScene {
             return (position: tower.worldPosition, rangeSq: stats.range * stats.range)
         }
 
-        func isEligible(_ candidate: TowerEntity, ofType type: TowerType) -> Bool {
-            guard candidate.towerType == type,
-                  !(candidate.stats?.isDisabled ?? true)
-            else { return false }
-
+        func isCovered(_ candidate: TowerEntity) -> Bool {
             let pos = candidate.worldPosition
             for zone in coverZones {
                 let dx = pos.x - zone.position.x
                 let dy = pos.y - zone.position.y
-                if dx * dx + dy * dy <= zone.rangeSq {
-                    return false
-                }
+                if dx * dx + dy * dy <= zone.rangeSq { return true }
             }
-            return true
+            return false
         }
 
         let priorityOrder: [TowerType] = [.samLauncher, .interceptor, .radar, .ciws, .autocannon]
-        for type in priorityOrder {
-            // Skip gun towers that are effective against micro
-            guard !antiMicroTypes.contains(type) else { continue }
 
-            let eligible = towerPlacement.towers.filter { isEligible($0, ofType: type) }
-            guard !eligible.isEmpty else { continue }
-
-            // Among same-type towers pick the closest to the drone
-            return eligible.min(by: { a, b in
-                let da = squaredDistance(a.worldPosition, from)
-                let db = squaredDistance(b.worldPosition, from)
-                return da < db
-            })
+        // Two-tier search: first try completely uncovered targets (safe to bomb),
+        // and only fall back to covered targets if nothing uncovered remains.
+        for tier in 0...1 {
+            let allowCovered = tier == 1
+            for type in priorityOrder {
+                guard !antiMicroTypes.contains(type) else { continue }
+                let eligible = towerPlacement.towers.filter { tower in
+                    guard tower.towerType == type,
+                          !(tower.stats?.isDisabled ?? true)
+                    else { return false }
+                    return allowCovered || !isCovered(tower)
+                }
+                guard !eligible.isEmpty else { continue }
+                return eligible.min(by: { a, b in
+                    squaredDistance(a.worldPosition, from) < squaredDistance(b.worldPosition, from)
+                })
+            }
         }
         return nil
     }
@@ -1151,6 +1235,25 @@ extension InPlaySKScene {
         return threats
     }
 
+    /// Nearest active combat tower (AA / gun / radar / EW) to `origin`.
+    /// Excludes `oilRefinery` by design — swarm drones and similar attackers
+    /// target the defenders, not the economy building.
+    func nearestCombatTower(from origin: CGPoint) -> TowerEntity? {
+        guard let towerPlacement else { return nil }
+        let combatTypes: Set<TowerType> = [
+            .autocannon, .ciws, .samLauncher, .interceptor,
+            .radar, .ewTower, .pzrk, .gepard
+        ]
+        let eligible = towerPlacement.towers.filter { tower in
+            guard let stats = tower.stats,
+                  !stats.isDisabled,
+                  combatTypes.contains(stats.towerType)
+            else { return false }
+            return true
+        }
+        return eligible.min(by: { squaredDistance($0.worldPosition, origin) < squaredDistance($1.worldPosition, origin) })
+    }
+
     func allTowerThreatZones() -> [MineLayerDroneEntity.TowerThreatInfo] {
         guard let towerPlacement else { return [] }
         var zones = [MineLayerDroneEntity.TowerThreatInfo]()
@@ -1169,7 +1272,7 @@ extension InPlaySKScene {
     }
 
     func onBombHitTower(_ mine: MineBombEntity, tower: TowerEntity) {
-        tower.takeBombDamage(1)
+        tower.takeBombDamage(mine.damage)
         // Small explosion VFX
         let pos = mine.component(ofType: SpriteComponent.self)?.spriteNode.position ?? tower.worldPosition
         spawnBombExplosion(at: pos)

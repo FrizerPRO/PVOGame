@@ -9,11 +9,16 @@ import SpriteKit
 
 final class HarmMissileEntity: AttackDroneEntity {
 
+    override var isJammableByEW: Bool { false }
+
     weak var targetTower: TowerEntity?
     private var targetPoint: CGPoint = .zero
     private var velocity: CGVector = .zero
     private var smokeAccumulator: TimeInterval = 0
     private var nightFlameNode: SKSpriteNode?
+    private var cruiseSpeed: CGFloat = 0
+    private var initialDistanceToTarget: CGFloat = 0
+    private var inTerminalDive: Bool = false
 
 
     private static let smokePuffTexture: SKTexture = {
@@ -58,6 +63,9 @@ final class HarmMissileEntity: AttackDroneEntity {
         )
         removeComponent(ofType: FlyingProjectileComponent.self)
 
+        // HARM flies NOE/terrain-masked: only gun-based AA can engage it.
+        addComponent(AltitudeComponent(altitude: .micro))
+
         // HARM anti-radiation missile sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.size = Constants.SpriteSize.harmMissile
@@ -83,6 +91,8 @@ final class HarmMissileEntity: AttackDroneEntity {
     func configureFlight(from spawnPoint: CGPoint, toTower tower: TowerEntity, speed missileSpeed: CGFloat) {
         self.targetTower = tower
         self.speed = missileSpeed
+        self.cruiseSpeed = missileSpeed
+        self.inTerminalDive = false
 
         // Target the tower's position
         if let towerPos = tower.component(ofType: SpriteComponent.self)?.spriteNode.position {
@@ -97,6 +107,7 @@ final class HarmMissileEntity: AttackDroneEntity {
         let dy = targetPoint.y - spawnPoint.y
         let dist = sqrt(dx * dx + dy * dy)
         guard dist > 0 else { return }
+        self.initialDistanceToTarget = dist
 
         let dirX = dx / dist
         let dirY = dy / dist
@@ -111,6 +122,19 @@ final class HarmMissileEntity: AttackDroneEntity {
     override func update(deltaTime seconds: TimeInterval) {
         guard !isHit else { return }
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+
+        // Terminal dive: on the last N% of the path, boost speed along the current heading.
+        let dxToTarget = targetPoint.x - spriteNode.position.x
+        let dyToTarget = targetPoint.y - spriteNode.position.y
+        let distToTarget = sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget)
+        if !inTerminalDive,
+           initialDistanceToTarget > 0,
+           distToTarget / initialDistanceToTarget <= Constants.GameBalance.harmTerminalDiveFraction {
+            inTerminalDive = true
+            let currentHeading = atan2(velocity.dy, velocity.dx)
+            let boosted = cruiseSpeed * Constants.GameBalance.harmTerminalDiveBoost
+            velocity = CGVector(dx: cos(currentHeading) * boosted, dy: sin(currentHeading) * boosted)
+        }
 
         // Move
         spriteNode.position.x += velocity.dx * CGFloat(seconds)
@@ -193,7 +217,9 @@ final class HarmMissileEntity: AttackDroneEntity {
 
         // Orange explosion flash
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
+            let flash = SKShapeNode(circleOfRadius: 12)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = (spriteNode.scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 55
             flash.alpha = 0.9
@@ -218,7 +244,9 @@ final class HarmMissileEntity: AttackDroneEntity {
         // Explosion VFX at impact point
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
            let scene = spriteNode.scene {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 18, height: 18))
+            let flash = SKShapeNode(circleOfRadius: 9)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = (scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 50
             flash.alpha = 0.7

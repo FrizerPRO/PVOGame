@@ -225,32 +225,63 @@ extension InPlaySKScene {
         }
 
         // Drag was active — attempt placement or cancel
-        defer {
-            state.previewNode?.removeAllActions()
-            state.previewNode?.removeFromParent()
-            state.rangeNode?.removeAllActions()
-            state.rangeNode?.removeFromParent()
-            dragState = nil
+        let towerType = state.towerType
+        let footprint = towerType.footprint
+
+        if let gridPos = state.currentGridPos {
+            let anchor = TowerPlacementManager.clampedAnchor(
+                row: gridPos.row, col: gridPos.col, footprint: footprint, in: gridMap)
+            let cellOk = gridMap.canPlaceTower(atRow: anchor.row, col: anchor.col, footprint: footprint)
+            let affordable = economyManager.canAfford(towerType.cost)
+            if cellOk && affordable {
+                // Place the tower
+                towerPlacement.selectTowerType(towerType)
+                if towerPlacement.placeTower(at: gridPos, economy: economyManager) != nil {
+                    conveyorBelt.consumeCard(at: state.slotIndex)
+                    towerPlacement.selectTowerType(nil)
+                    synergyManager.recalculate(towers: towerPlacement.towers, in: self)
+                    updateHUD()
+                } else {
+                    conveyorBelt.restoreCard(at: state.slotIndex)
+                    towerPlacement.selectTowerType(nil)
+                }
+                state.previewNode?.removeAllActions()
+                state.previewNode?.removeFromParent()
+                state.rangeNode?.removeAllActions()
+                state.rangeNode?.removeFromParent()
+                dragState = nil
+                return
+            }
         }
 
-        if let gridPos = state.currentGridPos,
-           gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col),
-           economyManager.canAfford(state.towerType.cost) {
-            // Place the tower
-            towerPlacement.selectTowerType(state.towerType)
-            if towerPlacement.placeTower(at: gridPos, economy: economyManager) != nil {
-                conveyorBelt.consumeCard(at: state.slotIndex)
-                towerPlacement.selectTowerType(nil)
-                synergyManager.recalculate(towers: towerPlacement.towers, in: self)
-                updateHUD()
+        do {
+            // Invalid placement — determine reason for feedback.
+            // Order matters: off-grid dominates, then cell-level issues,
+            // then affordability (only surfaced when the cell itself was fine).
+            let reason: InvalidPlacementReason
+            let feedbackPos: CGPoint
+            if let gridPos = state.currentGridPos {
+                let anchor = TowerPlacementManager.clampedAnchor(
+                    row: gridPos.row, col: gridPos.col, footprint: footprint, in: gridMap)
+                feedbackPos = gridMap.worldPosition(forRow: anchor.row, col: anchor.col, footprint: footprint)
+                if !gridMap.canPlaceTower(atRow: anchor.row, col: anchor.col, footprint: footprint) {
+                    reason = .invalidCell
+                } else {
+                    reason = .insufficientFunds(needed: towerType.cost, have: economyManager.resources)
+                }
             } else {
-                conveyorBelt.restoreCard(at: state.slotIndex)
-                towerPlacement.selectTowerType(nil)
+                feedbackPos = state.previewNode?.position ?? location
+                reason = .offGrid
             }
-        } else {
-            // Invalid placement — cancel drag
+
+            showInvalidPlacementFeedback(reason: reason, at: feedbackPos)
+            shakeAndFadeOutPreview(sprite: state.previewNode, range: state.rangeNode)
             conveyorBelt.restoreCard(at: state.slotIndex)
+            conveyorBelt.shakeCard(at: state.slotIndex)
+            triggerErrorHaptic()
         }
+
+        dragState = nil
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -282,7 +313,11 @@ extension InPlaySKScene {
         // Sell button
         if touchedNode.name == "sellButton" || touchedNode.parent?.name == "sellButton" {
             if let tower = selectedTower {
+                let wasRefinery = tower.towerType == .oilRefinery
                 towerPlacement.sellTower(tower, economy: economyManager)
+                if wasRefinery {
+                    retargetDronesFromRefinery(tower)
+                }
                 selectedTower = nil
                 dismissTowerActionPanel()
                 synergyManager.recalculate(towers: towerPlacement.towers, in: self)
@@ -301,8 +336,11 @@ extension InPlaySKScene {
         // Grid tap for tower placement or tower info
         dismissSettlementActionPanel()
         if let gridPos = gridMap.gridPosition(for: location) {
-            if towerPlacement.selectedTowerType != nil, !isNightWave {
-                if gridMap.canPlaceTower(atRow: gridPos.row, col: gridPos.col) {
+            if let selectedType = towerPlacement.selectedTowerType, !isNightWave {
+                let footprint = selectedType.footprint
+                let anchor = TowerPlacementManager.clampedAnchor(
+                    row: gridPos.row, col: gridPos.col, footprint: footprint, in: gridMap)
+                if gridMap.canPlaceTower(atRow: anchor.row, col: anchor.col, footprint: footprint) {
                     if towerPlacement.placeTower(at: gridPos, economy: economyManager) != nil {
                         conveyorBelt.consumeSelected()
                         towerPlacement.selectTowerType(nil)

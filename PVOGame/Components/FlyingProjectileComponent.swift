@@ -11,13 +11,18 @@ class FlyingProjectileComponent: GKAgent2D {
     init(speed: CGFloat, behavior: GKBehavior,position: vector_float2) {
         super.init()
         maxSpeed = Float(speed)
-        self.speed = 0.00000001
-        //mass = Float(self.entity?.component(ofType: SpriteComponent.self)?.spriteNode.physicsBody?.mass ?? 1)
-        maxAcceleration = Float(speed)/2
+        // Start at cruise speed instead of near-zero — otherwise single
+        // shaheds spend ~2 seconds ramping up while formation shaheds
+        // (driven by SKAction.follow) move at full speed from frame one,
+        // making formations look noticeably faster than singles.
+        self.speed = Float(speed)
+        // High acceleration prevents the agent from slowing down on path
+        // curves trying to stay tangent to the spline.
+        maxAcceleration = Float(speed) * 4
         self.behavior = behavior
         radius = 4
         self.position = position
-        
+
     }
     override func didAddToEntity() {
         super.didAddToEntity()

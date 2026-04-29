@@ -69,7 +69,21 @@ class TowerTargetingComponent: GKComponent {
 
         // Fire at target
         guard let target = currentTarget, fireCooldown <= 0 else { return }
-        guard let targetPos = target.component(ofType: SpriteComponent.self)?.spriteNode.position else { return }
+        guard var targetPos = target.component(ofType: SpriteComponent.self)?.spriteNode.position else { return }
+
+        // Night-gated gun towers fire at the LAST RADAR BLIP position, not the
+        // drone's live position. The drone may have moved since the sweep
+        // crossed it — the gun is "blind" between sweeps and can only act on
+        // stale data. If the blip has expired between target selection and
+        // firing, drop the target so we re-evaluate next frame.
+        if scene.isNightWave, Self.isNightGatedGun(stats.towerType) {
+            guard let blipPos = Self.nightBlipPosition(for: target, scene: scene) else {
+                currentTarget = nil
+                fireCooldown = 0.15
+                return
+            }
+            targetPos = blipPos
+        }
 
         let didFire = fire(from: towerPos, toward: targetPos, in: scene, stats: stats)
         if didFire {
@@ -79,6 +93,22 @@ class TowerTargetingComponent: GKComponent {
             currentTarget = nil
             fireCooldown = 0.15
         }
+    }
+
+    /// True for tower types whose night targeting depends on radar blips —
+    /// the same set that previously required radar coverage at night.
+    static func isNightGatedGun(_ type: TowerType) -> Bool {
+        type == .autocannon || type == .ciws || type == .gepard || type == .pzrk
+    }
+
+    /// Look up the radar blip position registered for this drone, returning
+    /// nil if no blip exists or the entry has expired.
+    static func nightBlipPosition(for drone: AttackDroneEntity, scene: InPlaySKScene) -> CGPoint? {
+        let id = ObjectIdentifier(drone)
+        guard let blip = scene.nightBlips[id], blip.expiry > CACurrentMediaTime() else {
+            return nil
+        }
+        return blip.position
     }
 
     private func isInRange(_ drone: AttackDroneEntity, towerPos: CGPoint, stats: TowerStatsComponent) -> Bool {
@@ -101,13 +131,17 @@ class TowerTargetingComponent: GKComponent {
             }
         }
 
-        // Night radar gate: gun-based AA and IR-guided ПЗРК require radar coverage at night
-        if stats.towerType == .autocannon || stats.towerType == .ciws
-            || stats.towerType == .gepard || stats.towerType == .pzrk {
+        // Night radar gate: gun-based AA and IR-guided ПЗРК can only acquire
+        // a target at night if the radar's sweep has placed a fresh blip on
+        // it. Without a blip the target is "invisible" to the gun (no live
+        // tracking — only stale radar snapshots). The gun will then fire at
+        // the BLIP'S position, not the drone's live position (handled in
+        // update() above).
+        if Self.isNightGatedGun(stats.towerType) {
             if let tower = entity as? TowerEntity,
                let scene = tower.component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene,
                scene.isNightWave {
-                guard scene.isPositionInRadarCoverage(dronePos) else { return false }
+                guard Self.nightBlipPosition(for: drone, scene: scene) != nil else { return false }
             }
         }
 
@@ -201,13 +235,15 @@ class TowerTargetingComponent: GKComponent {
         case .ewTower:
             return false  // EW tower doesn't fire; effects handled by EWTowerComponent
         case .pzrk:
-            let fired = fireRocket(from: towerPos, toward: targetPos, in: scene, spec: Constants.GameBalance.interceptorRocketBaseSpec)
+            let fired = fireRocket(from: towerPos, toward: targetPos, in: scene, spec: Constants.GameBalance.pzrkRocketBaseSpec)
             if fired { stats.consumeAmmo(); animComp?.onRocketFired() }
             return fired
         case .gepard:
             fireBullet(from: towerPos, toward: targetPos, in: scene, stats: stats)
             animComp?.onBulletFired()
             return true
+        case .oilRefinery:
+            return false
         }
     }
 
@@ -338,6 +374,16 @@ class TowerTargetingComponent: GKComponent {
         guard let finalTarget else { return false }
 
         let rocket = RocketEntity(spec: spec)
+        if spec.blastRadius <= 0.01, let target = currentTarget {
+            // Accuracy roll: only grant tracking lock if hit succeeds
+            let targetAltitude = target.component(ofType: AltitudeComponent.self)?.altitude ?? .low
+            let stats = (entity as? TowerEntity)?.component(ofType: TowerStatsComponent.self)
+            let accuracy = stats?.towerType.accuracy(against: targetAltitude) ?? 1.0
+            if CGFloat.random(in: 0...1) < accuracy {
+                rocket.trackedTarget = target
+                rocket.trackingLockGranted = true
+            }
+        }
         guard let rocketSprite = rocket.component(ofType: SpriteComponent.self)?.spriteNode else { return false }
         rocketSprite.position = origin
         rocketSprite.zPosition = 45

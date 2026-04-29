@@ -27,17 +27,26 @@ class TowerEntity: GKEntity {
         self.towerType = towerType
         super.init()
 
-        let size: CGFloat = 38
+        let cellBase: CGFloat = Constants.SpriteSize.towerBase
+        let footprint = towerType.footprint
+        let footprintSize = CGSize(
+            width: cellBase * CGFloat(footprint.cols),
+            height: cellBase * CGFloat(footprint.rows)
+        )
         let cache = AnimationTextureCache.shared
         let towerTex = cache.towerTextures[towerType]
+        // Visible sprite size: prefer the aspect-preserving override when the
+        // texture has been cropped to its content bbox; otherwise fall back to
+        // the full footprint rectangle.
+        let renderSize = towerTex?.baseRenderSize ?? footprintSize
 
         // Base sprite: use texture if available, otherwise fall back to colored square
         let spriteComponent: SpriteComponent
         if let baseTex = towerTex?.base {
-            spriteComponent = SpriteComponent(color: .white, size: CGSize(width: size, height: size))
+            spriteComponent = SpriteComponent(color: .white, size: renderSize)
             spriteComponent.spriteNode.texture = baseTex
         } else {
-            spriteComponent = SpriteComponent(color: towerType.color, size: CGSize(width: size, height: size))
+            spriteComponent = SpriteComponent(color: towerType.color, size: renderSize)
         }
         spriteComponent.spriteNode.position = worldPosition
         spriteComponent.spriteNode.zPosition = 25
@@ -48,7 +57,7 @@ class TowerEntity: GKEntity {
             let turret = SKSpriteNode(texture: turretTex, size: towerTex!.turretSize)
             turret.anchorPoint = towerTex!.turretAnchor
             turret.zPosition = 2  // above base
-            turret.position = .zero
+            turret.position = towerTex!.turretPosition
             spriteComponent.spriteNode.addChild(turret)
             self.turretNode = turret
 
@@ -63,8 +72,10 @@ class TowerEntity: GKEntity {
             }
         }
 
-        // Physics body for bomb collision detection
-        let body = SKPhysicsBody(rectangleOf: CGSize(width: size, height: size))
+        // Physics body covers the grid footprint (not the visible sprite) so
+        // bomb/HARM hits register on any cell the tower occupies, even when the
+        // visible sprite is narrower due to aspect-preserving letterboxing.
+        let body = SKPhysicsBody(rectangleOf: footprintSize)
         body.categoryBitMask = Constants.towerBitMask
         body.contactTestBitMask = Constants.mineBombBitMask
         body.collisionBitMask = 0
@@ -72,7 +83,10 @@ class TowerEntity: GKEntity {
         spriteComponent.spriteNode.physicsBody = body
         spriteComponent.spriteNode.userData = ["tower": self]
 
-        addComponent(GridPositionComponent(row: gridPosition.row, col: gridPosition.col))
+        addComponent(GridPositionComponent(
+            row: gridPosition.row, col: gridPosition.col,
+            rowSpan: footprint.rows, colSpan: footprint.cols
+        ))
 
         addComponent(TowerStatsComponent(
             towerType: towerType,
@@ -95,6 +109,18 @@ class TowerEntity: GKEntity {
         // EW tower: add EW component
         if towerType == .ewTower {
             addComponent(EWTowerComponent())
+        }
+
+        // Radar tower: add radar component (night-only range circle + drone spots)
+        if towerType == .radar {
+            addComponent(RadarComponent())
+        }
+
+        // Oil refinery: add refinery component with health bar
+        if towerType == .oilRefinery {
+            let refineryComp = OilRefineryComponent()
+            addComponent(refineryComp)
+            refineryComp.setupHealthBar(on: spriteComponent.spriteNode, size: footprintSize.width)
         }
 
         // Magazine towers: ammo dots created after tech buffs are applied via rebuildAmmoDots()

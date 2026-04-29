@@ -34,6 +34,16 @@ enum SettlementType: String, CaseIterable {
         }
     }
 
+    var spriteName: String {
+        switch self {
+        case .village:  return "settlement_village"
+        case .town:     return "settlement_town"
+        case .factory:  return "settlement_factory"
+        case .farm:     return "settlement_farm"
+        case .depot:    return "settlement_depot"
+        }
+    }
+
     var iconLetter: String {
         switch self {
         case .village:  return "С"
@@ -46,6 +56,10 @@ enum SettlementType: String, CaseIterable {
 }
 
 class SettlementEntity: GKEntity {
+    /// All settlements occupy a 2×2 grid footprint. Anchor (gridRow, gridCol)
+    /// is the top-left cell of this footprint.
+    static let footprint: (rows: Int, cols: Int) = (rows: 2, cols: 2)
+
     let settlementType: SettlementType
     private(set) var level: Int = 1
     private(set) var maxHP: Int
@@ -58,7 +72,8 @@ class SettlementEntity: GKEntity {
     private var healthBarFill: SKSpriteNode?
     private var levelLabel: SKLabelNode?
 
-    init(type: SettlementType, gridRow: Int, gridCol: Int, worldPosition: CGPoint) {
+    init(type: SettlementType, gridRow: Int, gridCol: Int,
+         worldPosition: CGPoint, cellSize: CGFloat) {
         self.settlementType = type
         self.gridRow = gridRow
         self.gridCol = gridCol
@@ -66,26 +81,42 @@ class SettlementEntity: GKEntity {
         self.currentHP = Constants.Settlement.baseHP
         super.init()
 
-        let size: CGFloat = Constants.SpriteSize.settlement
-        let spriteComponent = SpriteComponent(color: type.color, size: CGSize(width: size, height: size))
+        // Sprite size MUST equal the actual grid footprint (cellSize × footprint
+        // dims). Using a hardcoded constant would mismatch the dynamic cellSize
+        // computed from screen width, leaving a visible gap between the sprite
+        // and the cells the settlement actually claims for placement blocking.
+        let fp = Self.footprint
+        let size = CGSize(width: cellSize * CGFloat(fp.cols),
+                          height: cellSize * CGFloat(fp.rows))
+        let spriteComponent: SpriteComponent
+        if UIImage(named: type.spriteName) != nil {
+            spriteComponent = SpriteComponent(imageName: type.spriteName)
+            spriteComponent.spriteNode.size = size
+        } else {
+            spriteComponent = SpriteComponent(color: type.color, size: size)
+            // Fallback icon letter when sprite asset is unavailable
+            let label = SKLabelNode(text: type.iconLetter)
+            label.fontName = "Menlo-Bold"
+            label.fontSize = 14
+            label.fontColor = .white
+            label.verticalAlignmentMode = .center
+            label.horizontalAlignmentMode = .center
+            label.zPosition = 1
+            spriteComponent.spriteNode.addChild(label)
+        }
         spriteComponent.spriteNode.position = worldPosition
         spriteComponent.spriteNode.zPosition = Constants.Settlement.spriteZPosition
         addComponent(spriteComponent)
 
-        addComponent(GridPositionComponent(row: gridRow, col: gridCol))
+        addComponent(GridPositionComponent(
+            row: gridRow, col: gridCol,
+            rowSpan: fp.rows, colSpan: fp.cols
+        ))
 
-        // Icon letter
-        let label = SKLabelNode(text: type.iconLetter)
-        label.fontName = "Menlo-Bold"
-        label.fontSize = 14
-        label.fontColor = .white
-        label.verticalAlignmentMode = .center
-        label.horizontalAlignmentMode = .center
-        label.zPosition = 1
-        spriteComponent.spriteNode.addChild(label)
-
-        setupHealthBar(on: spriteComponent.spriteNode, size: size)
-        setupLevelIndicator(on: spriteComponent.spriteNode, size: size)
+        // Health bar / level indicator sized by width of the footprint (sprite
+        // is square, so width works for both axes).
+        setupHealthBar(on: spriteComponent.spriteNode, size: size.width)
+        setupLevelIndicator(on: spriteComponent.spriteNode, size: size.width)
     }
 
     required init?(coder: NSCoder) {

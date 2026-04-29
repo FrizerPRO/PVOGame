@@ -17,78 +17,11 @@ class TowerSynergyManager {
     private var appliedBonuses: [ObjectIdentifier: [String]] = [:]
 
     /// Recalculate all synergies. Call when towers are placed, sold, or upgraded.
+    /// Currently disabled — all bonus application is skipped, towers keep base
+    /// stats only. Visuals and prior bonuses are still cleared on every call.
     func recalculate(towers: [TowerEntity], in scene: SKScene) {
         clearAllVisuals()
         revertAllBonuses(towers: towers)
-
-        for tower in towers {
-            guard let gridPos = tower.component(ofType: GridPositionComponent.self),
-                  let stats = tower.stats else { continue }
-
-            let neighborEntities = findNeighborEntities(of: tower, in: towers)
-            let neighborTypes = neighborEntities.compactMap { $0.stats?.towerType }
-
-            // 1. Radar + SAM/Interceptor: Target Designation (+20% range)
-            if stats.towerType == .samLauncher || stats.towerType == .interceptor {
-                let radarNeighbor = neighborEntities.first { $0.stats?.towerType == .radar }
-                if let radar = radarNeighbor {
-                    stats.range *= 1.2
-                    recordBonus(tower, "radarDesignation")
-                    showConnectionLine(from: tower, to: radar, color: .systemYellow, in: scene)
-                    showAura(on: tower, color: .systemYellow, in: scene)
-                    showSynergyLabel(on: tower, text: "ЦЕЛЕУКАЗАНИЕ", color: .systemYellow, in: scene)
-                }
-            }
-
-            // 2. Two same SAMs adjacent: Cross-Engagement (+10% fire rate)
-            if stats.towerType == .samLauncher || stats.towerType == .interceptor {
-                let sameNeighbor = neighborEntities.first { $0.stats?.towerType == stats.towerType }
-                if let partner = sameNeighbor {
-                    stats.fireRate *= 1.1
-                    recordBonus(tower, "crossEngagement")
-                    showConnectionLine(from: tower, to: partner, color: .systemOrange, in: scene)
-                    showAura(on: tower, color: .systemOrange, in: scene)
-                }
-            }
-
-            // 3. Gun + SAM: Echelon Optimization (+10% fire rate to gun)
-            if stats.towerType == .autocannon || stats.towerType == .ciws {
-                let samNeighbor = neighborEntities.first {
-                    $0.stats?.towerType == .samLauncher || $0.stats?.towerType == .interceptor
-                }
-                if let sam = samNeighbor {
-                    stats.fireRate *= 1.1
-                    recordBonus(tower, "echelonOptimization")
-                    showConnectionLine(from: tower, to: sam, color: .systemGreen, in: scene)
-                    showAura(on: tower, color: .systemGreen, in: scene)
-                }
-            }
-
-            // 4. EW + CIWS: Jamming Protection (+15% range)
-            if stats.towerType == .ciws {
-                let ewNeighbor = neighborEntities.first { $0.stats?.towerType == .ewTower }
-                if let ew = ewNeighbor {
-                    stats.range *= 1.15
-                    recordBonus(tower, "jammingProtection")
-                    showConnectionLine(from: tower, to: ew, color: .systemTeal, in: scene)
-                    showAura(on: tower, color: .systemTeal, in: scene)
-                    showSynergyLabel(on: tower, text: "ПОМЕХОЗАЩИТА", color: .systemTeal, in: scene)
-                }
-            }
-
-            // 5. 3 guns in line: Crossfire (+1 damage)
-            if stats.towerType == .autocannon || stats.towerType == .ciws {
-                if isInGunLine(tower: tower, gridPos: gridPos, towers: towers) {
-                    stats.damage += 1
-                    recordBonus(tower, "crossfire")
-                    showAura(on: tower, color: .systemRed, in: scene)
-                    showSynergyLabel(on: tower, text: "КИНЖАЛЬНЫЙ", color: .systemRed, in: scene)
-                }
-            }
-        }
-
-        // 6. PVO Umbrella (global bonus)
-        checkUmbrellaBonus(towers: towers, in: scene)
     }
 
     // MARK: - Visuals
@@ -168,10 +101,21 @@ class TowerSynergyManager {
 
     private func findNeighborEntities(of tower: TowerEntity, in towers: [TowerEntity]) -> [TowerEntity] {
         guard let gridPos = tower.component(ofType: GridPositionComponent.self) else { return [] }
+        // Expand this tower's footprint by 1 cell in every direction, then test for
+        // overlap against each other tower's footprint — works for any N×M footprint.
+        let aMinRow = gridPos.row - 1
+        let aMaxRow = gridPos.row + gridPos.rowSpan   // exclusive
+        let aMinCol = gridPos.col - 1
+        let aMaxCol = gridPos.col + gridPos.colSpan   // exclusive
         return towers.filter { other in
             guard other !== tower,
-                  let otherPos = other.component(ofType: GridPositionComponent.self) else { return false }
-            return abs(gridPos.row - otherPos.row) <= 1 && abs(gridPos.col - otherPos.col) <= 1
+                  let o = other.component(ofType: GridPositionComponent.self) else { return false }
+            let bMinRow = o.row
+            let bMaxRow = o.row + o.rowSpan
+            let bMinCol = o.col
+            let bMaxCol = o.col + o.colSpan
+            return aMinRow < bMaxRow && bMinRow < aMaxRow
+                && aMinCol < bMaxCol && bMinCol < aMaxCol
         }
     }
 

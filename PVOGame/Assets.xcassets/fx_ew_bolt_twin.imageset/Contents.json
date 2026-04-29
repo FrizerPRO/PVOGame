@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "fx_ew_bolt_twin.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

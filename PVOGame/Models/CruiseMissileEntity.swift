@@ -10,6 +10,7 @@ import SpriteKit
 final class CruiseMissileEntity: AttackDroneEntity {
 
     override var isBossType: Bool { true }
+    override var isJammableByEW: Bool { false }
 
     private var targetPoint: CGPoint = .zero
     private var velocity: CGVector = .zero
@@ -110,38 +111,62 @@ final class CruiseMissileEntity: AttackDroneEntity {
         guard !isHit else { return }
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
-        // Dive timer
-        if isDiving {
-            diveTimer -= seconds
-            if diveTimer <= 0 {
-                isDiving = false
-                // Restore cruise altitude
-                if let altComp = component(ofType: AltitudeComponent.self) {
-                    altComp.altitude = .cruise
-                }
-            }
-        }
-
         // Continuous arc-based steering
         let currentAngle = atan2(velocity.dy, velocity.dx)
         var desiredAngle = atan2(targetPoint.y - spriteNode.position.y,
                                  targetPoint.x - spriteNode.position.x)
 
-        // Evasion: if rocket nearby, steer perpendicular to dodge
-        if let scene = spriteNode.scene as? InPlaySKScene {
-            let evasionRadius = Constants.AdvancedEnemies.cruiseMissileEvasionRadius
-            for rocket in scene.entities.compactMap({ $0 as? RocketEntity }) {
-                guard let rocketPos = rocket.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
-                let rdx = rocketPos.x - spriteNode.position.x
-                let rdy = rocketPos.y - spriteNode.position.y
-                if rdx * rdx + rdy * rdy < evasionRadius * evasionRadius {
-                    let rocketAngle = atan2(rdy, rdx)
-                    let perpLeft = rocketAngle + .pi / 2
-                    let perpRight = rocketAngle - .pi / 2
-                    desiredAngle = abs(angleDiff(currentAngle, perpLeft)) < abs(angleDiff(currentAngle, perpRight))
-                        ? perpLeft : perpRight
-                    break
+        // Evade towers that can engage at .cruise altitude
+        if let scene = spriteNode.scene as? InPlaySKScene,
+           let towerPlacement = scene.towerPlacement {
+            let detectionBuffer: CGFloat = 40 // detect towers slightly beyond their range
+            let edgeMargin: CGFloat = 60
+            let sceneFrame = scene.frame
+            let posX = spriteNode.position.x
+            let nearLeftEdge = posX < sceneFrame.minX + edgeMargin
+            let nearRightEdge = posX > sceneFrame.maxX - edgeMargin
+            var avoidX: CGFloat = 0
+            var avoidY: CGFloat = 0
+
+            for tower in towerPlacement.towers {
+                guard let stats = tower.stats, !stats.isDisabled,
+                      stats.reachableAltitudes.contains(.cruise) else { continue }
+                let tPos = tower.worldPosition
+                let dx = spriteNode.position.x - tPos.x
+                let dy = spriteNode.position.y - tPos.y
+                let distSq = dx * dx + dy * dy
+                let dangerRadius = stats.range + detectionBuffer
+                guard distSq < dangerRadius * dangerRadius else { continue }
+
+                let dist = sqrt(distSq)
+                // Strength: stronger when closer (1.0 at tower center, 0.0 at edge)
+                let strength = max(0, 1.0 - dist / dangerRadius)
+                if dist > 0.01 {
+                    var towerAvoidX = (dx / dist) * strength
+                    // Suppress evasion toward screen edges
+                    if nearRightEdge && towerAvoidX > 0 { towerAvoidX = 0 }
+                    if nearLeftEdge && towerAvoidX < 0 { towerAvoidX = 0 }
+                    avoidX += towerAvoidX
+                    avoidY += (dy / dist) * strength
                 }
+            }
+
+            // Soft edge repulsion — push missile inward when near screen edges
+            if posX < sceneFrame.minX + edgeMargin {
+                let t = max(0, 1.0 - (posX - sceneFrame.minX) / edgeMargin)
+                avoidX += t
+            }
+            if posX > sceneFrame.maxX - edgeMargin {
+                let t = max(0, 1.0 - (sceneFrame.maxX - posX) / edgeMargin)
+                avoidX -= t
+            }
+
+            let avoidMag = sqrt(avoidX * avoidX + avoidY * avoidY)
+            if avoidMag > 0.01 {
+                let avoidAngle = atan2(avoidY, avoidX)
+                // Blend: stronger avoidance overrides more of the target angle
+                let blendFactor = min(avoidMag, 1.0) * 0.8
+                desiredAngle = desiredAngle + angleDiff(desiredAngle, avoidAngle) * blendFactor
             }
         }
 
@@ -166,30 +191,21 @@ final class CruiseMissileEntity: AttackDroneEntity {
         spriteNode.position.x += velocity.dx * CGFloat(seconds)
         spriteNode.position.y += velocity.dy * CGFloat(seconds)
 
-        // Update rotation to match velocity
-        spriteNode.zRotation = atan2(velocity.dy, velocity.dx) - .pi / 2
-
-        // Random dive near towers
-        if !isDiving, let scene = spriteNode.scene as? InPlaySKScene {
-            if let towerPlacement = scene.towerPlacement {
-                for tower in towerPlacement.towers {
-                    guard let stats = tower.stats, !stats.isDisabled else { continue }
-                    let tPos = tower.worldPosition
-                    let dx = tPos.x - spriteNode.position.x
-                    let dy = tPos.y - spriteNode.position.y
-                    if dx * dx + dy * dy < stats.range * stats.range * 0.5 {
-                        if CGFloat.random(in: 0...1) < Constants.AdvancedEnemies.cruiseMissileDiveChance * CGFloat(seconds) {
-                            isDiving = true
-                            diveTimer = Constants.AdvancedEnemies.cruiseMissileDiveDuration
-                            if let altComp = component(ofType: AltitudeComponent.self) {
-                                altComp.altitude = .low
-                            }
-                        }
-                        break
-                    }
-                }
+        // Hard clamp: keep missile within screen bounds
+        if let scene = spriteNode.scene {
+            let minX = scene.frame.minX + 5
+            let maxX = scene.frame.maxX - 5
+            if spriteNode.position.x < minX {
+                spriteNode.position.x = minX
+                if velocity.dx < 0 { velocity.dx = -velocity.dx * 0.3 }
+            } else if spriteNode.position.x > maxX {
+                spriteNode.position.x = maxX
+                if velocity.dx > 0 { velocity.dx = -velocity.dx * 0.3 }
             }
         }
+
+        // Update rotation to match velocity
+        spriteNode.zRotation = atan2(velocity.dy, velocity.dx) - .pi / 2
 
         // Night mode: persistent flame, no puffs
         let gameScene = spriteNode.scene as? InPlaySKScene
@@ -264,7 +280,9 @@ final class CruiseMissileEntity: AttackDroneEntity {
         physicBody?.categoryBitMask = 0
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
+            let flash = SKShapeNode(circleOfRadius: 12)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = (spriteNode.scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 55
             flash.alpha = 0.9
@@ -288,7 +306,9 @@ final class CruiseMissileEntity: AttackDroneEntity {
         }
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
            let scene = spriteNode.scene {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 20, height: 20))
+            let flash = SKShapeNode(circleOfRadius: 10)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = (scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 50
             flash.alpha = 0.7

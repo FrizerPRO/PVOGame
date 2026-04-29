@@ -14,9 +14,10 @@ import SpriteKit
 
 final class LancetDroneEntity: AttackDroneEntity {
 
+    override var isJammableByEW: Bool { false }
+
     enum Phase {
-        case approach      // fly to loiter area
-        case loiter        // circle, choosing target
+        case approach      // fly toward target area
         case dive          // dive at selected tower
     }
 
@@ -26,8 +27,13 @@ final class LancetDroneEntity: AttackDroneEntity {
     private var loiterCenter: CGPoint = .zero
     private var loiterAngle: CGFloat = 0
     private let loiterRadius: CGFloat = 40
-    private weak var targetTower: TowerEntity?
+    private(set) weak var targetTower: TowerEntity?
     private weak var gameScene: InPlaySKScene?
+    private var approachEvasionPhase: CGFloat = 0
+    private var approachDirection: CGVector = .zero
+    private var currentHeading: CGFloat = -.pi / 2  // current facing direction
+    /// Max turn rate during dive (rad/s) — smooth arc toward target.
+    private let diveTurnRate: CGFloat = 2.5
 
     init(sceneFrame: CGRect, scene: InPlaySKScene) {
         self.gameScene = scene
@@ -53,6 +59,9 @@ final class LancetDroneEntity: AttackDroneEntity {
         )
         removeComponent(ofType: FlyingProjectileComponent.self)
         configureHealth(Constants.Lancet.health)
+
+        // Small terrain-masked loitering munition — gun/MANPADS only.
+        addComponent(AltitudeComponent(altitude: .micro))
 
         // Lancet loitering munition sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
@@ -84,9 +93,15 @@ final class LancetDroneEntity: AttackDroneEntity {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// Pre-assign a tower target (e.g. from Orlan recon).
+    func assignTarget(_ tower: TowerEntity) {
+        targetTower = tower
+    }
+
     func configureFlight(from spawnPoint: CGPoint, loiterAt center: CGPoint) {
         self.loiterCenter = center
         self.loiterAngle = CGFloat.random(in: 0...(2 * .pi))
+        self.approachEvasionPhase = CGFloat.random(in: 0...(2 * .pi))
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.position = spawnPoint
@@ -97,10 +112,14 @@ final class LancetDroneEntity: AttackDroneEntity {
         let dy = center.y - spawnPoint.y
         let dist = sqrt(dx * dx + dy * dy)
         guard dist > 0 else { return }
-        velocity = CGVector(dx: dx / dist * speed, dy: dy / dist * speed)
+        let ux = dx / dist
+        let uy = dy / dist
+        approachDirection = CGVector(dx: ux, dy: uy)
+        velocity = CGVector(dx: ux * speed, dy: uy * speed)
+        currentHeading = atan2(dy, dx)
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.zRotation = atan2(dy, dx) - .pi / 2
+            spriteNode.zRotation = currentHeading - .pi / 2
         }
     }
 
@@ -110,53 +129,64 @@ final class LancetDroneEntity: AttackDroneEntity {
 
         switch phase {
         case .approach:
-            spriteNode.position.x += velocity.dx * CGFloat(seconds)
-            spriteNode.position.y += velocity.dy * CGFloat(seconds)
+            // Base forward motion along approach direction at configured speed.
+            spriteNode.position.x += approachDirection.dx * speed * CGFloat(seconds)
+            spriteNode.position.y += approachDirection.dy * speed * CGFloat(seconds)
+
+            // Sinusoidal evasion perpendicular to the approach axis.
+            approachEvasionPhase += CGFloat(seconds) * Constants.Lancet.approachEvasionFrequency * 2 * .pi
+            let lateralOffset = sin(approachEvasionPhase) * Constants.Lancet.approachEvasionAmplitude * CGFloat(seconds) * 2
+            let perpX = -approachDirection.dy
+            let perpY = approachDirection.dx
+            spriteNode.position.x += perpX * lateralOffset
+            spriteNode.position.y += perpY * lateralOffset
+            spriteNode.zRotation = atan2(approachDirection.dy, approachDirection.dx) - .pi / 2
 
             // Check if close to loiter center
             let dx = loiterCenter.x - spriteNode.position.x
             let dy = loiterCenter.y - spriteNode.position.y
             if dx * dx + dy * dy < 30 * 30 {
-                phase = .loiter
-                pickTarget()
-            }
-
-        case .loiter:
-            loiterTimer -= seconds
-            loiterAngle += CGFloat(seconds) * 1.5  // angular speed
-
-            // Circle around loiter center
-            let targetPos = CGPoint(
-                x: loiterCenter.x + cos(loiterAngle) * loiterRadius,
-                y: loiterCenter.y + sin(loiterAngle) * loiterRadius
-            )
-            let dx = targetPos.x - spriteNode.position.x
-            let dy = targetPos.y - spriteNode.position.y
-            spriteNode.position.x += dx * CGFloat(seconds) * 3
-            spriteNode.position.y += dy * CGFloat(seconds) * 3
-            spriteNode.zRotation = atan2(dy, dx) - .pi / 2
-
-            if loiterTimer <= 0 {
+                if targetTower == nil { pickTarget() }
                 startDive()
             }
 
         case .dive:
-            spriteNode.position.x += velocity.dx * CGFloat(seconds)
-            spriteNode.position.y += velocity.dy * CGFloat(seconds)
-
-            // Check if reached target tower
+            // Smooth steering toward target with bounded turn rate
+            let diveSpeed = Constants.Lancet.diveSpeed
             if let tower = targetTower {
                 let towerPos = tower.worldPosition
                 let dx = towerPos.x - spriteNode.position.x
                 let dy = towerPos.y - spriteNode.position.y
+
+                // Steer toward target
+                let desiredHeading = atan2(dy, dx)
+                var delta = desiredHeading - currentHeading
+                while delta > .pi { delta -= 2 * .pi }
+                while delta < -.pi { delta += 2 * .pi }
+                let maxStep = diveTurnRate * CGFloat(seconds)
+                currentHeading += max(-maxStep, min(maxStep, delta))
+
+                // Check if reached target tower
                 if dx * dx + dy * dy < 20 * 20 {
                     hitTower(tower)
                 }
             }
 
-            // If target is gone or off-screen, just die
-            if targetTower == nil || spriteNode.position.y < -50 {
+            velocity = CGVector(dx: cos(currentHeading) * diveSpeed, dy: sin(currentHeading) * diveSpeed)
+            spriteNode.position.x += velocity.dx * CGFloat(seconds)
+            spriteNode.position.y += velocity.dy * CGFloat(seconds)
+            spriteNode.zRotation = currentHeading - .pi / 2
+
+            // If off-screen, die
+            if spriteNode.position.y < -50 {
                 didHit()
+            }
+            // If target destroyed, retarget
+            if targetTower == nil {
+                pickTarget()
+                if targetTower == nil {
+                    didHit()
+                }
             }
         }
     }
@@ -186,23 +216,8 @@ final class LancetDroneEntity: AttackDroneEntity {
 
     private func startDive() {
         phase = .dive
-        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
-
-        let target: CGPoint
-        if let tower = targetTower {
-            target = tower.worldPosition
-        } else {
-            target = CGPoint(x: spriteNode.position.x, y: 50)  // fallback
-        }
-
-        let dx = target.x - spriteNode.position.x
-        let dy = target.y - spriteNode.position.y
-        let dist = sqrt(dx * dx + dy * dy)
-        guard dist > 0 else { return }
-
-        let diveSpeed = Constants.Lancet.diveSpeed
-        velocity = CGVector(dx: dx / dist * diveSpeed, dy: dy / dist * diveSpeed)
-        spriteNode.zRotation = atan2(dy, dx) - .pi / 2
+        // Heading and velocity are updated smoothly each frame in the dive phase.
+        // No instant snap — the lancet arcs toward the target.
     }
 
     private func hitTower(_ tower: TowerEntity) {
@@ -212,7 +227,9 @@ final class LancetDroneEntity: AttackDroneEntity {
         // Explosion VFX at impact
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
            let scene = spriteNode.scene {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
+            let flash = SKShapeNode(circleOfRadius: 12)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = 55
             flash.alpha = 0.9
@@ -232,7 +249,9 @@ final class LancetDroneEntity: AttackDroneEntity {
         physicBody?.categoryBitMask = 0
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 16, height: 16))
+            let flash = SKShapeNode(circleOfRadius: 8)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = 55
             flash.alpha = 0.9

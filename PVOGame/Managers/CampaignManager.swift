@@ -110,11 +110,35 @@ class CampaignManager {
             requiredLevel: "lancets"
         ),
         CampaignLevel(
+            id: "iranian_night",
+            name: "Iranian Night",
+            subtitle: "5 waves — combo finale",
+            waveCount: 5,
+            definition: LevelDefinition.campaignLevel11,
+            requiredLevel: "iron_swarm"
+        ),
+        CampaignLevel(
             id: "test_heavy",
-            name: "TEST: Heavy Drones",
-            subtitle: "3 waves — sandbox",
-            waveCount: 3,
+            name: "TEST: Combo Showcase",
+            subtitle: "2 waves — mine field + boss",
+            waveCount: 2,
             definition: LevelDefinition.testHeavyDrones,
+            requiredLevel: nil
+        ),
+        CampaignLevel(
+            id: "test_explosions",
+            name: "TEST: Explosions",
+            subtitle: "4 waves — shahed swarms",
+            waveCount: 4,
+            definition: LevelDefinition.testExplosions,
+            requiredLevel: nil
+        ),
+        CampaignLevel(
+            id: "test_ew",
+            name: "TEST: Heavy Drone",
+            subtitle: "3 waves — Bayraktar-style strikes",
+            waveCount: 3,
+            definition: LevelDefinition.testEWDrone,
             requiredLevel: nil
         ),
     ]

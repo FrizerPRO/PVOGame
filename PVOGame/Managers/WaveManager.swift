@@ -63,6 +63,10 @@ class WaveManager {
     // Night wave state
     private(set) var isCurrentWaveNight = false
 
+    // WaveScript playback (M3 — fixed-timeline scripted events)
+    private var waveLocalTime: TimeInterval = 0
+    private var scriptCursor: Int = 0
+
     init(scene: InPlaySKScene, level: LevelDefinition) {
         self.scene = scene
         self.levelDef = level
@@ -99,6 +103,8 @@ class WaveManager {
         orlansSpawnedThisWave = 0
         orlanTimer = 0
         isCurrentWaveNight = false
+        waveLocalTime = 0
+        scriptCursor = 0
     }
 
     func nextWaveNumber() -> Int { currentWave + 1 }
@@ -106,6 +112,22 @@ class WaveManager {
     /// True if we've completed all defined waves (campaign victory condition)
     var isCampaignComplete: Bool {
         !isWaveInProgress && currentWave >= levelDef.waves.count && levelDef.waves.count > 0
+    }
+
+    /// True when all combat drone types have finished spawning (Orlan excluded).
+    /// Used by OrlanDroneEntity to decide when to retreat.
+    var allCombatSpawnsComplete: Bool {
+        guard let waveDef = currentWaveDef else { return true }
+        return dronesSpawnedThisWave >= waveDef.droneCount
+            && mineLayersSpawnedThisWave >= waveDef.mineLayerCount
+            && kamikazesSpawnedThisWave >= waveDef.kamikazeCount
+            && heavyDronesSpawnedThisWave >= waveDef.heavyDroneCount
+            && cruiseMissilesSpawnedThisWave >= waveDef.cruiseMissileCount
+            && swarmsSpawnedThisWave >= waveDef.swarmCount
+            && shahedsSpawnedThisWave >= waveDef.shahedCount
+            && lancetsSpawnedThisWave >= waveDef.lancetCount
+            && missileSalvosSpawnedThisWave >= waveDef.missileSalvoCount
+            && harmSalvosSpawnedThisWave >= waveDef.harmSalvoCount
     }
 
     var hasPendingMissileSalvos: Bool {
@@ -125,30 +147,37 @@ class WaveManager {
         isWaveInProgress = true
         dronesSpawnedThisWave = 0
         spawnTimer = 0
+        waveLocalTime = 0
+        scriptCursor = 0
+
+        // Initial spawn timers — kept very short so the first units of every
+        // type appear within ~2 seconds of the wave starting. The full
+        // `Constants.*.spawnDelay` values are only used for the *recurring*
+        // interval between spawns within a wave (set in update() below).
         mineLayersSpawnedThisWave = 0
-        mineLayerTimer = Constants.GameBalance.mineLayerSpawnDelay
+        mineLayerTimer = 1.0
         missileSalvosSpawnedThisWave = 0
-        missileSalvoTimer = Constants.GameBalance.enemyMissileSalvoSpawnDelay
+        missileSalvoTimer = 1.5
         missileWarningShown = false
         harmSalvosSpawnedThisWave = 0
-        harmSalvoTimer = Constants.GameBalance.harmMissileSalvoSpawnDelay
+        harmSalvoTimer = 2.0
         harmWarningShown = false
         kamikazesSpawnedThisWave = 0
-        kamikazeTimer = Constants.Kamikaze.spawnDelay
+        kamikazeTimer = 0.5
         ewDronesSpawnedThisWave = 0
-        ewDroneTimer = 6.0
+        ewDroneTimer = 0.5
         heavyDronesSpawnedThisWave = 0
-        heavyDroneTimer = 8.0
+        heavyDroneTimer = 1.0
         cruiseMissilesSpawnedThisWave = 0
-        cruiseMissileTimer = 5.0
+        cruiseMissileTimer = 1.5
         swarmsSpawnedThisWave = 0
-        swarmTimer = 10.0
+        swarmTimer = 1.5
         shahedsSpawnedThisWave = 0
         // shahedTimer set after waveDef is computed below
         lancetsSpawnedThisWave = 0
-        lancetTimer = Constants.Lancet.spawnDelay
+        lancetTimer = 1.0
         orlansSpawnedThisWave = 0
-        orlanTimer = Constants.Orlan.spawnDelay
+        orlanTimer = 0.5
 
         let waveDef: WaveDefinition
         if currentWave <= levelDef.waves.count {
@@ -159,14 +188,23 @@ class WaveManager {
         currentWaveDef = waveDef
         isCurrentWaveNight = waveDef.isNight
 
-        // Set shahed timer based on formation type
-        shahedTimer = waveDef.shahedFormation == .scattered
-            ? Constants.Shahed.batchDelay
-            : Constants.Shahed.formationDelay
+        // Shaheds: very short initial delay regardless of formation type.
+        shahedTimer = 0.3
     }
 
     func update(deltaTime: TimeInterval) {
         guard isWaveInProgress, let waveDef = currentWaveDef, let scene else { return }
+
+        // M3 — Wave script playback. Advance local time and dispatch any
+        // events whose timestamp has been reached. Each event fires once.
+        waveLocalTime += deltaTime
+        if let script = waveDef.script {
+            while scriptCursor < script.events.count
+                    && script.events[scriptCursor].at <= waveLocalTime {
+                dispatchScriptAction(script.events[scriptCursor].action, scene: scene)
+                scriptCursor += 1
+            }
+        }
 
         // Mine layer spawning
         if mineLayersSpawnedThisWave < waveDef.mineLayerCount {
@@ -337,7 +375,8 @@ class WaveManager {
             let allShahedDone = shahedsSpawnedThisWave >= waveDef.shahedCount
             let allLancetDone = lancetsSpawnedThisWave >= waveDef.lancetCount
             let allOrlanDone = orlansSpawnedThisWave >= waveDef.orlanCount
-            if scene.activeDronesForTowers.isEmpty && allMineLayersDone && allSalvosDone && allHarmSalvosDone && allKamikazeDone && allEWDone && allHeavyDone && allCruiseDone && allSwarmDone && allShahedDone && allLancetDone && allOrlanDone && scene.pendingMissileSpawns == 0 && scene.pendingHarmSpawns == 0 && scene.pendingShahedSpawns == 0 {
+            let allScriptEventsDone = waveDef.script.map { scriptCursor >= $0.events.count } ?? true
+            if scene.activeDronesForTowers.isEmpty && allMineLayersDone && allSalvosDone && allHarmSalvosDone && allKamikazeDone && allEWDone && allHeavyDone && allCruiseDone && allSwarmDone && allShahedDone && allLancetDone && allOrlanDone && allScriptEventsDone && scene.pendingMissileSpawns == 0 && scene.pendingHarmSpawns == 0 && scene.pendingShahedSpawns == 0 {
                 isWaveInProgress = false
             }
             return
@@ -352,15 +391,15 @@ class WaveManager {
     }
 
     private func spawnFormationBatch(count: Int, waveDef: WaveDefinition) {
-        guard let scene, let gridMap = scene.gridMap else { return }
+        guard let scene, scene.gridMap != nil else { return }
         let formation = waveDef.formation
 
         // Altitude is defined per enemy type, not randomized
         let altitude = waveDef.altitude
 
-        let hqRow = Constants.TowerDefense.gridRows - 1
-        let hqCol = Constants.TowerDefense.gridCols / 2
-        let hqPoint = gridMap.worldPosition(forRow: hqRow, col: hqCol)
+        // Random HQ-row destination — every batch picks a different X so
+        // formations land across the entire bottom row, not just the centre.
+        let hqPoint = scene.comboHQPoint()
 
         // Formation leader spawn point
         let leaderX = CGFloat.random(in: 40...(scene.frame.width - 40))
@@ -373,21 +412,34 @@ class WaveManager {
                 y: leaderY + offset.y
             )
 
-            let targetSettlement = scene.settlementManager?.assignTarget(
+            let targetResult = scene.settlementManager?.assignTarget(
                 towers: scene.towerPlacement?.towers ?? []
-            )
+            ) ?? .none
 
             let waypoints: [CGPoint]
-            if let settlement = targetSettlement {
+            let droneTargetSettlement: SettlementEntity?
+            let droneTargetRefinery: TowerEntity?
+            switch targetResult {
+            case .settlement(let s):
                 waypoints = buildPathThroughSettlement(
-                    from: spawnPoint, through: settlement.worldPosition, to: hqPoint
+                    from: spawnPoint, through: s.worldPosition, to: hqPoint
                 )
-            } else {
+                droneTargetSettlement = s
+                droneTargetRefinery = nil
+            case .refinery(let r):
+                waypoints = buildPathThroughSettlement(
+                    from: spawnPoint, through: r.worldPosition, to: hqPoint
+                )
+                droneTargetSettlement = nil
+                droneTargetRefinery = r
+            case .none:
                 waypoints = buildDirectPath(from: spawnPoint, to: hqPoint)
+                droneTargetSettlement = nil
+                droneTargetRefinery = nil
             }
 
             let flightPath = DroneFlightPath(waypoints: waypoints, altitude: altitude, spawnEdge: .top)
-            scene.spawnDrone(flightPath: flightPath, altitude: altitude, targetSettlement: targetSettlement)
+            scene.spawnDrone(flightPath: flightPath, altitude: altitude, targetSettlement: droneTargetSettlement, targetRefinery: droneTargetRefinery)
             dronesSpawnedThisWave += 1
         }
     }
@@ -477,4 +529,71 @@ class WaveManager {
         a + (b - a) * t
     }
 
+    // MARK: - Wave Script dispatch
+
+    /// Translate a single `ScriptAction` into the matching scene spawn call.
+    /// Spawns triggered here are *additive* to the regular per-wave counters,
+    /// so a script can run on top of a normal wave or as the only content.
+    private func dispatchScriptAction(_ action: ScriptAction, scene: InPlaySKScene) {
+        switch action {
+        case .composite(let kind, let side):
+            scene.spawnCompositeFormation(kind, side: side)
+        case .gradSalvo(let count, let micro, let scatter, let side):
+            scene.spawnGradSalvoMicro(count: count, micro: micro, scatter: scatter, side: side)
+        case .harmSalvo(let count, let micro):
+            scene.spawnHarmSalvoMicro(count: count, micro: micro)
+        case .cruiseMissile(let count, let side):
+            for i in 0..<count {
+                let delay = TimeInterval(i) * 0.4
+                scene.run(SKAction.sequence([
+                    SKAction.wait(forDuration: delay),
+                    SKAction.run { [weak scene] in
+                        scene?.spawnCruiseMissile(fromSide: side)
+                    }
+                ]))
+            }
+        case .shahedScattered(let count, let batch, let interval):
+            // Reuse the existing one-at-a-time scattered shahed spawner.
+            scene.pendingShahedSpawns += count
+            for i in 0..<count {
+                let delay = TimeInterval(i / max(1, batch)) * interval
+                scene.run(SKAction.sequence([
+                    SKAction.wait(forDuration: delay),
+                    SKAction.run { [weak scene] in
+                        scene?.spawnShahed()
+                    }
+                ]))
+            }
+        case .shahedFormation(let count, let formation, let side):
+            scene.spawnShahedFormation(count: count, formation: formation, fromSide: side)
+        case .shahedFormationAt(let count, let formation, let xFraction):
+            scene.spawnShahedFormation(count: count, formation: formation, xFraction: xFraction)
+        case .kamikaze(let count, let side):
+            for i in 0..<count {
+                let delay = TimeInterval(i) * 0.25
+                scene.run(SKAction.sequence([
+                    SKAction.wait(forDuration: delay),
+                    SKAction.run { [weak scene] in
+                        scene?.spawnKamikaze(fromSide: side)
+                    }
+                ]))
+            }
+        case .lancet(let count):
+            for _ in 0..<count { scene.spawnLancet() }
+        case .orlan:
+            scene.spawnOrlan()
+        case .ewDrone:
+            scene.spawnEWDrone()
+        case .heavyDrone(let count):
+            for _ in 0..<count { scene.spawnHeavyDrone() }
+        case .swarmCloud:
+            scene.spawnSwarmCloud()
+        case .mineLayer:
+            scene.spawnMineLayer(health: Constants.GameBalance.droneHealth * 2)
+        case .missileWarning:
+            scene.showMissileWarning()
+        case .harmWarning:
+            scene.showHarmWarning()
+        }
+    }
 }

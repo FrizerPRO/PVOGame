@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "fx_radar_pulse.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

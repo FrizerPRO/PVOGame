@@ -714,9 +714,10 @@ final class PVOGameTests: XCTestCase {
         let (scene, _) = makeScene()
         scene.startGame()
 
-        // Place S-300 and ZU adjacent (within ZU range of 120)
+        // Place S-300 and ZU adjacent (within ZU range of 120).
+        // SAM footprint is 1×2 so it spans cols 0-1; ZU sits in col 2.
         let sam = placeTower(.samLauncher, row: 0, col: 0, scene: scene)
-        let zu = placeTower(.autocannon, row: 0, col: 1, scene: scene)
+        let zu = placeTower(.autocannon, row: 0, col: 2, scene: scene)
         XCTAssertNotNil(sam)
         XCTAssertNotNil(zu)
 
@@ -728,9 +729,9 @@ final class PVOGameTests: XCTestCase {
         let (scene, _) = makeScene()
         scene.startGame()
 
-        // Place S-300 and ZU adjacent
+        // Place S-300 (spans cols 0-1) and ZU at col 2 — adjacent to SAM's right edge.
         let sam = placeTower(.samLauncher, row: 0, col: 0, scene: scene)
-        let zu = placeTower(.autocannon, row: 0, col: 1, scene: scene)
+        let zu = placeTower(.autocannon, row: 0, col: 2, scene: scene)
         XCTAssertNotNil(sam)
         XCTAssertNotNil(zu)
 

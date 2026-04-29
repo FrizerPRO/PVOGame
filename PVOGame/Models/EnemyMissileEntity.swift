@@ -9,6 +9,8 @@ import SpriteKit
 
 final class EnemyMissileEntity: AttackDroneEntity {
 
+    override var isJammableByEW: Bool { false }
+
     private var targetPoint: CGPoint = .zero
     private var velocity: CGVector = .zero
     private var smokeAccumulator: TimeInterval = 0
@@ -68,6 +70,18 @@ final class EnemyMissileEntity: AttackDroneEntity {
                 spriteNode.color = UIColor(red: 0.85, green: 0.15, blue: 0.1, alpha: 1)
                 spriteNode.colorBlendFactor = 1.0
             }
+
+            // Super's init built the physics body from the legacy 600x600 "Bullet"
+            // placeholder before we overrode the size — rebuild it so the hitbox
+            // matches the actual visual.
+            let oldBody = spriteNode.physicsBody
+            let body = SKPhysicsBody(rectangleOf: spriteNode.size)
+            body.affectedByGravity = false
+            body.mass = oldBody?.mass ?? 1
+            body.categoryBitMask = oldBody?.categoryBitMask ?? Constants.droneBitMask
+            body.contactTestBitMask = oldBody?.contactTestBitMask ?? (Constants.bulletBitMask | Constants.groundBitMask)
+            body.collisionBitMask = 0
+            spriteNode.physicsBody = body
         }
     }
 
@@ -119,7 +133,7 @@ final class EnemyMissileEntity: AttackDroneEntity {
             if nightFlameNode == nil {
                 let flameTex = AnimationTextureCache.shared.flameGlow ?? Self.smokePuffTexture
                 let flame = SKSpriteNode(texture: flameTex)
-                flame.size = CGSize(width: 6, height: 6)
+                flame.size = CGSize(width: 8, height: 8)
                 flame.color = UIColor(red: 1, green: 0.35, blue: 0.1, alpha: 1)
                 flame.colorBlendFactor = AnimationTextureCache.shared.flameGlow != nil ? 0 : 1.0
                 flame.alpha = 0.85
@@ -163,7 +177,7 @@ final class EnemyMissileEntity: AttackDroneEntity {
                 tailPoint.y += CGFloat.random(in: -1.5...1.5)
 
                 let puff = gameScene?.acquireSmokePuff() ?? SKSpriteNode(texture: Self.smokePuffTexture)
-                puff.size = CGSize(width: 5, height: 5)
+                puff.size = CGSize(width: 6, height: 6)
                 puff.position = tailPoint
                 puff.zPosition = 40
                 puff.color = UIColor(white: 0.9, alpha: 0.9)
@@ -188,38 +202,10 @@ final class EnemyMissileEntity: AttackDroneEntity {
         physicBody?.contactTestBitMask = 0
         physicBody?.categoryBitMask = 0
 
-        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
-           let scene = spriteNode.scene as? InPlaySKScene {
-            // Animated explosion if available
-            let textures = AnimationTextureCache.shared.smallExplosion
-            if !textures.isEmpty {
-                let node = scene.acquireExplosionNode()
-                node.texture = textures[0]
-                node.size = CGSize(width: 24, height: 24)
-                node.color = .white; node.colorBlendFactor = 0
-                node.position = spriteNode.position
-                node.zPosition = scene.isNightWave ? Constants.NightWave.nightEffectZPosition : 55
-                node.alpha = 1.0; node.setScale(1.0)
-                scene.addChild(node)
-                node.run(SKAction.sequence([
-                    SKAction.animate(with: textures, timePerFrame: 0.05, resize: false, restore: false),
-                    SKAction.run { [weak scene, weak node] in
-                        guard let scene, let node else { return }
-                        scene.releaseExplosionNode(node)
-                    }
-                ]))
-            } else {
-                let flash = SKSpriteNode(color: .orange, size: CGSize(width: 24, height: 24))
-                flash.position = spriteNode.position
-                flash.zPosition = scene.isNightWave ? Constants.NightWave.nightEffectZPosition : 55
-                flash.alpha = 0.9
-                scene.addChild(flash)
-                flash.run(SKAction.sequence([
-                    SKAction.group([SKAction.scale(to: 2.5, duration: 0.2), SKAction.fadeOut(withDuration: 0.2)]),
-                    SKAction.removeFromParent()
-                ]))
-            }
-
+        // Explosion visuals are produced centrally by spawnKillExplosion (called
+        // from onDroneDestroyed) — it picks the tier (.medium for us) and plays
+        // the atlas animation. We just hide our own missile sprite here.
+        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.run(SKAction.sequence([
                 SKAction.fadeOut(withDuration: 0.1),
                 SKAction.run { [weak self] in self?.removeFromParent() }
@@ -235,7 +221,9 @@ final class EnemyMissileEntity: AttackDroneEntity {
         // Small explosion VFX at impact point
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
            let scene = spriteNode.scene {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 18, height: 18))
+            let flash = SKShapeNode(circleOfRadius: 9)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = (scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 50
             flash.alpha = 0.7

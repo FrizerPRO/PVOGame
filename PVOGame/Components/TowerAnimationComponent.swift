@@ -74,7 +74,8 @@ class TowerAnimationComponent: GKComponent {
         spriteNode.setScale(1.2)
         spriteNode.run(SKAction.scale(to: 1.0, duration: 0.2))
 
-        // Radar: start spinning
+        // Radar: just spin the antenna. The night-only range circle and
+        // drone-spotting indicators are owned by RadarComponent.
         if towerType == .radar {
             startRadarSpin()
         }
@@ -121,10 +122,16 @@ class TowerAnimationComponent: GKComponent {
         guard let turret = turretNode, !isFiringContinuously else { return }
         isFiringContinuously = true
 
-        // Rapid vibration simulating alternating barrel recoil
+        // Rapid vibration simulating alternating barrel recoil. The two halves
+        // must be mirror images on X (jitter/-jitter) so each cycle returns
+        // to origin — independent `CGFloat.random` on each line would snapshot
+        // two unrelated values at construction time and drift the turret
+        // monotonically (e.g. -0.3 then +0.2 = −0.1 per cycle → runs away
+        // several points per second during continuous fire).
+        let jitterX = CGFloat.random(in: -0.4...0.4)
         let vibrate = SKAction.sequence([
-            SKAction.moveBy(x: CGFloat.random(in: -0.4...0.4), y: -0.5, duration: 0.015),
-            SKAction.moveBy(x: CGFloat.random(in: -0.4...0.4), y: 0.5, duration: 0.015)
+            SKAction.moveBy(x: jitterX,  y: -0.5, duration: 0.015),
+            SKAction.moveBy(x: -jitterX, y:  0.5, duration: 0.015)
         ])
         turret.run(SKAction.repeatForever(vibrate), withKey: "ciwsVibrate")
 
@@ -215,7 +222,7 @@ class TowerAnimationComponent: GKComponent {
         turret.run(recoil, withKey: "soldierRecoil")
     }
 
-    // MARK: - Radar — continuous antenna rotation
+    // MARK: - Radar — continuous antenna rotation + periodic sonar pulse
 
     private func startRadarSpin() {
         guard let turret = turretNode else { return }
@@ -223,6 +230,10 @@ class TowerAnimationComponent: GKComponent {
         let fullRotation = SKAction.rotate(byAngle: .pi * 2, duration: 3.0)
         turret.run(SKAction.repeatForever(fullRotation), withKey: "radarSpin")
     }
+
+    // Note: the night-only pulsing range circle and drone-spotting indicators
+    // live in RadarComponent — TowerAnimationComponent now only handles the
+    // antenna spin for radar towers.
 
     // MARK: - EW Tower — scale pulse
 

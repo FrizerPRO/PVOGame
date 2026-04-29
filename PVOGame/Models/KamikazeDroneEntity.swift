@@ -11,6 +11,8 @@ final class KamikazeDroneEntity: AttackDroneEntity {
 
     private var targetPoint: CGPoint = .zero
     private var velocity: CGVector = .zero
+    private var cruiseSpeed: CGFloat = 0
+    private var yawAccumulator: CGFloat = 0
 
     init(sceneFrame: CGRect) {
         let dummyPath = FlyingPath(
@@ -35,6 +37,9 @@ final class KamikazeDroneEntity: AttackDroneEntity {
         )
         removeComponent(ofType: FlyingProjectileComponent.self)
         configureHealth(Constants.Kamikaze.health)
+
+        // FPV kamikazes fly low and small — only gun/MANPADS towers reach them.
+        addComponent(AltitudeComponent(altitude: .micro))
 
         // Small FPV kamikaze quadcopter sprite
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
@@ -67,6 +72,7 @@ final class KamikazeDroneEntity: AttackDroneEntity {
     func configureFlight(from spawnPoint: CGPoint, to target: CGPoint, speed kamikazeSpeed: CGFloat) {
         self.targetPoint = target
         self.speed = kamikazeSpeed
+        self.cruiseSpeed = kamikazeSpeed
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.position = spawnPoint
@@ -90,6 +96,22 @@ final class KamikazeDroneEntity: AttackDroneEntity {
         guard !isHit else { return }
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
+        // Re-steer toward the live target point each frame and apply yaw/dive.
+        let dx = targetPoint.x - spriteNode.position.x
+        let dy = targetPoint.y - spriteNode.position.y
+        let dist = sqrt(dx * dx + dy * dy)
+        if dist > 0.001 {
+            let baseAngle = atan2(dy, dx)
+            yawAccumulator += CGFloat(seconds) * Constants.Kamikaze.yawFrequency * 2 * .pi
+            let inDiveRange = dist < Constants.Kamikaze.diveTriggerDistance
+            // Yaw weaves during cruise, locks straight during terminal dive.
+            let yaw = inDiveRange ? 0 : sin(yawAccumulator) * Constants.Kamikaze.yawAmplitude
+            let heading = baseAngle + yaw
+            let currentSpeed = inDiveRange ? cruiseSpeed * Constants.Kamikaze.diveBoost : cruiseSpeed
+            velocity = CGVector(dx: cos(heading) * currentSpeed, dy: sin(heading) * currentSpeed)
+            spriteNode.zRotation = heading - .pi / 2
+        }
+
         spriteNode.position.x += velocity.dx * CGFloat(seconds)
         spriteNode.position.y += velocity.dy * CGFloat(seconds)
     }
@@ -102,7 +124,9 @@ final class KamikazeDroneEntity: AttackDroneEntity {
         physicBody?.categoryBitMask = 0
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 16, height: 16))
+            let flash = SKShapeNode(circleOfRadius: 8)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = (spriteNode.scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 55
             flash.alpha = 0.9
@@ -126,7 +150,9 @@ final class KamikazeDroneEntity: AttackDroneEntity {
         }
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
            let scene = spriteNode.scene {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 14, height: 14))
+            let flash = SKShapeNode(circleOfRadius: 7)
+            flash.fillColor = .orange
+            flash.strokeColor = .clear
             flash.position = spriteNode.position
             flash.zPosition = (scene as? InPlaySKScene)?.isNightWave == true ? Constants.NightWave.nightEffectZPosition : 50
             flash.alpha = 0.7

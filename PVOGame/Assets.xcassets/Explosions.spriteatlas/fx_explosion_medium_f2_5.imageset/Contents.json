@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "fx_explosion_medium_f2_5.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

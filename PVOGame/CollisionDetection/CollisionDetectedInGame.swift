@@ -34,16 +34,11 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
            alt.altitude == .ballistic {
             return
         }
-
-        // Heavy drone armor: bullets blocked, rockets pierce
-        if let heavyDrone = droneProjectile as? HeavyDroneEntity,
-           !(shell is RocketEntity) {
-            heavyDrone.takeBulletDamage(shell.damage)
-            shell.detonateWithAnimation()
-            if heavyDrone.isHit {
-                gameScene?.onDroneDestroyed(drone: heavyDrone)
-                gameScene?.logKill(weapon: "Gun", enemy: "Heavy")
-            }
+        // Non-rocket shells cannot hit high-altitude targets (e.g. Heavy strike UAVs)
+        if !(shell is RocketEntity),
+           let drone = droneProjectile as? AttackDroneEntity,
+           let alt = drone.component(ofType: AltitudeComponent.self),
+           alt.altitude == .high {
             return
         }
 
@@ -229,6 +224,40 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
             }
         }
     }
+    private func handleSwarmHitsTower(nodeA: SKNode, nodeB: SKNode) -> Bool {
+        if let swarm = nodeA.entity as? SwarmDroneEntity,
+           nodeB.physicsBody?.categoryBitMask == Constants.towerBitMask {
+            if swarm.isHit { return true }
+            handleSwarmTowerImpact(swarm: swarm, towerNode: nodeB)
+            return true
+        }
+        if let swarm = nodeB.entity as? SwarmDroneEntity,
+           nodeA.physicsBody?.categoryBitMask == Constants.towerBitMask {
+            if swarm.isHit { return true }
+            handleSwarmTowerImpact(swarm: swarm, towerNode: nodeA)
+            return true
+        }
+        return false
+    }
+
+    private func handleSwarmTowerImpact(swarm: SwarmDroneEntity, towerNode: SKNode) {
+        guard let tower = findTowerForNode(towerNode) else { return }
+        // Already-dead tower: this drone passes through, doesn't waste itself.
+        // It will keep flying with the swarm toward the next retargeted tower.
+        if tower.stats?.isDisabled ?? true { return }
+
+        tower.takeBombDamage(Constants.AdvancedEnemies.swarmTowerDamage)
+        swarm.takeDamage(swarm.health)
+        if swarm.isHit {
+            gameScene?.onDroneDestroyed(drone: swarm)
+        }
+        // Force the cloud to retarget RIGHT NOW so other drones in flight
+        // toward this tower don't waste themselves on a corpse.
+        if tower.stats?.isDisabled ?? false {
+            swarm.swarmCloud?.forceRetargetAfterKill()
+        }
+    }
+
     private func handleKamikazeHitsTower(nodeA: SKNode, nodeB: SKNode) -> Bool {
         if let kamikaze = nodeA.entity as? KamikazeDroneEntity,
            nodeB.physicsBody?.categoryBitMask == Constants.towerBitMask {
@@ -272,6 +301,9 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
         if handleKamikazeHitsTower(nodeA: nodeA, nodeB: nodeB) {
             return
         }
+        if handleSwarmHitsTower(nodeA: nodeA, nodeB: nodeB) {
+            return
+        }
         if handleBombHitsTower(nodeA: nodeA, nodeB: nodeB) {
             return
         }
@@ -303,14 +335,19 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
         }
         if let drone = nodeA.entity as? FlyingProjectile{
             if nodeB.name == Constants.groundName || nodeB.name == Constants.hqName {
-                gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
-                drone.reachedDestination()
+                // Orlan is recon-only — it passes through HQ without damage or destruction
+                if !(drone is OrlanDroneEntity) {
+                    gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
+                    drone.reachedDestination()
+                }
             }
         }
         if let drone = nodeB.entity as? FlyingProjectile{
             if nodeA.name == Constants.groundName || nodeA.name == Constants.hqName {
-                gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
-                drone.reachedDestination()
+                if !(drone is OrlanDroneEntity) {
+                    gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
+                    drone.reachedDestination()
+                }
             }
         }
     }

@@ -40,6 +40,12 @@ final class SwarmDroneEntity: AttackDroneEntity {
         removeComponent(ofType: FlyingProjectileComponent.self)
         configureHealth(Constants.AdvancedEnemies.swarmDroneHealth)
 
+        // Enable tower contact detection so swarm drones actually damage
+        // gun/radar towers on impact (the collision handler deals the damage).
+        if let geoNode = component(ofType: GeometryComponent.self)?.geometryNode {
+            geoNode.physicsBody?.contactTestBitMask |= Constants.towerBitMask
+        }
+
         // Tiny swarm micro-drone
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.size = CGSize(width: Constants.SpriteSize.swarmUnit, height: Constants.SpriteSize.swarmUnit)
@@ -125,10 +131,17 @@ final class SwarmCloudEntity {
     let swarmDrones: [SwarmDroneEntity]
     private(set) var swarmCenter: CGPoint
     private(set) var targetPoint: CGPoint
+    private weak var targetTower: TowerEntity?
+    /// Called when the current target tower is destroyed — should return the
+    /// next combat tower (NEVER an oil refinery) or `nil` to fall back to HQ.
+    var retargetProvider: ((CGPoint) -> TowerEntity?)?
+    /// Fallback target (HQ) when no combat towers remain.
+    var fallbackPoint: CGPoint = .zero
     private var speed: CGFloat
     private(set) var isDisorganized = false
     private var initialDroneCount: Int
     private var oscillationTimer: TimeInterval = 0
+    private var retargetCheckTimer: TimeInterval = 0
 
     init(sceneFrame: CGRect, spawnCenter: CGPoint, target: CGPoint) {
         self.swarmCenter = spawnCenter
@@ -170,8 +183,50 @@ final class SwarmCloudEntity {
         }
     }
 
+    /// Set the primary target tower. The swarm will track its position and
+    /// retarget to the nearest remaining combat tower if this one is destroyed.
+    func setTargetTower(_ tower: TowerEntity) {
+        self.targetTower = tower
+        self.targetPoint = tower.worldPosition
+    }
+
+    /// Immediately pick the next combat tower (called from the collision
+    /// handler the moment one drone destroys the current target — every
+    /// surviving drone instantly heads for the next priority target instead
+    /// of wasting itself on an already-dead one).
+    func forceRetargetAfterKill() {
+        retargetCheckTimer = 0
+        if let next = retargetProvider?(swarmCenter) {
+            targetTower = next
+            targetPoint = next.worldPosition
+        } else {
+            targetTower = nil
+            targetPoint = fallbackPoint
+        }
+    }
+
     func update(deltaTime seconds: TimeInterval) {
         guard !isDisorganized else { return }
+
+        // Retarget every ~0.8s: if the current tower is dead/disabled, try to
+        // find another combat tower; otherwise, fall back to the HQ point.
+        retargetCheckTimer += seconds
+        if retargetCheckTimer >= 0.8 {
+            retargetCheckTimer = 0
+            let towerGone = targetTower == nil || (targetTower?.stats?.isDisabled ?? true)
+            if towerGone {
+                if let next = retargetProvider?(swarmCenter) {
+                    targetTower = next
+                    targetPoint = next.worldPosition
+                } else {
+                    targetTower = nil
+                    targetPoint = fallbackPoint
+                }
+            } else if let tower = targetTower {
+                // Track the tower's current position (usually static, but cheap to sync).
+                targetPoint = tower.worldPosition
+            }
+        }
 
         // Move swarm center toward target
         let dx = targetPoint.x - swarmCenter.x
@@ -200,27 +255,20 @@ final class SwarmCloudEntity {
         guard alive.count <= initialDroneCount / 2, !isDisorganized else { return }
         isDisorganized = true
 
-        let fanAngle = Constants.AdvancedEnemies.swarmFanAngle
         let disorgSpeed = Constants.AdvancedEnemies.swarmDisorganizedSpeed
 
-        for (i, drone) in alive.enumerated() {
-            let fraction = alive.count > 1
-                ? CGFloat(i) / CGFloat(alive.count - 1) - 0.5
-                : 0
-            let spreadAngle = fraction * fanAngle
-
+        for drone in alive {
             guard let pos = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
-            let dx = targetPoint.x - pos.x
-            let dy = targetPoint.y - pos.y
+            // Each surviving drone picks its OWN nearest combat tower — swarms
+            // never target the oil refinery.
+            let perDroneTarget = retargetProvider?(pos)?.worldPosition ?? fallbackPoint
+            let dx = perDroneTarget.x - pos.x
+            let dy = perDroneTarget.y - pos.y
             let dist = sqrt(dx * dx + dy * dy)
             guard dist > 0 else { continue }
-
-            let baseAngle = atan2(dy, dx)
-            let finalAngle = baseAngle + spreadAngle
-
             drone.setInitialVelocity(CGVector(
-                dx: cos(finalAngle) * disorgSpeed,
-                dy: sin(finalAngle) * disorgSpeed
+                dx: (dx / dist) * disorgSpeed,
+                dy: (dy / dist) * disorgSpeed
             ))
         }
     }

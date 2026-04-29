@@ -4,8 +4,34 @@
 //
 
 import SpriteKit
+import UIKit
 
 extension InPlaySKScene {
+    // MARK: - Auto-Pause
+
+    func registerAutoPauseObservers() {
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(autoPauseOnResignActive),
+                       name: UIApplication.willResignActiveNotification, object: nil)
+        nc.addObserver(self, selector: #selector(autoPauseOnInterruption),
+                       name: UIApplication.didEnterBackgroundNotification, object: nil)
+    }
+
+    func removeAutoPauseObservers() {
+        NotificationCenter.default.removeObserver(self,
+            name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.removeObserver(self,
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
+    }
+
+    @objc private func autoPauseOnResignActive() {
+        presentPauseMenu()
+    }
+
+    @objc private func autoPauseOnInterruption() {
+        presentPauseMenu()
+    }
+
     // MARK: - Settings
 
     func setupSettingsButton(_ view: SKView) {

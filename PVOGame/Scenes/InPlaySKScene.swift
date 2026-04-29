@@ -52,8 +52,10 @@ class InPlaySKScene: SKScene {
     var aliveMissileCount = 0
     var cachedMissileAlertActive = false
     var activeRadars = [(position: CGPoint, rangeSq: CGFloat)]()
-    var radarNightDots = [ObjectIdentifier: SKSpriteNode]()
+    // Per-radar night visuals (range circle + spotted-drone dots) live in
+    // RadarComponent; the scene no longer tracks per-tower marker dots.
     var jammedTowerIDs = Set<ObjectIdentifier>()
+    var orlanSpottedTowers = [(id: ObjectIdentifier, position: CGPoint)]()
     var elapsedGameplayTime: TimeInterval = 0
     var interWaveCountdown: TimeInterval = 0
     let firstWaveCountdown: TimeInterval = 15.0
@@ -77,14 +79,6 @@ class InPlaySKScene: SKScene {
     var gameTotalLeakedByType = [String: Int]()
     var waveLivesAtStart = 0
 
-    // Kill combo system
-    var comboCount = 0
-    var comboTimer: TimeInterval = 0
-    let comboWindow: TimeInterval = 1.5  // seconds between kills to maintain combo
-    var comboLabel: SKLabelNode?
-
-    // Slow-motion system
-    var slowMoTimer: TimeInterval = 0
     var normalSpeed: CGFloat = 1.0
 
     var activeDroneCount: Int { activeDrones.count }
@@ -128,6 +122,13 @@ class InPlaySKScene: SKScene {
     var settingsButton: SettingsButton?
     var settingsMenu: InGameSettingsMenu?
 
+    // Haptic feedback (prepared lazily, reused across taps)
+    lazy var errorHaptic: UINotificationFeedbackGenerator = {
+        let gen = UINotificationFeedbackGenerator()
+        gen.prepare()
+        return gen
+    }()
+
     // Speed toggle
     var speedButton: SKSpriteNode?
     var speedLabel: SKLabelNode?
@@ -137,7 +138,17 @@ class InPlaySKScene: SKScene {
 
     // Night overlay
     var nightOverlay: SKSpriteNode?
+    var nightOverlayShader: SKShader?
+    var nightHoles = [NightHole]()
     var isNightWave = false
+
+    /// Frozen "last seen" radar blip per drone — gun towers (autocannon/ciws/
+    /// gepard/pzrk) shoot at these positions during night instead of the
+    /// drone's actual position. Populated by RadarComponent every time its
+    /// sweep line crosses a drone's bearing. `expiry` matches the visual blip
+    /// fade-out so stale entries are ignored automatically.
+    struct NightBlip { let position: CGPoint; let expiry: TimeInterval }
+    var nightBlips = [ObjectIdentifier: NightBlip]()
 
     // Ability manager
     var abilityManager = AbilityManager()
@@ -156,6 +167,10 @@ class InPlaySKScene: SKScene {
     // Rocket retarget budget — limits expensive planLaunch() calls per frame
     var rocketRetargetBudget = 0
     let maxRetargetsPerFrame = 3
+
+    deinit {
+        removeAutoPauseObservers()
+    }
 
     // MARK: - Scene Setup
 
@@ -178,6 +193,7 @@ class InPlaySKScene: SKScene {
         setupTowerPalette()
         setupSettingsButton(view)
         setupSettingsMenu(view)
+        registerAutoPauseObservers()
 
         waveManager = WaveManager(scene: self, level: selectedLevel)
         economyManager = EconomyManager()
@@ -217,27 +233,40 @@ class InPlaySKScene: SKScene {
 
         let cellSize = gridMap.cellSize
 
+        let tileSize = cellSize
+
         for row in 0..<gridMap.rows {
             for col in 0..<gridMap.cols {
                 guard let cell = gridMap.cell(atRow: row, col: col) else { continue }
                 let pos = gridMap.worldPosition(forRow: row, col: col)
 
-                let tile = SKSpriteNode(
-                    color: colorForTerrain(cell.terrain, row: row, col: col),
-                    size: CGSize(width: cellSize.width - 1, height: cellSize.height - 1)
-                )
+                // Base tile. Concealed cells use tile_settlement as base; tile_concealed is
+                // a transparent foliage overlay drawn above any tower placed here.
+                let baseTerrain: CellTerrain = (cell.terrain == .concealed) ? .settlement : cell.terrain
+                let tile: SKSpriteNode
+                if let texture = Self.textureForTerrain(baseTerrain) {
+                    tile = SKSpriteNode(texture: texture, size: tileSize)
+                } else {
+                    tile = SKSpriteNode(
+                        color: colorForTerrain(cell.terrain, row: row, col: col),
+                        size: tileSize
+                    )
+                }
                 tile.position = pos
                 tile.zPosition = 1
                 layer.addChild(tile)
 
-                // Grid lines
-                let border = SKShapeNode(rectOf: CGSize(width: cellSize.width, height: cellSize.height))
-                border.strokeColor = UIColor.white.withAlphaComponent(0.08)
-                border.fillColor = .clear
-                border.lineWidth = 0.5
-                border.position = pos
-                border.zPosition = 2
-                layer.addChild(border)
+                // Foliage overlay for concealed tiles — sits above towers (z=25), below
+                // projectiles (z=41+) so tree crowns visually cover tower edges while the
+                // tower body remains readable through the gap in the middle.
+                if cell.terrain == .concealed,
+                   let overlayTex = Self.textureForTerrain(.concealed) {
+                    let overlay = SKSpriteNode(texture: overlayTex, size: tileSize)
+                    overlay.position = pos
+                    overlay.zPosition = 40
+                    addChild(overlay)
+                }
+
             }
         }
 
@@ -252,6 +281,25 @@ class InPlaySKScene: SKScene {
         drones.zPosition = 61
         addChild(drones)
         droneLayer = drones
+    }
+
+    private static var terrainTextureCache: [CellTerrain: SKTexture?] = [:]
+
+    private static func textureForTerrain(_ terrain: CellTerrain) -> SKTexture? {
+        if let cached = terrainTextureCache[terrain] { return cached }
+        let name: String
+        switch terrain {
+        case .ground:       name = "tile_ground"
+        case .highGround:   name = "tile_highGround"
+        case .blocked:      name = "tile_blocked"
+        case .headquarters: name = "tile_headquarters"
+        case .settlement:   name = "tile_settlement"
+        case .concealed:    name = "tile_concealed"
+        case .valley:       name = "tile_valley"
+        }
+        let texture: SKTexture? = UIImage(named: name) != nil ? SKTexture(imageNamed: name) : nil
+        terrainTextureCache[terrain] = texture
+        return texture
     }
 
     private func colorForTerrain(_ terrain: CellTerrain, row: Int = 0, col: Int = 0) -> UIColor {
@@ -342,6 +390,9 @@ class InPlaySKScene: SKScene {
         // Update conveyor belt
         conveyorBelt.update(deltaTime: dt, isBuildPhase: currentPhase == .build)
 
+        // Keep night overlay shader uniforms in sync with active explosion holes
+        updateNightHoles(currentTime: currentTime)
+
         // Inter-wave countdown (always real-time, not affected by speed)
         if currentPhase == .build && interWaveCountdown > 0 {
             interWaveCountdown -= dt
@@ -379,14 +430,7 @@ class InPlaySKScene: SKScene {
                 swarm.update(deltaTime: scaledDt)
             }
 
-            // Update radar dots at night
-            if isNightWave {
-                updateRadarNightDots()
-            }
 
-            // Update combo and slow-mo timers
-            updateComboTimer(deltaTime: scaledDt)
-            updateSlowMo(deltaTime: dt) // slow-mo uses real time, not scaled
 
             // Check wave completion
             if let waveManager, !waveManager.isWaveInProgress && activeDrones.isEmpty {

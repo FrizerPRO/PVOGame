@@ -12,6 +12,10 @@ final class MineBombEntity: GKEntity {
     private(set) var isFromCrashedMineLayer = false
     private weak var sourceDrone: AttackDroneEntity?
     weak var targetTower: TowerEntity?
+    /// Damage dealt to the target tower on impact. Default 1 (MineLayer
+    /// drops, crashed-drone runs). Strike UAVs (e.g. Heavy/Bayraktar) raise
+    /// this to reflect heavier munitions.
+    var damage: Int = 1
 
     override init() {
         super.init()
@@ -90,6 +94,9 @@ final class MineBombEntity: GKEntity {
               let body = spriteNode.physicsBody else { return }
 
         // Visual: bomb sized like a drone, between drone (z61+) and tower (z25)
+        if UIImage(named: "bomb_aerial") != nil {
+            spriteNode.texture = SKTexture(imageNamed: "bomb_aerial")
+        }
         spriteNode.size = CGSize(width: 40, height: 40)
         spriteNode.zPosition = 45
 

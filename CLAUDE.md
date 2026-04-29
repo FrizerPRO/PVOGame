@@ -188,6 +188,25 @@ xcodebuild -project PVOGame.xcodeproj -scheme PVOGame \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
+## Sprite Generation Pipeline
+
+All sprite generation lives under `sprites/` (Python, Gemini 3 Pro Image /
+"Nano Banana Pro"). Two entry points:
+
+- **CLI:** `python3 sprites/generate_sprites.py --api-key $KEY --name <glob>`
+- **Web UI:** `python3 sprites/web_ui.py` → `http://127.0.0.1:8765/`
+  (grid of all 107 sprites with status badges, per-sprite prompt inspector,
+  bulk-select + generate, live SSE log, info tooltips)
+
+Full pipeline docs — sprite registry structure, background modes, prompt
+style conventions, post-processing algorithms (`remove_bg_by_color`,
+`luminosity_to_alpha`, `white_to_alpha_glow`), retry/timeout flags, and
+debugging recipes — live in **[`sprites/CLAUDE.md`](sprites/CLAUDE.md)**,
+which Claude Code auto-loads when working in that directory.
+
+Output: `sprites/generated_sprites/processed/<category>/<name>.png`.
+Copying into `PVOGame/Assets.xcassets/<name>.imageset/` is manual.
+
 ## Important Notes
 - Open the **outer** `PVOGame.xcodeproj`, NOT the nested legacy one at `PVOGame/PVOGame.xcodeproj`
 - The nested `PVOGame/PVOGame/PVOGame/` directory is a legacy remnant — ignore it

@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "fx_smoke_puff.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

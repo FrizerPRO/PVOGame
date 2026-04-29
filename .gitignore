@@ -1,15 +1,17 @@
 .DS_Store
 DerivedData/
+build_output/
 
 # Xcode user-specific data
 xcuserdata/
 *.xcuserdatad/
 .codex_dd_sim_run/
 .codex*
+.claude/settings.local.json
 
-# Sprite generation intermediates
-generated_sprites/
-test_drone/
-test_shahed/
-test_zu/
-test_zu_v2/
+# Sprite generation: intermediate outputs and Python bytecode caches.
+# Tracked content (scripts, catalogue, plan) lives under sprites/ and is committed.
+sprites/generated_sprites/
+sprites/legacy/
+sprites/__pycache__/
+sprites/**/__pycache__/

@@ -71,9 +71,18 @@ class GridMap {
     }
 
     func worldPosition(forRow row: Int, col: Int) -> CGPoint {
-        CGPoint(
-            x: origin.x + CGFloat(col) * cellSize.width + cellSize.width / 2,
-            y: origin.y + CGFloat(rows - 1 - row) * cellSize.height + cellSize.height / 2
+        worldPosition(forRow: row, col: col, footprint: (rows: 1, cols: 1))
+    }
+
+    /// World-space center of a multi-cell footprint anchored at (row, col) as its top-left cell.
+    func worldPosition(forRow row: Int, col: Int, footprint: (rows: Int, cols: Int)) -> CGPoint {
+        let centerCol = CGFloat(col) + CGFloat(footprint.cols) / 2.0
+        let centerRowFromTop = CGFloat(row) + CGFloat(footprint.rows) / 2.0
+        // Grid y-axis grows downward (row 0 at top); screen y grows upward, hence the flip.
+        let centerRowFromBottom = CGFloat(rows) - centerRowFromTop
+        return CGPoint(
+            x: origin.x + centerCol * cellSize.width,
+            y: origin.y + centerRowFromBottom * cellSize.height
         )
     }
 
@@ -86,21 +95,53 @@ class GridMap {
     }
 
     func canPlaceTower(atRow row: Int, col: Int) -> Bool {
-        guard row >= 0, row < rows, col >= 0, col < cols else { return false }
-        let cell = cells[row][col]
-        return cell.terrain.isTowerPlaceable && !cell.isOccupied && !cell.hasSettlement
+        canPlaceTower(atRow: row, col: col, footprint: (rows: 1, cols: 1))
+    }
+
+    /// Every cell in the footprint must be placeable, unoccupied, and settlement-free.
+    func canPlaceTower(atRow row: Int, col: Int, footprint: (rows: Int, cols: Int)) -> Bool {
+        guard row >= 0, col >= 0,
+              row + footprint.rows <= rows,
+              col + footprint.cols <= cols else { return false }
+        for r in row..<(row + footprint.rows) {
+            for c in col..<(col + footprint.cols) {
+                let cell = cells[r][c]
+                if !cell.terrain.isTowerPlaceable || cell.isOccupied || cell.hasSettlement {
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     @discardableResult
     func placeTower(_ towerID: ObjectIdentifier, atRow row: Int, col: Int) -> Bool {
-        guard canPlaceTower(atRow: row, col: col) else { return false }
-        cells[row][col].towerID = towerID
+        placeTower(towerID, atRow: row, col: col, footprint: (rows: 1, cols: 1))
+    }
+
+    @discardableResult
+    func placeTower(_ towerID: ObjectIdentifier, atRow row: Int, col: Int,
+                    footprint: (rows: Int, cols: Int)) -> Bool {
+        guard canPlaceTower(atRow: row, col: col, footprint: footprint) else { return false }
+        for r in row..<(row + footprint.rows) {
+            for c in col..<(col + footprint.cols) {
+                cells[r][c].towerID = towerID
+            }
+        }
         return true
     }
 
     func removeTower(atRow row: Int, col: Int) {
-        guard row >= 0, row < rows, col >= 0, col < cols else { return }
-        cells[row][col].towerID = nil
+        removeTower(atRow: row, col: col, footprint: (rows: 1, cols: 1))
+    }
+
+    func removeTower(atRow row: Int, col: Int, footprint: (rows: Int, cols: Int)) {
+        for r in row..<(row + footprint.rows) {
+            for c in col..<(col + footprint.cols) {
+                guard r >= 0, r < rows, c >= 0, c < cols else { continue }
+                cells[r][c].towerID = nil
+            }
+        }
     }
 
     func cell(atRow row: Int, col: Int) -> GridCell? {
@@ -112,17 +153,46 @@ class GridMap {
 
     @discardableResult
     func placeSettlement(_ id: ObjectIdentifier, atRow row: Int, col: Int) -> Bool {
-        guard row >= 0, row < rows, col >= 0, col < cols else { return false }
-        guard cells[row][col].terrain.isTowerPlaceable && !cells[row][col].isOccupied && !cells[row][col].hasSettlement else { return false }
-        cells[row][col].settlementID = id
-        cells[row][col].terrain = .settlement
+        placeSettlement(id, atRow: row, col: col, footprint: (rows: 1, cols: 1))
+    }
+
+    @discardableResult
+    func placeSettlement(_ id: ObjectIdentifier, atRow row: Int, col: Int,
+                         footprint: (rows: Int, cols: Int)) -> Bool {
+        guard row >= 0, col >= 0,
+              row + footprint.rows <= rows,
+              col + footprint.cols <= cols else { return false }
+        // Every cell in the footprint must be placeable, free of towers, and
+        // free of other settlements.
+        for r in row..<(row + footprint.rows) {
+            for c in col..<(col + footprint.cols) {
+                let cell = cells[r][c]
+                if !cell.terrain.isTowerPlaceable || cell.isOccupied || cell.hasSettlement {
+                    return false
+                }
+            }
+        }
+        for r in row..<(row + footprint.rows) {
+            for c in col..<(col + footprint.cols) {
+                cells[r][c].settlementID = id
+                cells[r][c].terrain = .settlement
+            }
+        }
         return true
     }
 
     func removeSettlement(atRow row: Int, col: Int) {
-        guard row >= 0, row < rows, col >= 0, col < cols else { return }
-        cells[row][col].settlementID = nil
-        cells[row][col].terrain = .ground
+        removeSettlement(atRow: row, col: col, footprint: (rows: 1, cols: 1))
+    }
+
+    func removeSettlement(atRow row: Int, col: Int, footprint: (rows: Int, cols: Int)) {
+        for r in row..<(row + footprint.rows) {
+            for c in col..<(col + footprint.cols) {
+                guard r >= 0, r < rows, c >= 0, c < cols else { continue }
+                cells[r][c].settlementID = nil
+                cells[r][c].terrain = .ground
+            }
+        }
     }
 
     // MARK: - Line of Sight
@@ -358,6 +428,14 @@ class GridMap {
     }
 
     func generateSettlementPositions(count: Int) -> [(row: Int, col: Int)] {
+        generateSettlementPositions(count: count, footprint: (rows: 1, cols: 1))
+    }
+
+    /// Returns valid top-left anchor positions for settlements of the given
+    /// footprint, respecting min edge / HQ / inter-settlement distance
+    /// constraints. All cells inside the footprint must be placeable.
+    func generateSettlementPositions(count: Int,
+                                      footprint: (rows: Int, cols: Int)) -> [(row: Int, col: Int)] {
         let minEdge = Constants.Settlement.minDistanceFromEdge
         let minBetween = Constants.Settlement.minDistanceBetween
         let minFromHQ = Constants.Settlement.minDistanceFromHQ
@@ -365,15 +443,29 @@ class GridMap {
         // Find HQ row (bottom rows typically)
         let hqRow = rows - 1
 
-        // Collect valid candidate cells
+        // Collect valid candidate anchor positions
         var candidates: [(row: Int, col: Int)] = []
         for row in 0..<rows {
             for col in 0..<cols {
-                guard cells[row][col].terrain.isTowerPlaceable else { continue }
-                guard row >= minEdge && row < rows - minEdge else { continue }
-                guard col >= minEdge && col < cols - minEdge else { continue }
-                // Must be far enough from HQ (HQ is at bottom, high row numbers)
-                guard (hqRow - row) >= minFromHQ else { continue }
+                // Anchor + footprint must fit within edge-restricted bounds
+                guard row >= minEdge, row + footprint.rows <= rows - minEdge else { continue }
+                guard col >= minEdge, col + footprint.cols <= cols - minEdge else { continue }
+                // Every cell in the footprint must be placeable
+                var allPlaceable = true
+                for r in row..<(row + footprint.rows) {
+                    for c in col..<(col + footprint.cols) {
+                        if !cells[r][c].terrain.isTowerPlaceable {
+                            allPlaceable = false
+                            break
+                        }
+                    }
+                    if !allPlaceable { break }
+                }
+                guard allPlaceable else { continue }
+                // Must be far enough from HQ — measured from the near side
+                // of the footprint (bottom-most row) to the HQ row.
+                let nearSideRow = row + footprint.rows - 1
+                guard (hqRow - nearSideRow) >= minFromHQ else { continue }
                 candidates.append((row, col))
             }
         }
@@ -383,8 +475,15 @@ class GridMap {
         var selected: [(row: Int, col: Int)] = []
         for candidate in candidates {
             guard selected.count < count else { break }
+            // Distance between footprint bounding-box centers, Manhattan-ish.
+            // A 2×2 at (r,c) has center (r+0.5, c+0.5); using anchor+fp/2
+            // approximates center distance and still excludes overlap.
             let tooClose = selected.contains { existing in
-                abs(existing.row - candidate.row) + abs(existing.col - candidate.col) < minBetween
+                let dr = abs((existing.row + footprint.rows / 2)
+                             - (candidate.row + footprint.rows / 2))
+                let dc = abs((existing.col + footprint.cols / 2)
+                             - (candidate.col + footprint.cols / 2))
+                return dr + dc < minBetween + max(footprint.rows, footprint.cols) - 1
             }
             if !tooClose {
                 selected.append(candidate)

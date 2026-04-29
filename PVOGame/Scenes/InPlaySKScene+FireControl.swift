@@ -111,12 +111,14 @@ extension InPlaySKScene {
         let remove = SKAction.removeFromParent()
         blast.run(SKAction.sequence([SKAction.group([scale, fade]), remove]))
 
-        // Visual explosion animation overlay
-        let textures = AnimationTextureCache.shared.mediumExplosion
-        if !textures.isEmpty {
+        // Visual explosion animation overlay sized to the blast radius so the
+        // fireball actually reads — previously hardcoded 32pt was invisible.
+        let frames = AnimationTextureCache.shared.mediumExplosion
+        if !frames.isEmpty {
+            let diameter = max(radius * 2.5, 60)
             let node = acquireExplosionNode()
-            node.texture = textures[0]
-            node.size = CGSize(width: 32, height: 32)
+            node.texture = frames[0]
+            node.size = CGSize(width: diameter, height: diameter)
             node.color = .white
             node.colorBlendFactor = 0
             node.position = position
@@ -124,13 +126,30 @@ extension InPlaySKScene {
             node.alpha = 1.0
             node.setScale(1.0)
             addChild(node)
-            node.run(SKAction.sequence([
-                SKAction.animate(with: textures, timePerFrame: 0.05, resize: false, restore: false),
-                SKAction.run { [weak self, weak node] in
-                    guard let self, let node else { return }
-                    self.releaseExplosionNode(node)
+            // Same per-frame timing as spawnKillExplosion: quick flash on f1,
+            // linger on f2/f3, faster settle. Keeping the two paths aligned
+            // matters because a rocket hitting a drone fires BOTH: this
+            // midair-blast animation AND the drone's kill explosion — if
+            // their cadences differ the combined effect looks off-beat.
+            let flashHold: TimeInterval  = 0.035
+            let peakHold: TimeInterval   = 0.10
+            let settleHold: TimeInterval = 0.04
+            var actions: [SKAction] = []
+            for (idx, tex) in frames.enumerated() {
+                let hold: TimeInterval
+                switch idx {
+                case 0:    hold = flashHold
+                case 1, 2: hold = peakHold
+                default:   hold = settleHold
                 }
-            ]))
+                actions.append(SKAction.setTexture(tex))
+                actions.append(SKAction.wait(forDuration: hold))
+            }
+            actions.append(SKAction.run { [weak self, weak node] in
+                guard let self, let node else { return }
+                self.releaseExplosionNode(node)
+            })
+            node.run(SKAction.sequence(actions))
         }
     }
 
@@ -188,6 +207,38 @@ extension InPlaySKScene {
                         break
                     }
                 }
+            }
+        }
+
+        // Cache Orlan-spotted towers and apply speed boost
+        orlanSpottedTowers.removeAll(keepingCapacity: true)
+        for drone in activeDrones where !drone.isHit {
+            if let orlan = drone as? OrlanDroneEntity,
+               let info = orlan.spottedTowerInfo {
+                orlanSpottedTowers.append(info)
+            }
+        }
+
+        if !orlanSpottedTowers.isEmpty {
+            let boostRadiusSq = Constants.Orlan.boostRadius * Constants.Orlan.boostRadius
+            for drone in aliveDrones {
+                guard !(drone is OrlanDroneEntity), !(drone is EWDroneEntity) else { continue }
+                guard let flight = drone.component(ofType: FlyingProjectileComponent.self),
+                      let pos = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
+                let nearSpotted = orlanSpottedTowers.contains { info in
+                    let dx = pos.x - info.position.x
+                    let dy = pos.y - info.position.y
+                    return dx * dx + dy * dy <= boostRadiusSq
+                }
+                flight.maxSpeed = nearSpotted
+                    ? Float(drone.speed * Constants.Orlan.speedBoostMultiplier)
+                    : Float(drone.speed)
+            }
+        } else {
+            // No Orlan spotting — ensure all drones at normal speed
+            for drone in aliveDrones {
+                guard let flight = drone.component(ofType: FlyingProjectileComponent.self) else { continue }
+                flight.maxSpeed = Float(drone.speed)
             }
         }
     }
@@ -258,6 +309,22 @@ extension InPlaySKScene {
         }
         return SKTexture(image: image)
     }()
+
+    func nearestAliveDrone(to point: CGPoint, maxDistance: CGFloat = 72) -> AttackDroneEntity? {
+        var best: AttackDroneEntity?
+        var bestDistSq: CGFloat = maxDistance * maxDistance
+        for drone in aliveDrones {
+            guard let pos = drone.component(ofType: SpriteComponent.self)?.spriteNode.position else { continue }
+            let dx = pos.x - point.x
+            let dy = pos.y - point.y
+            let distSq = dx * dx + dy * dy
+            if distSq < bestDistSq {
+                bestDistSq = distSq
+                best = drone
+            }
+        }
+        return best
+    }
 
     func syncFireControlState() {
         guard !fireControlSyncedThisFrame else { return }
