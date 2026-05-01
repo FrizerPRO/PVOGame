@@ -616,12 +616,11 @@ extension InPlaySKScene {
     // MARK: - EW Drone Spawn
 
     func spawnEWDrone() {
-        let spawnX = CGFloat.random(in: 20...(frame.width - 20))
-        let spawnY = frame.height + CGFloat.random(in: 30...50)
-        let spawnPoint = CGPoint(x: spawnX, y: spawnY)
+        let route = buildEWSweepRoute(startHint: nil)
+        _ = spawnEWDroneEntity(start: route.start, waypoints: route.waypoints)
+    }
 
-        let hqCenter = comboHQPoint()
-
+    private func spawnEWDroneEntity(start: CGPoint, waypoints: [CGPoint]) -> EWDroneEntity {
         let ewDrone = EWDroneEntity(sceneFrame: frame)
         let altitude: DroneAltitude = .high
         ewDrone.addComponent(AltitudeComponent(altitude: altitude))
@@ -635,10 +634,102 @@ extension InPlaySKScene {
             spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
         }
 
-        ewDrone.configureFlight(from: spawnPoint, to: hqCenter, speed: Constants.EW.ewDroneSpeed)
+        ewDrone.configureSweepRoute(from: start, waypoints: waypoints, speed: Constants.EW.ewDroneSpeed)
 
         activeDrones.append(ewDrone)
         addEntity(ewDrone)
+
+        return ewDrone
+    }
+
+    private func buildEWSweepRoute(startHint: CGPoint?) -> (start: CGPoint, waypoints: [CGPoint]) {
+        let bounds = ewSweepBounds()
+        let candidates = towerPlacement.towers.compactMap { tower -> (tower: TowerEntity, priority: Int, position: CGPoint)? in
+            guard let stats = tower.stats, !stats.isDisabled else { return nil }
+            return (tower, ewSweepPriority(for: tower.towerType), clampToEWSweepBounds(tower.worldPosition, bounds: bounds))
+        }
+
+        let selected = candidates
+            .sorted {
+                if $0.priority != $1.priority { return $0.priority > $1.priority }
+                return $0.position.y > $1.position.y
+            }
+            .prefix(Constants.EW.ewDroneSweepTargetLimit)
+            .sorted { $0.position.y > $1.position.y }
+
+        let preferredX = selected.first?.position.x
+            ?? startHint?.x
+            ?? CGFloat.random(in: bounds.minX...bounds.maxX)
+        let startX = min(max(preferredX, bounds.minX), bounds.maxX)
+        let start = CGPoint(
+            x: startX,
+            y: frame.height + Constants.EW.ewDroneOffscreenSpawnMargin
+        )
+        let entryPoint = CGPoint(x: start.x, y: bounds.maxY)
+
+        var waypoints = [CGPoint]()
+        appendEWSweepWaypoint(entryPoint, to: &waypoints, minDistance: 0)
+        for target in selected {
+            appendEWSweepWaypoint(target.position, to: &waypoints, minDistance: gridMap.cellSize.width * 0.4)
+        }
+
+        if waypoints.isEmpty {
+            appendEWSweepWaypoint(CGPoint(x: start.x, y: bounds.midY), to: &waypoints, minDistance: gridMap.cellSize.width * 0.4)
+        } else {
+            let returnPrep = CGPoint(x: start.x, y: max(bounds.midY, bounds.maxY - gridMap.cellSize.height * 2.0))
+            appendEWSweepWaypoint(returnPrep, to: &waypoints, minDistance: gridMap.cellSize.width * 0.4)
+        }
+        appendEWSweepWaypoint(start, to: &waypoints, minDistance: 0)
+
+        return (start, waypoints)
+    }
+
+    private func ewSweepBounds() -> CGRect {
+        guard let gridMap else {
+            return frame.insetBy(dx: 20, dy: 80)
+        }
+
+        let cellWidth = gridMap.cellSize.width
+        let cellHeight = gridMap.cellSize.height
+        let minX = gridMap.origin.x + cellWidth * 0.5
+        let maxX = gridMap.origin.x + cellWidth * (CGFloat(gridMap.cols) - 0.5)
+        let minY = gridMap.origin.y + cellHeight * Constants.EW.ewDroneSweepBottomInsetRows
+        let maxY = gridMap.origin.y + cellHeight * (CGFloat(gridMap.rows) - 0.5)
+
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: max(maxX - minX, 1),
+            height: max(maxY - minY, 1)
+        )
+    }
+
+    private func clampToEWSweepBounds(_ point: CGPoint, bounds: CGRect) -> CGPoint {
+        CGPoint(
+            x: min(max(point.x, bounds.minX), bounds.maxX),
+            y: min(max(point.y, bounds.minY), bounds.maxY)
+        )
+    }
+
+    private func appendEWSweepWaypoint(_ point: CGPoint, to waypoints: inout [CGPoint], minDistance: CGFloat) {
+        if let last = waypoints.last {
+            let dx = last.x - point.x
+            let dy = last.y - point.y
+            guard dx * dx + dy * dy >= minDistance * minDistance else { return }
+        }
+        waypoints.append(point)
+    }
+
+    private func ewSweepPriority(for type: TowerType) -> Int {
+        switch type {
+        case .radar: return 100
+        case .samLauncher: return 95
+        case .interceptor: return 90
+        case .ewTower: return 85
+        case .ciws, .gepard, .pzrk: return 65
+        case .autocannon: return 45
+        case .oilRefinery: return 35
+        }
     }
 
     // MARK: - Heavy Drone Spawn
@@ -695,7 +786,8 @@ extension InPlaySKScene {
 
         if let spriteNode = heavyDrone.component(ofType: SpriteComponent.self)?.spriteNode {
             let scale = Constants.AdvancedEnemies.heavyDroneSpriteScale * altitude.droneVisualScale
-            spriteNode.size = CGSize(width: 30 * scale, height: 30 * scale)
+            let size = Constants.AdvancedEnemies.heavyDroneSpriteBaseSize * scale
+            spriteNode.size = CGSize(width: size, height: size)
             spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
         }
 
@@ -919,23 +1011,8 @@ extension InPlaySKScene {
     /// can attach follower drones to it (escort formations).
     @discardableResult
     func spawnEWDroneEntity(at anchor: CGPoint) -> EWDroneEntity {
-        let ewDrone = EWDroneEntity(sceneFrame: frame)
-        let altitude: DroneAltitude = .high
-        ewDrone.addComponent(AltitudeComponent(altitude: altitude))
-        let shadow = ShadowComponent()
-        ewDrone.addComponent(shadow)
-        shadowLayer?.addChild(shadow.shadowNode)
-
-        if let spriteNode = ewDrone.component(ofType: SpriteComponent.self)?.spriteNode {
-            let scale = altitude.droneVisualScale
-            spriteNode.size = CGSize(width: 24 * scale, height: 24 * scale)
-            spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
-        }
-        ewDrone.configureFlight(from: anchor, to: comboHQPoint(), speed: Constants.EW.ewDroneSpeed)
-
-        activeDrones.append(ewDrone)
-        addEntity(ewDrone)
-        return ewDrone
+        let route = buildEWSweepRoute(startHint: anchor)
+        return spawnEWDroneEntity(start: route.start, waypoints: route.waypoints)
     }
 
     /// Spawn a Heavy drone with a custom direct flight path from `anchor`.
@@ -961,7 +1038,8 @@ extension InPlaySKScene {
 
         if let spriteNode = heavy.component(ofType: SpriteComponent.self)?.spriteNode {
             let scale = Constants.AdvancedEnemies.heavyDroneSpriteScale * altitude.droneVisualScale
-            spriteNode.size = CGSize(width: 30 * scale, height: 30 * scale)
+            let size = Constants.AdvancedEnemies.heavyDroneSpriteBaseSize * scale
+            spriteNode.size = CGSize(width: size, height: size)
             spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
         }
 
@@ -1055,25 +1133,36 @@ extension InPlaySKScene {
         spawnEscortedShaheds(leader: ewDrone, offsets: innerOffsets + outerOffsets)
     }
 
-    /// 1 EW Drone leading, ~20 Shahed escorts locked in a two-layer ring around
-    /// it: inner hex of 6 at close range + outer ring of 14 at long range.
+    /// 1 EW Drone leading, ~20 Shahed escorts in a forward screen with flanks.
     /// When the EW drone dies, the shaheds detach and resume as normal Shaheds
     /// heading for the nearest settlement.
     private func spawnEWConvoy(anchor: CGPoint) {
         let ewDrone = spawnEWDroneEntity(at: anchor)
 
-        // Inner protective hex — tight around the jammer.
-        let innerRadius: CGFloat = 45
-        let innerOffsets: [CGPoint] = (0..<6).map { i in
-            let angle = CGFloat(i) * (.pi * 2 / 6)
-            return CGPoint(x: cos(angle) * innerRadius, y: sin(angle) * innerRadius)
-        }
-        // Outer defensive ring — 14 shaheds spread wide to screen for the leader.
-        let outerRadius: CGFloat = 95
-        let outerOffsets: [CGPoint] = (0..<14).map { i in
-            let angle = CGFloat(i) * (.pi * 2 / 14) + .pi / 14
-            return CGPoint(x: cos(angle) * outerRadius, y: sin(angle) * outerRadius)
-        }
+        let innerOffsets: [CGPoint] = [
+            CGPoint(x:   0, y: -46),
+            CGPoint(x: -30, y: -28),
+            CGPoint(x:  30, y: -28),
+            CGPoint(x: -42, y:   0),
+            CGPoint(x:  42, y:   0),
+            CGPoint(x:   0, y:  26),
+        ]
+        let outerOffsets: [CGPoint] = [
+            CGPoint(x:    0, y: -100),
+            CGPoint(x:  -28, y:  -88),
+            CGPoint(x:   28, y:  -88),
+            CGPoint(x:  -54, y:  -72),
+            CGPoint(x:   54, y:  -72),
+            CGPoint(x:  -80, y:  -52),
+            CGPoint(x:   80, y:  -52),
+            CGPoint(x: -102, y:  -26),
+            CGPoint(x:  102, y:  -26),
+            CGPoint(x:  -74, y:    6),
+            CGPoint(x:   74, y:    6),
+            CGPoint(x:  -46, y:   34),
+            CGPoint(x:   46, y:   34),
+            CGPoint(x:    0, y:   54),
+        ]
         spawnEscortedShaheds(leader: ewDrone, offsets: innerOffsets + outerOffsets)
     }
 
@@ -1156,8 +1245,8 @@ extension InPlaySKScene {
         spawnEscortedShaheds(leader: ewDrone, offsets: innerOffsets + outerOffsets)
     }
 
-    /// Spawn Shaheds locked to a leader drone at fixed offsets (hex shield etc.).
-    /// While the leader is alive the shaheds track its position directly. When
+    /// Spawn Shaheds assigned to leader-local escort slots.
+    /// While the leader is alive the shaheds steer toward their slots. When
     /// the leader dies, each shahed rebuilds its own path to the nearest HQ
     /// point and flies the rest of the combo on its own.
     func spawnEscortedShaheds(leader: AttackDroneEntity, offsets: [CGPoint]) {

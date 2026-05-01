@@ -343,6 +343,7 @@ extension InPlaySKScene {
     func triggerGameOver() {
         currentPhase = .gameOver
         cleanupOffscreenIndicator()
+        transitionToDay()
         settingsButton?.isHidden = true
         startWaveButton?.isHidden = true
         speedButton?.isHidden = true

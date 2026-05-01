@@ -335,8 +335,11 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
         }
         if let drone = nodeA.entity as? FlyingProjectile{
             if nodeB.name == Constants.groundName || nodeB.name == Constants.hqName {
-                // Orlan is recon-only — it passes through HQ without damage or destruction
-                if !(drone is OrlanDroneEntity) {
+                // Recon and tower-hunter drones pass through HQ without
+                // damage or destruction.
+                if !(drone is OrlanDroneEntity)
+                    && !(drone is HeavyDroneEntity)
+                    && !(drone is EWDroneEntity) {
                     gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
                     drone.reachedDestination()
                 }
@@ -344,7 +347,9 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
         }
         if let drone = nodeB.entity as? FlyingProjectile{
             if nodeA.name == Constants.groundName || nodeA.name == Constants.hqName {
-                if !(drone is OrlanDroneEntity) {
+                if !(drone is OrlanDroneEntity)
+                    && !(drone is HeavyDroneEntity)
+                    && !(drone is EWDroneEntity) {
                     gameScene?.onDroneReachedHQ(drone: drone as? AttackDroneEntity)
                     drone.reachedDestination()
                 }

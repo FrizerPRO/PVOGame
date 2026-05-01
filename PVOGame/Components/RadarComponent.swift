@@ -294,6 +294,11 @@ class RadarComponent: GKComponent {
         sweepContainer = nil
     }
 
+    func removeNightVisuals() {
+        removeVisuals()
+        removeAllBlips()
+    }
+
     // MARK: - Blips (frozen "last seen" positions)
 
     private func placeBlip(for id: ObjectIdentifier, at pos: CGPoint, in scene: InPlaySKScene) {

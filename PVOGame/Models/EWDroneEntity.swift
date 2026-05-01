@@ -9,17 +9,19 @@ import SpriteKit
 
 final class EWDroneEntity: AttackDroneEntity {
 
-    private var targetPoint: CGPoint = .zero
+    private var waypoints: [CGPoint] = []
+    private var currentWaypointIndex = 0
     private var velocity: CGVector = .zero
-    private var jammingRingNode: SKShapeNode?
-    private var jammingPulseTimer: TimeInterval = 0
-    /// Randomized delay until next jamming lightning bolt.
+    private var homePoint: CGPoint = .zero
+    private var heading: CGFloat = -.pi / 2
+    private var angularVelocity: CGFloat = 0
+    private var isReturningToBase = false
+    private var lightningTimer: TimeInterval = 0
+    /// Randomized delay until next lightning discharge.
     private var nextLightningDelay: TimeInterval = 0.9
-    /// Periodic radial corona burst overlay timer.
-    private var burstTimer: TimeInterval = 0
-    private var nextBurstDelay: TimeInterval = 2.2
+    private let waypointArrivalRadius: CGFloat = Constants.EW.ewDroneWaypointArrivalRadius
 
-    let jamRadius: CGFloat = Constants.EW.ewDroneJamRadius
+    let effectRadius: CGFloat = Constants.EW.ewDroneEffectRadius
 
     init(sceneFrame: CGRect) {
         let dummyPath = FlyingPath(
@@ -70,24 +72,53 @@ final class EWDroneEntity: AttackDroneEntity {
     }
 
     func configureFlight(from spawnPoint: CGPoint, to target: CGPoint, speed ewSpeed: CGFloat) {
-        self.targetPoint = target
+        configureSweepRoute(from: spawnPoint, waypoints: [target], speed: ewSpeed)
+    }
+
+    func configureSweepRoute(from spawnPoint: CGPoint, waypoints route: [CGPoint], speed ewSpeed: CGFloat) {
         self.speed = ewSpeed
+        self.waypoints = route
+        self.currentWaypointIndex = 0
+        self.homePoint = spawnPoint
+        self.isReturningToBase = false
+        self.angularVelocity = 0
 
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.position = spawnPoint
         }
 
-        let dx = target.x - spawnPoint.x
-        let dy = target.y - spawnPoint.y
+        updateVelocityTowardCurrentWaypoint()
+        resetEscortPoseHistory()
+    }
+
+    private func updateVelocityTowardCurrentWaypoint() {
+        guard currentWaypointIndex < waypoints.count,
+              let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else {
+            velocity = .zero
+            return
+        }
+
+        let target = waypoints[currentWaypointIndex]
+        let dx = target.x - spriteNode.position.x
+        let dy = target.y - spriteNode.position.y
         let dist = sqrt(dx * dx + dy * dy)
-        guard dist > 0 else { return }
+        guard dist > waypointArrivalRadius else {
+            advanceToNextWaypoint()
+            return
+        }
 
         let dirX = dx / dist
         let dirY = dy / dist
-        velocity = CGVector(dx: dirX * ewSpeed, dy: dirY * ewSpeed)
+        velocity = CGVector(dx: dirX * speed, dy: dirY * speed)
 
-        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.zRotation = atan2(dy, dx) - .pi / 2
+        heading = atan2(dy, dx)
+        spriteNode.zRotation = heading - .pi / 2
+    }
+
+    private func advanceToNextWaypoint() {
+        currentWaypointIndex += 1
+        if currentWaypointIndex >= waypoints.count {
+            reachedDestination()
         }
     }
 
@@ -95,23 +126,122 @@ final class EWDroneEntity: AttackDroneEntity {
         guard !isHit else { return }
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
-        spriteNode.position.x += velocity.dx * CGFloat(seconds)
-        spriteNode.position.y += velocity.dy * CGFloat(seconds)
+        if !isReturningToBase && !hasActiveTowerTargets(from: spriteNode) {
+            beginReturnToBase()
+        }
 
-        // Crackling jamming lightning instead of expanding ring
-        jammingPulseTimer += seconds
-        if jammingPulseTimer >= nextLightningDelay {
-            jammingPulseTimer = 0
+        if currentWaypointIndex < waypoints.count {
+            let target = waypoints[currentWaypointIndex]
+            let dx = target.x - spriteNode.position.x
+            let dy = target.y - spriteNode.position.y
+            let dist = sqrt(dx * dx + dy * dy)
+
+            if dist <= waypointArrivalRadius {
+                advanceToNextWaypoint()
+                if currentWaypointIndex >= waypoints.count { return }
+            } else {
+                steerToward(target, from: spriteNode, deltaTime: CGFloat(seconds))
+            }
+        } else {
+            reachedDestination()
+            return
+        }
+
+        recordEscortPose(deltaTime: seconds)
+
+        // Crackling EW lightning instead of a persistent radius effect.
+        lightningTimer += seconds
+        if lightningTimer >= nextLightningDelay {
+            lightningTimer = 0
             nextLightningDelay = TimeInterval.random(in: 0.6...1.4)
-            spawnJammingLightning(at: spriteNode)
+            spawnEWLightning(at: spriteNode)
         }
 
-        burstTimer += seconds
-        if burstTimer >= nextBurstDelay {
-            burstTimer = 0
-            nextBurstDelay = TimeInterval.random(in: 1.8...2.8)
-            spawnJammingBurst(at: spriteNode)
+    }
+
+    private func beginReturnToBase() {
+        isReturningToBase = true
+        waypoints = [homePoint]
+        currentWaypointIndex = 0
+        angularVelocity = 0
+    }
+
+    private func hasActiveTowerTargets(from spriteNode: SKSpriteNode) -> Bool {
+        guard let scene = spriteNode.scene as? InPlaySKScene,
+              let towerPlacement = scene.towerPlacement else { return true }
+        return towerPlacement.towers.contains { tower in
+            guard let stats = tower.stats else { return false }
+            return !stats.isDisabled
         }
+    }
+
+    private func steerToward(_ target: CGPoint, from spriteNode: SKSpriteNode, deltaTime dt: CGFloat) {
+        let pos = spriteNode.position
+        let dx = target.x - pos.x
+        let dy = target.y - pos.y
+        let dist = max(1, sqrt(dx * dx + dy * dy))
+        let desiredHeading = atan2(dy / dist, dx / dist)
+        let headingDelta = normalizedAngle(desiredHeading - heading)
+
+        let maxTurnRate = Constants.EW.ewDroneSpeed / Constants.EW.ewDroneMinTurnRadius
+        let maxAngularAcceleration = Constants.EW.ewDroneAngularAcceleration
+        let targetAngularVelocity = targetTurnRate(
+            for: headingDelta,
+            maxTurnRate: maxTurnRate,
+            maxAngularAcceleration: maxAngularAcceleration
+        )
+        angularVelocity = move(
+            angularVelocity,
+            toward: targetAngularVelocity,
+            maxDelta: maxAngularAcceleration * dt
+        )
+
+        let turnStep = angularVelocity * dt
+        if wouldOvershoot(turnStep: turnStep, remaining: headingDelta) {
+            heading = desiredHeading
+            angularVelocity = 0
+        } else {
+            heading = normalizedAngle(heading + turnStep)
+        }
+
+        let step = speed * dt
+        spriteNode.position = CGPoint(
+            x: pos.x + cos(heading) * step,
+            y: pos.y + sin(heading) * step
+        )
+        spriteNode.zRotation = heading - .pi / 2
+        velocity = CGVector(dx: cos(heading) * speed, dy: sin(heading) * speed)
+    }
+
+    private func targetTurnRate(
+        for headingDelta: CGFloat,
+        maxTurnRate: CGFloat,
+        maxAngularAcceleration: CGFloat
+    ) -> CGFloat {
+        let error = abs(headingDelta)
+        guard error > 0.001 else { return 0 }
+        let sign: CGFloat = headingDelta >= 0 ? 1 : -1
+        let stoppingLimitedRate = sqrt(2 * maxAngularAcceleration * error)
+        return sign * min(maxTurnRate, stoppingLimitedRate)
+    }
+
+    private func move(_ value: CGFloat, toward target: CGFloat, maxDelta: CGFloat) -> CGFloat {
+        if value < target {
+            return min(value + maxDelta, target)
+        }
+        return max(value - maxDelta, target)
+    }
+
+    private func wouldOvershoot(turnStep: CGFloat, remaining: CGFloat) -> Bool {
+        guard turnStep * remaining > 0 else { return false }
+        return abs(turnStep) > abs(remaining)
+    }
+
+    private func normalizedAngle(_ angle: CGFloat) -> CGFloat {
+        var result = angle
+        while result > .pi { result -= 2 * .pi }
+        while result < -.pi { result += 2 * .pi }
+        return result
     }
 
     /// Spawns several copies of the SAME bolt sprite around the drone at
@@ -121,12 +251,12 @@ final class EWDroneEntity: AttackDroneEntity {
     /// (jagged / forked / branching / twin). All bolts are parented to the
     /// drone so they follow its motion and scaled UNIFORMLY to keep native
     /// PNG proportions. Fades out over ~0.18s.
-    private func spawnJammingLightning(at spriteNode: SKSpriteNode) {
+    private func spawnEWLightning(at spriteNode: SKSpriteNode) {
         let textures = AnimationTextureCache.shared.ewBoltTextures
         guard let texture = textures.randomElement() else {
             let angle = CGFloat.random(in: 0..<(.pi * 2))
             spawnFallbackBolt(parent: spriteNode, angle: angle)
-            applyLightningDamage(at: spriteNode, angles: [angle], boltLength: jamRadius)
+            applyLightningDamage(at: spriteNode)
             return
         }
 
@@ -145,43 +275,23 @@ final class EWDroneEntity: AttackDroneEntity {
             angles.append(angle)
         }
 
-        let texSize = texture.size()
-        let scale = (jamRadius / 1.5) / max(texSize.width, texSize.height)
-        applyLightningDamage(at: spriteNode, angles: angles,
-                             boltLength: texSize.height * scale)
+        applyLightningDamage(at: spriteNode)
     }
 
-    /// For each bolt's drone-local angle, projects every tower onto the bolt
-    /// segment in world space and damages the ones inside the hit corridor.
-    /// Each tower can be struck at most once per discharge.
-    private func applyLightningDamage(at spriteNode: SKSpriteNode,
-                                       angles: [CGFloat],
-                                       boltLength: CGFloat) {
+    /// Each discharge damages active towers inside the EW effect radius.
+    private func applyLightningDamage(at spriteNode: SKSpriteNode) {
         guard let scene = spriteNode.scene as? InPlaySKScene,
               let towerPlacement = scene.towerPlacement else { return }
         let dronePos = spriteNode.position
-        let droneRot = spriteNode.zRotation
-        let halfWidth = Constants.EW.ewLightningHitHalfWidth
+        let radiusSq = effectRadius * effectRadius
 
-        var struckIDs = Set<ObjectIdentifier>()
-        for angle in angles {
-            let worldAngle = angle + droneRot
-            let dx = cos(worldAngle)
-            let dy = sin(worldAngle)
-            for tower in towerPlacement.towers {
-                let id = ObjectIdentifier(tower)
-                guard !struckIDs.contains(id) else { continue }
-                guard let stats = tower.stats, !stats.isDisabled else { continue }
-                let towerPos = tower.worldPosition
-                let rx = towerPos.x - dronePos.x
-                let ry = towerPos.y - dronePos.y
-                let along = rx * dx + ry * dy
-                guard along >= 0, along <= boltLength else { continue }
-                let perp = abs(rx * (-dy) + ry * dx)
-                guard perp <= halfWidth else { continue }
-                struckIDs.insert(id)
-                tower.takeBombDamage(Constants.EW.ewLightningTowerDamage)
-            }
+        for tower in towerPlacement.towers {
+            guard let stats = tower.stats, !stats.isDisabled else { continue }
+            let towerPos = tower.worldPosition
+            let dx = towerPos.x - dronePos.x
+            let dy = towerPos.y - dronePos.y
+            guard dx * dx + dy * dy <= radiusSq else { continue }
+            tower.takeBombDamage(Constants.EW.ewLightningTowerDamage)
         }
     }
 
@@ -192,9 +302,9 @@ final class EWDroneEntity: AttackDroneEntity {
         // bolt's origin and the bolt extends outward in the rotation direction.
         bolt.anchorPoint = CGPoint(x: 0.5, y: 1.0)
         // Uniform scale: keep the PNG's native aspect ratio. Long axis of the
-        // sprite lands at jamRadius / 1.5 ≈ 100 pt in scene units.
+        // sprite lands at effectRadius / 1.5 ≈ 100 pt in scene units.
         let texSize = texture.size()
-        let scale = (jamRadius / 1.5) / max(texSize.width, texSize.height)
+        let scale = (effectRadius / 1.5) / max(texSize.width, texSize.height)
         bolt.setScale(scale)
         bolt.position = .zero
         // Local -y → drone-local direction `angle` ⇒ zRotation = angle + π/2.
@@ -206,30 +316,6 @@ final class EWDroneEntity: AttackDroneEntity {
 
         bolt.run(SKAction.sequence([
             SKAction.fadeOut(withDuration: 0.18),
-            SKAction.removeFromParent()
-        ]))
-    }
-
-    /// Radial corona burst centered on the drone — uses fx_ew_bolt_burst with
-    /// its empty middle aligned over the drone silhouette. Parented to the
-    /// drone so it travels with it; scaled uniformly to preserve the original
-    /// 1:1 sprite proportions.
-    private func spawnJammingBurst(at spriteNode: SKSpriteNode) {
-        guard let texture = AnimationTextureCache.shared.ewBoltBurst else { return }
-        let burst = SKSpriteNode(texture: texture)
-        let texSize = texture.size()
-        let scale = (jamRadius * 1.1 / 1.5) / max(texSize.width, texSize.height)
-        burst.setScale(scale)
-        burst.position = .zero
-        burst.zRotation = CGFloat.random(in: 0..<(.pi * 2))
-        burst.alpha = 0.0
-        burst.blendMode = .add
-        burst.zPosition = relativeZPos(under: spriteNode, offset: -1)
-        spriteNode.addChild(burst)
-
-        burst.run(SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.85, duration: 0.08),
-            SKAction.fadeOut(withDuration: 0.32),
             SKAction.removeFromParent()
         ]))
     }
@@ -247,7 +333,7 @@ final class EWDroneEntity: AttackDroneEntity {
     }
 
     private func spawnFallbackBolt(parent: SKSpriteNode, angle: CGFloat) {
-        let dist = jamRadius
+        let dist = effectRadius
         let endpoint = CGPoint(x: cos(angle) * dist, y: sin(angle) * dist)
         let perpX = -sin(angle)
         let perpY = cos(angle)
@@ -280,18 +366,8 @@ final class EWDroneEntity: AttackDroneEntity {
         ]))
     }
 
-    /// Check if a tower at `towerPos` is within jamming range.
-    func isJamming(towerAt towerPos: CGPoint) -> Bool {
-        guard !isHit else { return false }
-        guard let dronePos = component(ofType: SpriteComponent.self)?.spriteNode.position else { return false }
-        let dx = dronePos.x - towerPos.x
-        let dy = dronePos.y - towerPos.y
-        return dx * dx + dy * dy <= jamRadius * jamRadius
-    }
-
     override func didHit() {
         isHit = true
-        jammingRingNode?.removeFromParent()
 
         let physicBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody
         physicBody?.contactTestBitMask = 0

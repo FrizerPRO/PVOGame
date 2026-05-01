@@ -255,12 +255,7 @@ class TowerTargetingComponent: GKComponent {
         } else {
             targetAltitude = .low
         }
-        var accuracy = stats.towerType.accuracy(against: targetAltitude)
-        if let tower = entity as? TowerEntity,
-           let scene = tower.component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene {
-            // Apply EW jamming debuff
-            accuracy *= scene.ewJammingMultiplier(for: tower)
-        }
+        let accuracy = stats.towerType.accuracy(against: targetAltitude)
         let isHit = CGFloat.random(in: 0...1) < min(accuracy, 1.0)
 
         let dx = target.x - origin.x

@@ -158,10 +158,6 @@ extension InPlaySKScene {
         aliveDrones.removeAll(keepingCapacity: true)
         aliveNonMineLayerDrones.removeAll(keepingCapacity: true)
         aliveMissileCount = 0
-        jammedTowerIDs.removeAll(keepingCapacity: true)
-
-        // Collect active EW drone positions for jamming calculation
-        var ewDronePositions = [(EWDroneEntity, CGPoint)]()
 
         for drone in activeDrones where !drone.isHit {
             aliveDrones.append(drone)
@@ -170,10 +166,6 @@ extension InPlaySKScene {
             }
             if drone is EnemyMissileEntity || drone is HarmMissileEntity {
                 aliveMissileCount += 1
-            }
-            if let ewDrone = drone as? EWDroneEntity,
-               let pos = ewDrone.component(ofType: SpriteComponent.self)?.spriteNode.position {
-                ewDronePositions.append((ewDrone, pos))
             }
         }
 
@@ -194,19 +186,6 @@ extension InPlaySKScene {
             for tower in towerPlacement.towers {
                 guard let stats = tower.stats, stats.towerType == .radar, !stats.isDisabled else { continue }
                 activeRadars.append((tower.worldPosition, stats.range * stats.range))
-            }
-        }
-
-        // Cache EW jamming
-        if !ewDronePositions.isEmpty, let towerPlacement {
-            for tower in towerPlacement.towers {
-                let towerPos = tower.worldPosition
-                for (ewDrone, _) in ewDronePositions {
-                    if ewDrone.isJamming(towerAt: towerPos) {
-                        jammedTowerIDs.insert(ObjectIdentifier(tower))
-                        break
-                    }
-                }
             }
         }
 

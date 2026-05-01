@@ -688,36 +688,36 @@ struct LevelDefinition {
 
     // MARK: - Test: EW Drone
 
-    /// Test level for EW (electronic warfare) drone visuals and jamming.
-    /// - 99999 resources, infinite lives, instant conveyor, all towers.
-    /// - Wave 1: 3 Heavy drones, no other enemies — clean look at the
-    ///           Bayraktar-style cruise → strike → egress profile.
-    /// - Wave 2: 2 Heavy drones + regular drones — verify gun towers vs
-    ///           medium-altitude stand-off bombers.
-    /// - Wave 3: 3 Heavy drones + mixed combat (lancets, kamikaze, shaheds) —
-    ///           stress test: multiple stand-off strikes during real engagement.
+    /// Test level for EW (electronic warfare) drone tower strikes.
+    /// - 99999 resources, infinite lives, instant conveyor, no rocket towers.
+    /// - 10 waves: EW convoy combo only.
     static let testEWDrone: LevelDefinition = {
-        let w: [WaveDefinition] = [
-            // Wave 1: pure Heavy — slow trickle, easy to read each strike.
-            .campaign(drones: 0, speed: 45, interval: 2.0, batch: 1, health: 4,
-                      heavy: 3),
-            // Wave 2: Heavy under combat — Heavy + drones, watch towers split
-            // between low-altitude targets and medium-altitude bombers.
-            .campaign(drones: 8, speed: 55, interval: 1.0, batch: 2, health: 2,
-                      heavy: 2),
-            // Wave 3: full mix — multiple Heavies + lancets/kamikaze/shaheds.
-            .campaign(drones: 6, speed: 55, interval: 0.9, batch: 2, altitude: .medium, health: 3,
-                      kamikaze: 4, heavy: 3, shahed: 12, lancet: 3, shahedFormation: .chevron),
+        let ewCombo = WaveScript([
+            ScriptEvent(at: 0.0, .composite(.ewConvoy, side: .top))
+        ])
+        let w: [WaveDefinition] = (0..<10).map { _ in
+            WaveDefinition.campaign(drones: 0, speed: 0, interval: 1.0, batch: 1, health: 1,
+                                    script: ewCombo)
+        }
+        let nonRocketTowers: [TowerType] = [.autocannon, .ciws, .radar, .ewTower, .gepard, .oilRefinery]
+        let towers: [(row: Int, col: Int, type: TowerType)] = [
+            (row: 2, col: 2, type: .radar),
+            (row: 4, col: 7, type: .autocannon),
+            (row: 6, col: 4, type: .gepard),
+            (row: 8, col: 6, type: .ewTower),
+            (row: 10, col: 3, type: .ciws),
+            (row: 12, col: 6, type: .oilRefinery),
         ]
         return LevelDefinition(
             gridLayout: sharedLayout, dronePaths: sharedPaths,
             waves: w, startingResources: 99999,
-            availableTowers: TowerType.allCases,
+            availableTowers: nonRocketTowers,
             settlementCount: 0,
-            guaranteedTowers: TowerType.allCases,
-            conveyorSlotCount: TowerType.allCases.count,
+            guaranteedTowers: nonRocketTowers,
+            conveyorSlotCount: nonRocketTowers.count,
             instantConveyor: true,
-            infiniteLives: true
+            infiniteLives: true,
+            prePlacedTowers: towers
         )
     }()
 }
@@ -946,10 +946,9 @@ enum ComboLibrary {
         ])
     }
 
-    // 19 — Blinding Strike (EW jam → HARM → Cruise)
-    // EW convoy degrades tower accuracy/turn-rate first; HARM salvo arrives
-    // while jamming is active so radars can't track it well; cruise tail
-    // exploits the surviving radar damage.
+    // 19 — Blinding Strike (EW tower strikes → HARM → Cruise)
+    // EW convoy damages air-defense towers first; HARM salvo follows against
+    // surviving emitters, and the cruise tail exploits the weakened screen.
     static func blindingStrike() -> WaveScript {
         WaveScript([
             ScriptEvent(at: 0.0,  .composite(.ewConvoy, side: .top)),
@@ -1013,7 +1012,7 @@ enum ComboLibrary {
     }
 
     // 24 — Total Saturation (BOSS-tier "everything at once")
-    // Final exam: jamming + multi-altitude + magazine drain + tower-killers +
+    // Final exam: EW tower strikes + multi-altitude + magazine drain + tower-killers +
     // swarm cover, all overlapping. Designed for late endless / final boss.
     static func totalSaturation() -> WaveScript {
         WaveScript([

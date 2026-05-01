@@ -77,6 +77,7 @@ final class HeavyDroneEntity: AttackDroneEntity {
     private var heading: CGFloat = -.pi / 2 // initial: nose down
     private var angularVelocity: CGFloat = 0
     private var flightSpeed: CGFloat = Constants.AdvancedEnemies.heavyDroneSpeed
+    private var previousPosition: CGPoint?
     private var legStart: CGPoint?
     private var waypoints: [HeavyDroneWaypoint] = []
     private var currentWaypointIndex: Int = 0
@@ -116,7 +117,7 @@ final class HeavyDroneEntity: AttackDroneEntity {
         super.init(
             damage: 1,
             speed: Constants.AdvancedEnemies.heavyDroneSpeed,
-            imageName: "Drone",
+            imageName: "heavy_drone",
             flyingPath: flyingPath
         )
         removeComponent(ofType: FlyingProjectileComponent.self)
@@ -124,9 +125,15 @@ final class HeavyDroneEntity: AttackDroneEntity {
 
         let scale = Constants.AdvancedEnemies.heavyDroneSpriteScale
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
-            spriteNode.color = .clear
-            spriteNode.colorBlendFactor = 1.0
-            buildBayraktarSilhouette(on: spriteNode, scale: scale)
+            if UIImage(named: "heavy_drone") != nil {
+                spriteNode.texture = SKTexture(imageNamed: "heavy_drone")
+                spriteNode.color = .white
+                spriteNode.colorBlendFactor = 0
+            } else {
+                spriteNode.color = .clear
+                spriteNode.colorBlendFactor = 1.0
+                buildBayraktarSilhouette(on: spriteNode, scale: scale)
+            }
             attachUnderWingBombs(on: spriteNode, scale: scale)
             attachWingtipVortexEmitters(on: spriteNode, scale: scale)
         }
@@ -169,32 +176,25 @@ final class HeavyDroneEntity: AttackDroneEntity {
 
         var wp = waypoints[currentWaypointIndex]
         let pos = spriteNode.position
+        let previousPos = previousPosition ?? pos
         if legStart == nil { beginCurrentLeg(from: pos) }
         var dist = distance(from: pos, to: wp.position)
 
-        // Bomb release: trigger the moment the drone passes overhead
-        // laterally. Doing this here (rather than only on waypoint
-        // arrival) means the bomb separates exactly when the drone
-        // visually crosses the tower, even if the drone overshoots
-        // the release waypoint's vertical position. The climb-out
-        // sprite tween fires later, on `strikeExit` arrival — drone
-        // lingers low for a beat after release before recovering.
+        // Bomb release: trigger when the drone center passes over the
+        // tower center, including the segment between the previous and
+        // current frame. A lateral-only gate can drop while only a wing
+        // crosses the tower, which looks wrong for a precision strike.
         if case .strikeRelease(let targetRef) = wp.kind, !bombReleasedForCurrentStrike {
-            let lateralTolerance = Constants.AdvancedEnemies.heavyDroneStrikeBombReleaseLateralTolerance
-            if let target = targetRef.tower,
-               abs(pos.x - target.worldPosition.x) < lateralTolerance {
-                if !(target.stats?.isDisabled ?? true) {
-                    launchBomb(at: target, from: spriteNode, in: scene)
-                    pickedTargets.append(target)
-                }
-                bombsLaunched += 1
-                bombReleasedForCurrentStrike = true
-                if currentTarget === target { currentTarget = nil }
-
-                // Lateral-overflight release is the real completion condition
+            if releaseBombIfReady(
+                targetRef: targetRef,
+                currentPosition: pos,
+                previousPosition: previousPos,
+                spriteNode: spriteNode,
+                in: scene
+            ) {
+                // Center-over-target release is the real completion condition
                 // for this waypoint. Keep flying through to strikeExit instead
-                // of continuing to chase the release point and risking a visible
-                // orbit around it.
+                // of continuing to chase the release point.
                 guard advanceCurrentWaypoint(spriteNode: spriteNode, in: scene, runArrival: false) else { return }
                 wp = waypoints[currentWaypointIndex]
                 dist = distance(from: pos, to: wp.position)
@@ -229,12 +229,14 @@ final class HeavyDroneEntity: AttackDroneEntity {
         // heading will carry the drone and blends the target back inside
         // the soft corridor before the fixed-wing turn radius clips a side.
         let routeTarget = lookAheadTarget(from: pos)
-        let steeringTarget = boundaryAdjustedTarget(
-            routeTarget,
-            from: pos,
-            scene: scene,
-            speed: forwardSpeed
-        )
+        let steeringTarget = shouldHoldPreciseReleaseTarget(wp)
+            ? routeTarget
+            : boundaryAdjustedTarget(
+                routeTarget,
+                from: pos,
+                scene: scene,
+                speed: forwardSpeed
+            )
         let steerDX = steeringTarget.x - pos.x
         let steerDY = steeringTarget.y - pos.y
         let steerDist = hypot(steerDX, steerDY)
@@ -268,10 +270,12 @@ final class HeavyDroneEntity: AttackDroneEntity {
 
         // Integrate position along the new heading.
         let dpos = forwardSpeed * dt
-        spriteNode.position = CGPoint(
+        let newPosition = CGPoint(
             x: pos.x + dpos * cos(heading),
             y: pos.y + dpos * sin(heading)
         )
+        previousPosition = pos
+        spriteNode.position = newPosition
 
         // Sprite local +Y is the nose; rotate so heading aligns.
         spriteNode.zRotation = heading - .pi / 2
@@ -381,6 +385,9 @@ final class HeavyDroneEntity: AttackDroneEntity {
         from position: CGPoint,
         distanceToWaypoint: CGFloat
     ) -> Bool {
+        if case .strikeRelease = wp.kind, !bombReleasedForCurrentStrike {
+            return false
+        }
         if distanceToWaypoint < wp.arrivalRadius { return true }
         return hasPassedWaypointGate(position: position, waypoint: wp)
     }
@@ -398,6 +405,10 @@ final class HeavyDroneEntity: AttackDroneEntity {
 
     private func lookAheadTarget(from position: CGPoint) -> CGPoint {
         guard currentWaypointIndex < waypoints.count else { return position }
+        let current = waypoints[currentWaypointIndex]
+        if case .strikeRelease = current.kind, !bombReleasedForCurrentStrike {
+            return current.position
+        }
         var remaining = Constants.AdvancedEnemies.heavyDronePathLookAheadDistance
         var index = currentWaypointIndex
         var cursor = projectedPointOnCurrentLeg(from: position)
@@ -416,6 +427,13 @@ final class HeavyDroneEntity: AttackDroneEntity {
         }
 
         return cursor
+    }
+
+    private func shouldHoldPreciseReleaseTarget(_ wp: HeavyDroneWaypoint) -> Bool {
+        if case .strikeRelease = wp.kind, !bombReleasedForCurrentStrike {
+            return true
+        }
+        return false
     }
 
     private func boundaryAdjustedTarget(
@@ -498,6 +516,75 @@ final class HeavyDroneEntity: AttackDroneEntity {
         )
     }
 
+    private func releaseBombIfReady(
+        targetRef: WeakTowerRef,
+        currentPosition: CGPoint,
+        previousPosition: CGPoint,
+        spriteNode: SKSpriteNode,
+        in scene: InPlaySKScene
+    ) -> Bool {
+        guard let target = targetRef.tower else {
+            consumeCurrentBomb(target: nil)
+            return true
+        }
+
+        let releasePoint = bombReleasePoint(for: target)
+        let releaseRadius = Constants.AdvancedEnemies.heavyDroneStrikeBombReleaseRadius
+        guard segmentIntersectsCircle(
+            from: previousPosition,
+            to: currentPosition,
+            center: releasePoint,
+            radius: releaseRadius
+        ) else {
+            return false
+        }
+
+        if !(target.stats?.isDisabled ?? true) {
+            launchBomb(at: target, from: spriteNode, in: scene)
+            pickedTargets.append(target)
+        }
+        consumeCurrentBomb(target: target)
+        return true
+    }
+
+    private func consumeCurrentBomb(target: TowerEntity?) {
+        bombsLaunched += 1
+        bombReleasedForCurrentStrike = true
+        if let releasedTarget = target {
+            if currentTarget === releasedTarget {
+                currentTarget = nil
+            }
+        } else {
+            currentTarget = nil
+        }
+    }
+
+    private func bombReleasePoint(for target: TowerEntity) -> CGPoint {
+        CGPoint(
+            x: target.worldPosition.x,
+            y: target.worldPosition.y + Constants.AdvancedEnemies.heavyDroneStrikeReleaseCenterYOffset
+        )
+    }
+
+    private func segmentIntersectsCircle(
+        from start: CGPoint,
+        to end: CGPoint,
+        center: CGPoint,
+        radius: CGFloat
+    ) -> Bool {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let lenSq = dx * dx + dy * dy
+        if lenSq <= 1 {
+            return distance(from: end, to: center) <= radius
+        }
+
+        let rawT = ((center.x - start.x) * dx + (center.y - start.y) * dy) / lenSq
+        let t = max(0, min(1, rawT))
+        let closest = CGPoint(x: start.x + dx * t, y: start.y + dy * t)
+        return distance(from: closest, to: center) <= radius
+    }
+
     private func handleWaypointArrival(_ wp: HeavyDroneWaypoint, spriteNode: SKSpriteNode, in scene: InPlaySKScene) {
         switch wp.kind {
         case .transit:
@@ -505,18 +592,11 @@ final class HeavyDroneEntity: AttackDroneEntity {
         case .strikeApproach:
             descendToAttackAltitude(spriteNode: spriteNode)
             bombReleasedForCurrentStrike = false
-        case .strikeRelease(let targetRef):
-            // Fallback: if lateral-overflight release didn't fire
-            // (drone overshot or target moved), force release here.
-            if !bombReleasedForCurrentStrike {
-                if let target = targetRef.tower, !(target.stats?.isDisabled ?? true) {
-                    launchBomb(at: target, from: spriteNode, in: scene)
-                    pickedTargets.append(target)
-                }
-                bombsLaunched += 1
-                bombReleasedForCurrentStrike = true
-                if currentTarget === targetRef.tower { currentTarget = nil }
-            }
+        case .strikeRelease:
+            // Release is handled only by the center-over-target gate in
+            // the update loop; waypoint-radius fallback would allow
+            // visually off-center drops.
+            break
         case .strikeExit:
             // Climb-out: sprite grows back to cruise scale, vortex off.
             // Triggering here (rather than at release) gives a brief
@@ -541,6 +621,7 @@ final class HeavyDroneEntity: AttackDroneEntity {
         heading = -.pi / 2
         angularVelocity = 0
         flightSpeed = Constants.AdvancedEnemies.heavyDroneSpeed
+        previousPosition = spriteNode.position
         planNextStrikeOrEgress(spriteNode: spriteNode, scene: scene)
         beginCurrentLeg(from: spriteNode.position)
     }
@@ -567,11 +648,12 @@ final class HeavyDroneEntity: AttackDroneEntity {
 
         let approachOffset = Constants.AdvancedEnemies.heavyDroneStrikeApproachOffset
         let approachAlt = Constants.AdvancedEnemies.heavyDroneStrikeApproachAltitude
-        let releaseAlt = Constants.AdvancedEnemies.heavyDroneStrikeReleaseAltitude
+        let releaseYOffset = Constants.AdvancedEnemies.heavyDroneStrikeReleaseCenterYOffset
         let exitOffset = Constants.AdvancedEnemies.heavyDroneStrikeExitOffset
         let exitAlt = Constants.AdvancedEnemies.heavyDroneStrikeExitAltitude
         let transitOff = Constants.AdvancedEnemies.heavyDroneTransitSideOffset
         let cruiseFromTop = Constants.AdvancedEnemies.heavyDroneTransitCruiseAltitudeFromTop
+        let maneuverEdgeMargin = strikeManeuverEdgeMargin(scene: scene)
 
         // Pre-strike transit point: high altitude on the approach side
         // of the target. Routing through here gives the drone time to
@@ -580,9 +662,13 @@ final class HeavyDroneEntity: AttackDroneEntity {
         let transitX = clampToCorridor(
             target.worldPosition.x + side * transitOff,
             scene: scene,
-            edgeMargin: 60
+            edgeMargin: maneuverEdgeMargin
         )
-        let transitY = scene.frame.maxY - cruiseFromTop
+        let transitY = strikeSupportY(
+            scene.frame.maxY - cruiseFromTop,
+            targetY: target.worldPosition.y,
+            scene: scene
+        )
         waypoints.append(HeavyDroneWaypoint(
             position: CGPoint(x: transitX, y: transitY),
             kind: .transit,
@@ -594,24 +680,25 @@ final class HeavyDroneEntity: AttackDroneEntity {
         let approachX = clampToCorridor(
             target.worldPosition.x + side * approachOffset,
             scene: scene,
-            edgeMargin: 30
+            edgeMargin: maneuverEdgeMargin
         )
-        let approachY = target.worldPosition.y + approachAlt
+        let approachY = strikeSupportY(
+            target.worldPosition.y + approachAlt,
+            targetY: target.worldPosition.y,
+            scene: scene
+        )
         waypoints.append(HeavyDroneWaypoint(
             position: CGPoint(x: approachX, y: approachY),
             kind: .strikeApproach(target: targetRef),
             arrivalRadius: Constants.AdvancedEnemies.heavyDroneStrikeWaypointArrivalRadius
         ))
 
-        // Release: directly above the target at low altitude. Bomb
-        // separation fires during steering on lateral overflight (or
-        // here as a fallback on arrival).
-        let releaseX = clampToCorridor(
-            target.worldPosition.x,
-            scene: scene,
-            edgeMargin: 20
-        )
-        let releaseY = target.worldPosition.y + releaseAlt
+        // Release: centered on the tower in map coordinates. The low
+        // altitude is shown by sprite scale/AltitudeComponent; shifting
+        // this waypoint in screen-space makes the overflight look like
+        // only a wing clipped the tower.
+        let releaseX = target.worldPosition.x
+        let releaseY = target.worldPosition.y + releaseYOffset
         waypoints.append(HeavyDroneWaypoint(
             position: CGPoint(x: releaseX, y: releaseY),
             kind: .strikeRelease(target: targetRef),
@@ -628,9 +715,13 @@ final class HeavyDroneEntity: AttackDroneEntity {
         let exitX = clampToCorridor(
             target.worldPosition.x - side * exitOffset,
             scene: scene,
-            edgeMargin: 30
+            edgeMargin: maneuverEdgeMargin
         )
-        let exitY = target.worldPosition.y + exitAlt
+        let exitY = strikeSupportY(
+            target.worldPosition.y + exitAlt,
+            targetY: target.worldPosition.y,
+            scene: scene
+        )
         waypoints.append(HeavyDroneWaypoint(
             position: CGPoint(x: exitX, y: exitY),
             kind: .strikeExit,
@@ -653,7 +744,24 @@ final class HeavyDroneEntity: AttackDroneEntity {
     }
 
     private func clampToCorridor(_ x: CGFloat, scene: InPlaySKScene, edgeMargin: CGFloat) -> CGFloat {
-        return max(scene.frame.minX + edgeMargin, min(scene.frame.maxX - edgeMargin, x))
+        let minX = scene.frame.minX + edgeMargin
+        let maxX = scene.frame.maxX - edgeMargin
+        guard minX <= maxX else { return scene.frame.midX }
+        return max(minX, min(maxX, x))
+    }
+
+    private func strikeManeuverEdgeMargin(scene: InPlaySKScene) -> CGFloat {
+        let desired = Constants.AdvancedEnemies.heavyDroneStrikeManeuverEdgeMargin
+        let maximumUsable = max(30, scene.frame.width * 0.42)
+        return min(desired, maximumUsable)
+    }
+
+    private func strikeSupportY(_ desiredY: CGFloat, targetY: CGFloat, scene: InPlaySKScene) -> CGFloat {
+        let topLimit = scene.frame.maxY
+            - scene.safeTop
+            - Constants.AdvancedEnemies.heavyDroneStrikeSupportTopMargin
+        let upperLimit = max(targetY, topLimit)
+        return min(desiredY, upperLimit)
     }
 
     // MARK: - Target picking
@@ -668,13 +776,35 @@ final class HeavyDroneEntity: AttackDroneEntity {
     private func approachSide(for target: TowerEntity, currentDronePos: CGPoint, scene: InPlaySKScene) -> CGFloat {
         let alignmentThreshold: CGFloat = 40
         let dx = currentDronePos.x - target.worldPosition.x
+        let preferredSide: CGFloat
         if abs(dx) >= alignmentThreshold {
-            return dx > 0 ? 1 : -1
+            preferredSide = dx > 0 ? 1 : -1
+        } else {
+            let leftSpace = target.worldPosition.x - scene.frame.minX
+            let rightSpace = scene.frame.maxX - target.worldPosition.x
+            if abs(leftSpace - rightSpace) < 16 {
+                preferredSide = orbitTurnDirection
+            } else {
+                preferredSide = leftSpace > rightSpace ? -1 : 1
+            }
         }
-        let leftSpace = target.worldPosition.x - scene.frame.minX
-        let rightSpace = scene.frame.maxX - target.worldPosition.x
-        if abs(leftSpace - rightSpace) < 16 { return orbitTurnDirection }
-        return leftSpace > rightSpace ? -1 : 1
+        return sideWithManeuverRoom(preferredSide, for: target, scene: scene)
+    }
+
+    private func sideWithManeuverRoom(_ preferredSide: CGFloat, for target: TowerEntity, scene: InPlaySKScene) -> CGFloat {
+        let margin = strikeManeuverEdgeMargin(scene: scene)
+        let minX = scene.frame.minX + margin
+        let maxX = scene.frame.maxX - margin
+        guard minX < maxX else { return preferredSide }
+
+        let targetX = target.worldPosition.x
+        let leftRoom = targetX - minX
+        let rightRoom = maxX - targetX
+        let minRoom = Constants.AdvancedEnemies.heavyDroneStrikeMinSideRoom
+
+        if preferredSide > 0, rightRoom >= minRoom { return 1 }
+        if preferredSide < 0, leftRoom >= minRoom { return -1 }
+        return rightRoom > leftRoom ? 1 : -1
     }
 
     private func pickNextTarget(scene: InPlaySKScene, currentPos: CGPoint) -> TowerEntity? {

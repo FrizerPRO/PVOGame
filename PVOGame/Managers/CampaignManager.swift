@@ -135,9 +135,9 @@ class CampaignManager {
         ),
         CampaignLevel(
             id: "test_ew",
-            name: "TEST: Heavy Drone",
-            subtitle: "3 waves — Bayraktar-style strikes",
-            waveCount: 3,
+            name: "TEST: EW Drone",
+            subtitle: "10 waves — EW convoy",
+            waveCount: 10,
             definition: LevelDefinition.testEWDrone,
             requiredLevel: nil
         ),

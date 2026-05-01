@@ -91,7 +91,6 @@
 		E9BC12B229C0D93200BAC76F /* DickGun.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BC12B129C0D93200BAC76F /* DickGun.swift */; };
 		EE3C41F0087C21F639F74984 /* ShadowComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 730B3560840256CE1DCC1AB5 /* ShadowComponent.swift */; };
 		F307F65196D3217F749A6623 /* HarmMissileEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EBB30BC3A53DAC4BF70B7BE /* HarmMissileEntity.swift */; };
-		FE149B9875CAAEC930349665 /* EWJammingComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E1C5B0D0A67BF2B9555FD8 /* EWJammingComponent.swift */; };
 		FFF5B111B75E8D0D686450BB /* FireControlState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DB3F8BACC96B363350118D /* FireControlState.swift */; };
 /* End PBXBuildFile section */
 
@@ -127,7 +126,6 @@
 		3BE2C3DA3DFC623DED35C43E /* ConveyorBeltManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConveyorBeltManager.swift; sourceTree = "<group>"; };
 		3EBB30BC3A53DAC4BF70B7BE /* HarmMissileEntity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HarmMissileEntity.swift; sourceTree = "<group>"; };
 		40491258680FF407F42A4C77 /* InPlaySKScene+GameEvents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "InPlaySKScene+GameEvents.swift"; sourceTree = "<group>"; };
-		42E1C5B0D0A67BF2B9555FD8 /* EWJammingComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EWJammingComponent.swift; sourceTree = "<group>"; };
 		45D7F4B210E795096BD2E49B /* InGameSettingsMenu.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InGameSettingsMenu.swift; sourceTree = "<group>"; };
 		483A5CB80C901133E62EF9CB /* DroneFlightPath.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DroneFlightPath.swift; sourceTree = "<group>"; };
 		4F78C1EF5EB59582A3C456C5 /* GridPositionComponent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GridPositionComponent.swift; sourceTree = "<group>"; };
@@ -346,7 +344,6 @@
 				E9551214293E5A04000137C6 /* RotationComponent.swift */,
 				E9356FFC2959A564005BC143 /* ShootComponent.swift */,
 				E96D79F82964BA4700D47A57 /* FlyingProjectileComponent.swift */,
-				42E1C5B0D0A67BF2B9555FD8 /* EWJammingComponent.swift */,
 				A3D522EBC1D29A42138FB62C /* EWTowerComponent.swift */,
 				3A3FAC8A0B193A071848231B /* AnimationTextureCache.swift */,
 				6653B71D2849E72FAC6A5DB8 /* TowerAnimationComponent.swift */,
@@ -662,7 +659,6 @@
 				8117D7CD7C573AA2F49852BD /* CruiseMissileEntity.swift in Sources */,
 				DB305973B7474676C7633779 /* SwarmCloudEntity.swift in Sources */,
 				7710380A16E26668152F1351 /* FighterEntity.swift in Sources */,
-				FE149B9875CAAEC930349665 /* EWJammingComponent.swift in Sources */,
 				DB002D25F8E4889AC3276E95 /* EWTowerComponent.swift in Sources */,
 				30E74BAA2637D734FEFBDA93 /* AbilityButton.swift in Sources */,
 				107B032D61309B93264DB743 /* AbilityManager.swift in Sources */,

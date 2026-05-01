@@ -61,10 +61,8 @@ final class AnimationTextureCache {
     private(set) var rocketTrailPuff: SKTexture?     // fx_rocket_trail_puff
 
     /// Directional EW lightning bolt sprites (jagged / forked / branching / twin).
-    /// Picked at random for each jamming discharge from the EW drone.
+    /// Picked at random for each lightning discharge from the EW drone.
     private(set) var ewBoltTextures: [SKTexture] = []
-    /// Radial corona burst sprite, designed to overlay the EW drone itself.
-    private(set) var ewBoltBurst: SKTexture?
 
     // MARK: - Drone textures
 
@@ -103,11 +101,10 @@ final class AnimationTextureCache {
         ewBoltTextures = ["fx_ew_bolt_jagged", "fx_ew_bolt_forked",
                           "fx_ew_bolt_branching", "fx_ew_bolt_twin"]
             .compactMap { loadOptionalTexture($0) }
-        ewBoltBurst = loadOptionalTexture("fx_ew_bolt_burst")
 
         // Load drone textures
         let droneNames = [
-            "drone_regular", "drone_shahed", "drone_orlan", "drone_kamikaze",
+            "drone_shahed", "drone_orlan", "drone_kamikaze",
             "drone_ew", "drone_heavy", "drone_lancet", "drone_bomber", "drone_swarm"
         ]
         for name in droneNames {

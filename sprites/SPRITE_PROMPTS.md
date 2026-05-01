@@ -160,15 +160,14 @@ Per-sprite subject/palette lives in `generate_sprites.py :: TOWERS`.
 
 | name                          | aspect | refs                        |
 |-------------------------------|--------|-----------------------------|
-| drone_regular                 | 1:1    | —                           |
-| drone_shahed                  | 1:1    | drone_regular               |
-| drone_orlan                   | 1:1    | drone_regular               |
-| drone_kamikaze                | 1:1    | drone_regular               |
-| drone_ew                      | 1:1    | drone_regular               |
-| drone_heavy                   | 1:1    | drone_regular               |
-| drone_lancet                  | 1:1    | drone_regular               |
-| drone_bomber                  | 1:1    | drone_regular               |
-| drone_swarm                   | 1:1    | —                           |
+| drone_shahed                  | 1:1    | —                           |
+| drone_orlan                   | 1:1    | drone_shahed                |
+| drone_kamikaze                | 1:1    | drone_shahed                |
+| drone_ew                      | 1:1    | drone_shahed                |
+| drone_heavy                   | 1:1    | drone_shahed                |
+| drone_lancet                  | 1:1    | drone_shahed                |
+| drone_bomber                  | 1:1    | drone_shahed                |
+| drone_swarm                   | 1:1    | drone_shahed                |
 | bomb_aerial                   | 2:3    | — (side view)               |
 | missile_enemy                 | 9:16   | — (side view)               |
 | missile_harm                  | 9:16   | — (side view)               |
@@ -290,7 +289,7 @@ Definitions: `generate_sprites.py :: SPECIAL`.
 | Category                | Count |
 |-------------------------|-------|
 | Towers (base + part + muzzle) | 19 |
-| Drones and enemy missiles     | 13 |
+| Drones and enemy missiles     | 12 |
 | Player projectiles            | 6  |
 | Simple VFX                    | 6  |
 | Explosion frames (5 + 6 + 7)  | 18 |

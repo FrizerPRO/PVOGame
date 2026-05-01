@@ -65,6 +65,7 @@ extension InPlaySKScene {
     func transitionToDay() {
         guard isNightWave else { return }
         isNightWave = false
+        removeRadarNightVisuals()
 
         let overlay = nightOverlay
         nightOverlay = nil
@@ -84,6 +85,13 @@ extension InPlaySKScene {
 
         // Day = no radar blips. Clear so guns don't keep firing at last-known
         // night positions.
+        nightBlips.removeAll()
+    }
+
+    func removeRadarNightVisuals() {
+        towerPlacement?.towers.forEach {
+            $0.component(ofType: RadarComponent.self)?.removeNightVisuals()
+        }
         nightBlips.removeAll()
     }
 
@@ -180,15 +188,6 @@ extension InPlaySKScene {
             }
         }
         return false
-    }
-
-    // MARK: - EW Jamming
-
-    /// Returns the jamming accuracy multiplier for a tower (1.0 if not jammed).
-    /// Uses per-frame cached jamming set for O(1) lookup.
-    func ewJammingMultiplier(for tower: TowerEntity) -> CGFloat {
-        jammedTowerIDs.contains(ObjectIdentifier(tower))
-            ? Constants.EW.ewDroneAccuracyMultiplier : 1.0
     }
 
     // MARK: - Game Flow

@@ -54,7 +54,6 @@ class InPlaySKScene: SKScene {
     var activeRadars = [(position: CGPoint, rangeSq: CGFloat)]()
     // Per-radar night visuals (range circle + spotted-drone dots) live in
     // RadarComponent; the scene no longer tracks per-tower marker dots.
-    var jammedTowerIDs = Set<ObjectIdentifier>()
     var orlanSpottedTowers = [(id: ObjectIdentifier, position: CGPoint)]()
     var elapsedGameplayTime: TimeInterval = 0
     var interWaveCountdown: TimeInterval = 0
@@ -406,7 +405,7 @@ class InPlaySKScene: SKScene {
 
         if currentPhase == .combat {
             elapsedGameplayTime += scaledDt
-            // Rebuild per-frame caches (alive drones, radar coverage, EW jamming, missile alert)
+            // Rebuild per-frame caches (alive drones, radar coverage, missile alert)
             rebuildFrameCaches()
             // Sync fire control ONCE before entity updates so towers/rockets see fresh data
             fireControlSyncedThisFrame = false

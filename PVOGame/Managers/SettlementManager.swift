@@ -36,8 +36,13 @@ class SettlementManager {
                 cellSize: gridMap.cellSize.width
             )
 
-            gridMap.placeSettlement(ObjectIdentifier(settlement),
-                                    atRow: pos.row, col: pos.col, footprint: footprint)
+            let didPlace = gridMap.placeSettlement(
+                ObjectIdentifier(settlement),
+                atRow: pos.row,
+                col: pos.col,
+                footprint: footprint
+            )
+            guard didPlace else { continue }
 
             if let sprite = settlement.component(ofType: SpriteComponent.self)?.spriteNode {
                 gridLayer.addChild(sprite)

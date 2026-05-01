@@ -381,10 +381,12 @@ extension InPlaySKScene {
                 continue
             }
 
-            // Check if drone reached HQ area (bottom of map). Heavy drones
-            // are excluded — they hunt towers, not HQ; if one ends up here
-            // it's pathing pathology, not a legit HQ touchdown.
-            if !drone.isHit && droneNode.position.y < hqThreshold && !(drone is HeavyDroneEntity) {
+            // Check if drone reached HQ area (bottom of map). Heavy and EW
+            // drones are excluded — they hunt towers, not HQ.
+            if !drone.isHit
+                && droneNode.position.y < hqThreshold
+                && !(drone is HeavyDroneEntity)
+                && !(drone is EWDroneEntity) {
                 onDroneReachedHQ(drone: drone)
                 drone.reachedDestination()
                 removeEntity(drone)

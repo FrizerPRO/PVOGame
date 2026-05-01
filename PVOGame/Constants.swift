@@ -337,16 +337,36 @@ class Constants{
         static let ewDroneFirstWave = 6
         static let ewDroneSpeed: CGFloat = 60
         static let ewDroneHealth = 4
-        static let ewDroneJamRadius: CGFloat = 150
-        static let ewDroneAccuracyMultiplier: CGFloat = 0.4
-        static let ewDroneTurnRateMultiplier: CGFloat = 0.5
+        static let ewDroneEffectRadius: CGFloat = 150
+        static let ewDroneSweepTargetLimit = 5
+        static let ewDroneSweepBottomInsetRows: CGFloat = 2.0
+        static let ewDroneOffscreenSpawnMargin: CGFloat = 160
+        static let ewDroneWaypointArrivalRadius: CGFloat = 34
+        static let ewDroneMinTurnRadius: CGFloat = 78
+        static let ewDroneAngularAcceleration: CGFloat = 1.8
+        static let ewEscortHistoryDuration: TimeInterval = 1.6
+        static let ewEscortLagMin: TimeInterval = 0.16
+        static let ewEscortLagMax: TimeInterval = 0.48
+        static let ewEscortFrontSlotThreshold: CGFloat = -8
+        static let ewEscortSideSlotThreshold: CGFloat = 12
+        static let ewEscortFrontLeadTimeMin: TimeInterval = 0.10
+        static let ewEscortFrontLeadTimeMax: TimeInterval = 0.22
+        static let ewEscortFollowSpeedMin: CGFloat = 92
+        static let ewEscortFollowSpeedMax: CGFloat = 128
+        static let ewEscortCorrectionTime: CGFloat = 0.45
+        static let ewEscortAcceleration: CGFloat = 320
+        static let ewEscortMinForwardSpeedRatio: CGFloat = 0.55
+        static let ewEscortTurnRateMin: CGFloat = 1.7
+        static let ewEscortTurnRateMax: CGFloat = 2.7
+        static let ewEscortWobbleAmplitude: CGFloat = 4
+        static let ewEscortWobbleSpeedMin: CGFloat = 1.2
+        static let ewEscortWobbleSpeedMax: CGFloat = 2.4
+        static let ewEscortSeparationDistance: CGFloat = 24
+        static let ewEscortSeparationStrength: CGFloat = 34
         static let ewDroneReward = 60
         static let ewDroneScore = 300
-        /// Durability damage applied to a tower per bolt strike during a discharge.
+        /// Durability damage applied to each tower inside the EW radius per discharge.
         static let ewLightningTowerDamage = 1
-        /// Half-width of the bolt's hit corridor in points; tower within this perpendicular
-        /// distance of a bolt's segment counts as struck.
-        static let ewLightningHitHalfWidth: CGFloat = 24
         // Player EW tower
         static let ewTowerCost = 175
         static let ewTowerRange: CGFloat = 120
@@ -393,6 +413,7 @@ class Constants{
         static let heavyDroneHealth = 12
         static let heavyDroneBombCount = 2                      // guided bombs released during overflight
         static let heavyDroneBombDamage: Int = 3                // MAM-L-class munition — single hit downs ANY tower (max baseDurability is 3)
+        static let heavyDroneSpriteBaseSize: CGFloat = 55       // square texture size before altitude/role scaling. 25% larger than the original 44 px asset base.
         static let heavyDroneSpriteScale: CGFloat = 1.8         // imposing cruise silhouette
         static let heavyDroneAttackSpriteScale: CGFloat = 0.75  // sprite shrinks during dive — smaller + faster reads as acceleration
         static let heavyDroneAttackSpeedFactor: CGFloat = 1.6   // dive speed multiplier at attack scale — combined with sprite shrink reads as acceleration
@@ -420,17 +441,20 @@ class Constants{
         static let heavyDroneBoundaryPredictionTime: CGFloat = 1.1 // seconds ahead used to anticipate fixed-wing turn radius before crossing the edge.
         static let heavyDroneBoundaryRecoveryLead: CGFloat = 140 // px inside the soft boundary used as recovery target during offscreen/near-edge turns.
         static let heavyDroneSideCleanupOutset: CGFloat = 280    // px outside screen; Heavy is cleaned up here only if still flying farther out.
-        static let heavyDroneStrikeApproachOffset: CGFloat = 150 // lateral px from target where the approach waypoint sits. Approach→release distance = √(150²+100²) = 180 px, and the transit leg lines up the heading before the dive.
-        static let heavyDroneStrikeApproachAltitude: CGFloat = 130 // px above target at the approach waypoint. Combined with release altitude 30 gives a 33.7° dive (atan(100/150)) — matches the spec dive angle. Drone is at cruise scale here.
-        static let heavyDroneStrikeReleaseAltitude: CGFloat = 30 // px above target at the release waypoint. Drone is at attack scale; bomb separates when drone passes overhead.
+        static let heavyDroneStrikeManeuverEdgeMargin: CGFloat = 100 // px from side edges for strike support waypoints. Leaves room for the fixed-wing turn radius instead of asking containment to rescue an edge-hugging approach.
+        static let heavyDroneStrikeSupportTopMargin: CGFloat = 85 // px below safe top for high strike support waypoints. Top-row targets use flatter visible passes instead of routing through HUD/offscreen space.
+        static let heavyDroneStrikeMinSideRoom: CGFloat = 90 // px. If the preferred approach side has less room inside the maneuver corridor, use the opposite side.
+        static let heavyDroneStrikeApproachOffset: CGFloat = 150 // lateral px from target where the approach waypoint sits. Transit→approach→release lines the nose up before the low pass.
+        static let heavyDroneStrikeApproachAltitude: CGFloat = 130 // screen-space lead above the target at the approach waypoint. Visual altitude is handled by scale/AltitudeComponent, not by shifting the release point.
+        static let heavyDroneStrikeReleaseCenterYOffset: CGFloat = 0 // px from tower center for the release waypoint. Must stay centered so the drone visibly overflies the tower before dropping.
         static let heavyDroneStrikeExitOffset: CGFloat = 150    // lateral px past target where the exit waypoint sits. Release→exit mirrors the approach geometry so climb-out stays smooth.
-        static let heavyDroneStrikeExitAltitude: CGFloat = 130  // px above target at the exit waypoint. Same as approach altitude — drone climbs back out with a 33.7° climb angle (mirror of the dive).
+        static let heavyDroneStrikeExitAltitude: CGFloat = 130  // screen-space lead above the target at the exit waypoint; the sprite scale tween carries the visual climb-out.
         static let heavyDroneTransitCruiseAltitudeFromTop: CGFloat = 60 // between strikes the drone routes through `frame.maxY - this` — the climb-out before the next strike. High enough to clear strike altitudes; below the HUD so the silhouette stays visible.
         static let heavyDroneTransitSideOffset: CGFloat = 180   // lateral px from the next target where the pre-strike transit waypoint sits. Long descent leg from transit aligns drone heading with the strike axis by the time it arrives at approach.
         static let heavyDroneEgressTopMargin: CGFloat = 80      // y above frame.maxY where egress completes. Drone is removed once it crosses this line.
         static let heavyDroneEgressSteeringTopMargin: CGFloat = 260 // y above frame.maxY for the steering target, kept far past the removal line so egress is a fly-through instead of a small point to orbit.
         static let heavyDroneEgressArrivalRadius: CGFloat = 120 // fallback radius for egress waypoint arrival if cleanup/removal line did not trigger first.
-        static let heavyDroneStrikeBombReleaseLateralTolerance: CGFloat = 14 // px. Bomb releases when |drone.x - target.x| < this. Sized so the release fires on the frame the drone visually crosses over the tower.
+        static let heavyDroneStrikeBombReleaseRadius: CGFloat = 18 // px. Bomb releases only when the drone center passes through this circle around the tower center.
         static let heavyDroneWaypointArrivalRadius: CGFloat = 30
         static let heavyDroneStrikeWaypointArrivalRadius: CGFloat = 45
         static let heavyDroneDescendDuration: TimeInterval = 0.5 // sprite-scale tween when diving from cruise (1.0) to attack (0.75). Fires on arrival at the strike approach waypoint.

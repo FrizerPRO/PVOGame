@@ -9,6 +9,12 @@ import Foundation
 import GameplayKit
 
 public class AttackDroneEntity: GKEntity, FlyingProjectile{
+    private struct EscortPoseSample {
+        let time: TimeInterval
+        let position: CGPoint
+        let heading: CGFloat
+    }
+
     public var flyingPath: FlyingPath
 
     public var damage: CGFloat
@@ -31,12 +37,23 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
 
     // MARK: Leader-Follow (escort formations)
 
-    /// When non-nil, this drone's sprite is slaved to `leader.position + leaderOffset`
+    /// When non-nil, this drone steers toward a delayed slot behind/around the leader
     /// until the leader dies. Used for "Shahed shield around EW drone"-style escorts.
     public weak var leader: AttackDroneEntity?
-    /// World-space offset from the leader's sprite, locked in at attach time.
+    /// Escort slot offset in leader-local coordinates.
     public var leaderOffset: CGPoint = .zero
     public var isLeaderFollower: Bool = false
+    private var escortPoseClock: TimeInterval = 0
+    private var escortPoseHistory: [EscortPoseSample] = []
+    private var escortLag: TimeInterval = Constants.EW.ewEscortLagMin
+    private var escortLeadTime: TimeInterval = 0
+    private var escortVelocity: CGVector = .zero
+    private var previousEscortSlotTarget: CGPoint?
+    private var escortFollowSpeed: CGFloat = Constants.EW.ewEscortFollowSpeedMin
+    private var escortTurnRate: CGFloat = Constants.EW.ewEscortTurnRateMin
+    private var escortWobblePhase: CGFloat = 0
+    private var escortWobbleSpeed: CGFloat = Constants.EW.ewEscortWobbleSpeedMin
+    private var escortWobbleAmplitude: CGFloat = Constants.EW.ewEscortWobbleAmplitude
 
     public var health: Int
     public var maxHealth: Int
@@ -434,19 +451,45 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         super.update(deltaTime: seconds)
         guard !isHit else { return }
         if isLeaderFollower {
-            applyLeaderFollowTick()
+            applyLeaderFollowTick(deltaTime: CGFloat(seconds))
+        } else {
+            recordEscortPose(deltaTime: seconds)
         }
     }
 
     /// Attach this drone to a leader. Disables its path-following behavior so the
     /// GKAgent doesn't fight the sprite position we drive directly each frame.
-    /// `offset` is in world coordinates relative to the leader sprite at attach time.
+    /// `offset` is in leader-local slot coordinates: x is right/left, negative y is front.
     public func attachToLeader(_ newLeader: AttackDroneEntity, offset: CGPoint) {
         self.leader = newLeader
         self.leaderOffset = offset
         self.isLeaderFollower = true
         self.isFormationFlight = true  // reuse the "sprite drives agent" sync path
+        if offset.y < Constants.EW.ewEscortFrontSlotThreshold {
+            self.escortLag = 0
+            self.escortLeadTime = TimeInterval.random(in: Constants.EW.ewEscortFrontLeadTimeMin...Constants.EW.ewEscortFrontLeadTimeMax)
+        } else if offset.y < Constants.EW.ewEscortSideSlotThreshold {
+            self.escortLag = TimeInterval.random(in: 0...(Constants.EW.ewEscortLagMin * 0.5))
+            self.escortLeadTime = TimeInterval.random(in: 0...(Constants.EW.ewEscortFrontLeadTimeMin * 0.5))
+        } else {
+            self.escortLag = TimeInterval.random(in: Constants.EW.ewEscortLagMin...Constants.EW.ewEscortLagMax)
+            self.escortLeadTime = 0
+        }
+        self.escortFollowSpeed = CGFloat.random(in: Constants.EW.ewEscortFollowSpeedMin...Constants.EW.ewEscortFollowSpeedMax)
+        self.escortTurnRate = CGFloat.random(in: Constants.EW.ewEscortTurnRateMin...Constants.EW.ewEscortTurnRateMax)
+        self.escortWobblePhase = CGFloat.random(in: 0...(2 * .pi))
+        self.escortWobbleSpeed = CGFloat.random(in: Constants.EW.ewEscortWobbleSpeedMin...Constants.EW.ewEscortWobbleSpeedMax)
+        self.escortWobbleAmplitude = Constants.EW.ewEscortWobbleAmplitude * CGFloat.random(in: 0.65...1.15)
+        self.previousEscortSlotTarget = nil
         component(ofType: FlyingProjectileComponent.self)?.behavior?.removeAllGoals()
+
+        if let leaderSprite = newLeader.component(ofType: SpriteComponent.self)?.spriteNode,
+           let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+            let heading = leaderSprite.zRotation + .pi / 2
+            escortVelocity = CGVector(dx: cos(heading) * newLeader.speed,
+                                      dy: sin(heading) * newLeader.speed)
+            spriteNode.zRotation = leaderSprite.zRotation
+        }
     }
 
     /// Detach from leader. Caller is responsible for providing a fresh path via `retargetPath`.
@@ -454,12 +497,99 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         self.leader = nil
         self.isLeaderFollower = false
         self.isFormationFlight = false
+        self.escortVelocity = .zero
+        self.previousEscortSlotTarget = nil
+    }
+
+    func resetEscortPoseHistory() {
+        escortPoseClock = 0
+        escortPoseHistory.removeAll()
+        recordEscortPose(deltaTime: 0)
+    }
+
+    func recordEscortPose(deltaTime seconds: TimeInterval) {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+        escortPoseClock += seconds
+        let sample = EscortPoseSample(
+            time: escortPoseClock,
+            position: spriteNode.position,
+            heading: spriteNode.zRotation + .pi / 2
+        )
+        escortPoseHistory.append(sample)
+
+        let cutoff = escortPoseClock - Constants.EW.ewEscortHistoryDuration
+        while let first = escortPoseHistory.first, first.time < cutoff {
+            escortPoseHistory.removeFirst()
+        }
+    }
+
+    private func sampleEscortPose(lag: TimeInterval) -> EscortPoseSample? {
+        guard !escortPoseHistory.isEmpty else {
+            guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return nil }
+            return EscortPoseSample(
+                time: escortPoseClock,
+                position: spriteNode.position,
+                heading: spriteNode.zRotation + .pi / 2
+            )
+        }
+
+        let targetTime = escortPoseClock - lag
+        guard let first = escortPoseHistory.first else { return nil }
+        if targetTime <= first.time { return first }
+
+        guard let last = escortPoseHistory.last else { return nil }
+        if targetTime >= last.time { return last }
+
+        for index in 1..<escortPoseHistory.count {
+            let next = escortPoseHistory[index]
+            guard targetTime <= next.time else { continue }
+            let previous = escortPoseHistory[index - 1]
+            let duration = max(next.time - previous.time, 0.0001)
+            let t = CGFloat((targetTime - previous.time) / duration)
+            let headingDelta = normalizedAngle(next.heading - previous.heading)
+            return EscortPoseSample(
+                time: targetTime,
+                position: CGPoint(
+                    x: previous.position.x + (next.position.x - previous.position.x) * t,
+                    y: previous.position.y + (next.position.y - previous.position.y) * t
+                ),
+                heading: normalizedAngle(previous.heading + headingDelta * t)
+            )
+        }
+
+        return last
+    }
+
+    private func projectedEscortPose(leadTime: TimeInterval) -> EscortPoseSample? {
+        guard let current = escortPoseHistory.last else {
+            guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return nil }
+            let heading = spriteNode.zRotation + .pi / 2
+            let leadDistance = speed * CGFloat(leadTime)
+            return EscortPoseSample(
+                time: escortPoseClock + leadTime,
+                position: CGPoint(
+                    x: spriteNode.position.x + cos(heading) * leadDistance,
+                    y: spriteNode.position.y + sin(heading) * leadDistance
+                ),
+                heading: heading
+            )
+        }
+
+        let leadDistance = speed * CGFloat(leadTime)
+        return EscortPoseSample(
+            time: current.time + leadTime,
+            position: CGPoint(
+                x: current.position.x + cos(current.heading) * leadDistance,
+                y: current.position.y + sin(current.heading) * leadDistance
+            ),
+            heading: current.heading
+        )
     }
 
     /// Called every frame when this drone is in leader-follow mode.
-    /// Default: offset-in-screen-space — hex shield remains axis-aligned as leader flies south.
-    /// When the leader dies, subclasses or callers can hook `onLeaderLost` to rebuild a path.
-    private func applyLeaderFollowTick() {
+    /// Followers aim at delayed leader poses and steer into their slots instead
+    /// of being hard-locked to the leader sprite.
+    private func applyLeaderFollowTick(deltaTime dt: CGFloat) {
         guard let leader = leader, !leader.isHit,
               let leaderSprite = leader.component(ofType: SpriteComponent.self)?.spriteNode,
               let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode
@@ -470,11 +600,162 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
             return
         }
 
-        spriteNode.position = CGPoint(
-            x: leaderSprite.position.x + leaderOffset.x,
-            y: leaderSprite.position.y + leaderOffset.y
+        escortPoseClock += TimeInterval(dt)
+        let fallbackPose = EscortPoseSample(
+            time: 0,
+            position: leaderSprite.position,
+            heading: leaderSprite.zRotation + .pi / 2
         )
-        spriteNode.zRotation = leaderSprite.zRotation
+        let leaderPose = escortLeadTime > 0
+            ? leader.projectedEscortPose(leadTime: escortLeadTime) ?? fallbackPose
+            : leader.sampleEscortPose(lag: escortLag) ?? fallbackPose
+        let slotOffset = rotatedEscortOffset(leaderOffset, heading: leaderPose.heading)
+        let forward = CGPoint(x: cos(leaderPose.heading), y: sin(leaderPose.heading))
+        let right = CGPoint(x: cos(leaderPose.heading + .pi / 2), y: sin(leaderPose.heading + .pi / 2))
+        let time = CGFloat(escortPoseClock)
+        let wobble = sin(time * escortWobbleSpeed + escortWobblePhase) * escortWobbleAmplitude
+        let bob = cos(time * escortWobbleSpeed * 0.7 + escortWobblePhase) * escortWobbleAmplitude * 0.35
+        let slotTarget = CGPoint(
+            x: leaderPose.position.x + slotOffset.x + right.x * wobble + forward.x * bob,
+            y: leaderPose.position.y + slotOffset.y + right.y * wobble + forward.y * bob
+        )
+        let separation = escortSeparationVector(for: spriteNode, leader: leader)
+        let target = CGPoint(
+            x: slotTarget.x + separation.dx,
+            y: slotTarget.y + separation.dy
+        )
+        let dx = target.x - spriteNode.position.x
+        let dy = target.y - spriteNode.position.y
+        let dist = sqrt(dx * dx + dy * dy)
+
+        let fallbackVelocity = CGVector(dx: forward.x * leader.speed, dy: forward.y * leader.speed)
+        let slotVelocity = escortSlotVelocity(
+            for: slotTarget,
+            deltaTime: dt,
+            fallbackVelocity: fallbackVelocity
+        )
+        let correctionVelocity: CGVector
+        if dist > 0.5 {
+            let correctionSpeed = min(escortFollowSpeed, dist / Constants.EW.ewEscortCorrectionTime)
+            correctionVelocity = CGVector(dx: dx / dist * correctionSpeed,
+                                          dy: dy / dist * correctionSpeed)
+        } else {
+            correctionVelocity = .zero
+        }
+        let driftVelocity = velocityWithMinimumForwardSpeed(
+            CGVector(dx: slotVelocity.dx + correctionVelocity.dx,
+                     dy: slotVelocity.dy + correctionVelocity.dy),
+            forward: forward,
+            minimumSpeed: leader.speed * Constants.EW.ewEscortMinForwardSpeedRatio
+        )
+        let desiredVelocity = clampedVector(
+            driftVelocity,
+            maxLength: escortFollowSpeed
+        )
+        escortVelocity = moveVector(
+            escortVelocity,
+            toward: desiredVelocity,
+            maxDelta: Constants.EW.ewEscortAcceleration * dt
+        )
+
+        spriteNode.position.x += escortVelocity.dx * dt
+        spriteNode.position.y += escortVelocity.dy * dt
+
+        let currentHeading = spriteNode.zRotation + .pi / 2
+        let velocitySpeed = sqrt(escortVelocity.dx * escortVelocity.dx + escortVelocity.dy * escortVelocity.dy)
+        let desiredHeading = velocitySpeed > 1 ? atan2(escortVelocity.dy, escortVelocity.dx) : leaderPose.heading
+        let delta = normalizedAngle(desiredHeading - currentHeading)
+        let maxTurn = escortTurnRate * dt
+        let newHeading: CGFloat
+        if abs(delta) <= maxTurn {
+            newHeading = desiredHeading
+        } else {
+            newHeading = normalizedAngle(currentHeading + (delta > 0 ? maxTurn : -maxTurn))
+        }
+        spriteNode.zRotation = newHeading - .pi / 2
+    }
+
+    private func escortSlotVelocity(for slotTarget: CGPoint,
+                                    deltaTime dt: CGFloat,
+                                    fallbackVelocity: CGVector) -> CGVector {
+        defer { previousEscortSlotTarget = slotTarget }
+        guard dt > 0.0001, let previous = previousEscortSlotTarget else { return fallbackVelocity }
+
+        return CGVector(
+            dx: (slotTarget.x - previous.x) / dt,
+            dy: (slotTarget.y - previous.y) / dt
+        )
+    }
+
+    private func velocityWithMinimumForwardSpeed(_ velocity: CGVector,
+                                                 forward: CGPoint,
+                                                 minimumSpeed: CGFloat) -> CGVector {
+        let forwardSpeed = velocity.dx * forward.x + velocity.dy * forward.y
+        guard forwardSpeed < minimumSpeed else { return velocity }
+
+        let missingSpeed = minimumSpeed - forwardSpeed
+        return CGVector(
+            dx: velocity.dx + forward.x * missingSpeed,
+            dy: velocity.dy + forward.y * missingSpeed
+        )
+    }
+
+    private func moveVector(_ value: CGVector, toward target: CGVector, maxDelta: CGFloat) -> CGVector {
+        let dx = target.dx - value.dx
+        let dy = target.dy - value.dy
+        let distance = sqrt(dx * dx + dy * dy)
+        guard distance > maxDelta, distance > 0.0001 else { return target }
+        let scale = maxDelta / distance
+        return CGVector(dx: value.dx + dx * scale, dy: value.dy + dy * scale)
+    }
+
+    private func clampedVector(_ vector: CGVector, maxLength: CGFloat) -> CGVector {
+        let length = sqrt(vector.dx * vector.dx + vector.dy * vector.dy)
+        guard length > maxLength, length > 0.0001 else { return vector }
+        let scale = maxLength / length
+        return CGVector(dx: vector.dx * scale, dy: vector.dy * scale)
+    }
+
+    private func rotatedEscortOffset(_ offset: CGPoint, heading: CGFloat) -> CGPoint {
+        let forward = CGPoint(x: cos(heading), y: sin(heading))
+        let right = CGPoint(x: cos(heading + .pi / 2), y: sin(heading + .pi / 2))
+        return CGPoint(
+            x: right.x * offset.x - forward.x * offset.y,
+            y: right.y * offset.x - forward.y * offset.y
+        )
+    }
+
+    private func escortSeparationVector(for spriteNode: SKSpriteNode, leader: AttackDroneEntity) -> CGVector {
+        guard let scene = spriteNode.scene as? InPlaySKScene else { return .zero }
+
+        let minDistance = Constants.EW.ewEscortSeparationDistance
+        let minDistanceSq = minDistance * minDistance
+        var separationX: CGFloat = 0
+        var separationY: CGFloat = 0
+
+        for other in scene.activeDrones where other !== self && other.isLeaderFollower && !other.isHit {
+            guard let otherLeader = other.leader, otherLeader === leader,
+                  let otherSprite = other.component(ofType: SpriteComponent.self)?.spriteNode else { continue }
+
+            let dx = spriteNode.position.x - otherSprite.position.x
+            let dy = spriteNode.position.y - otherSprite.position.y
+            let distSq = dx * dx + dy * dy
+            guard distSq > 0.0001 && distSq < minDistanceSq else { continue }
+
+            let dist = sqrt(distSq)
+            let strength = (1 - dist / minDistance) * Constants.EW.ewEscortSeparationStrength
+            separationX += (dx / dist) * strength
+            separationY += (dy / dist) * strength
+        }
+
+        return CGVector(dx: separationX, dy: separationY)
+    }
+
+    private func normalizedAngle(_ angle: CGFloat) -> CGFloat {
+        var result = angle
+        while result > .pi { result -= 2 * .pi }
+        while result < -.pi { result += 2 * .pi }
+        return result
     }
 
     /// Hook for subclasses/callers: leader is gone. Default: just detach.

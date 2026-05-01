@@ -117,6 +117,7 @@ class TowerPlacementManager {
         economy.earn(stats.sellValue)
         scene?.gridMap.removeTower(atRow: gridPos.row, col: gridPos.col,
                                    footprint: (rows: gridPos.rowSpan, cols: gridPos.colSpan))
+        tower.component(ofType: RadarComponent.self)?.removeNightVisuals()
         tower.component(ofType: SpriteComponent.self)?.spriteNode.removeFromParent()
         tower.hideRangeIndicator()
         towers.removeAll { $0 === tower }
@@ -131,6 +132,7 @@ class TowerPlacementManager {
                 scene?.gridMap.removeTower(atRow: gridPos.row, col: gridPos.col,
                                            footprint: (rows: gridPos.rowSpan, cols: gridPos.colSpan))
             }
+            tower.component(ofType: RadarComponent.self)?.removeNightVisuals()
             tower.component(ofType: SpriteComponent.self)?.spriteNode.removeFromParent()
             tower.hideRangeIndicator()
         }

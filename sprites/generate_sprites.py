@@ -329,24 +329,8 @@ TOWERS = [
 
 DRONES = [
     Sprite(
-        name="drone_regular",
-        view="topdown", bg="white", aspect="1:1",
-        subject=(
-            "A medium fixed-wing military reconnaissance-strike UAV with a V-tail. Nose pointing "
-            "straight up toward the top edge of the image. From above you see: the wing planform "
-            "(medium gray fuselage, darker swept wings), a dark camera lens circle on the nose, the "
-            "V-tail at the bottom, and a small pusher propeller disk at the rear. The drone floats "
-            "alone with nothing beneath it. "
-            "Medium gray color scheme — NOT white, NOT camouflage, NOT olive. No white highlights, "
-            "no specular reflections, no bright spots. All surfaces must be clearly darker than "
-            "pure white."
-        ),
-        palette="medium gray (#909090) fuselage, darker gray (#6E6E6E) wings, dark gray (#555555) outlines, tiny red navigation lights",
-    ),
-    Sprite(
         name="drone_shahed",
         view="topdown", bg="white", aspect="1:1",
-        refs=("drone_regular",),
         subject=(
             "A delta-wing kamikaze drone (Shahed-136 style). Nose pointing straight up toward the "
             "top edge. From above you see: a prominent cylindrical warhead nose section at the top "
@@ -363,7 +347,7 @@ DRONES = [
     Sprite(
         name="drone_orlan",
         view="topdown", bg="white", aspect="1:1",
-        refs=("drone_regular",),
+        refs=("drone_shahed",),
         subject=(
             "A small high-wing reconnaissance UAV with a tractor (puller) propeller at the nose. "
             "Nose with propeller pointing straight up toward the top edge. CLEAN FUSELAGE — straight "
@@ -377,7 +361,7 @@ DRONES = [
     Sprite(
         name="drone_kamikaze",
         view="topdown", bg="white", aspect="1:1",
-        refs=("drone_regular",),
+        refs=("drone_shahed",),
         subject=(
             "A small FPV kamikaze quadcopter. Front pointing straight up toward the top edge. From "
             "above you see: an X-shaped carbon fiber frame with 4 propeller disks (one at each arm "
@@ -389,7 +373,7 @@ DRONES = [
     Sprite(
         name="drone_ew",
         view="topdown", bg="white", aspect="1:1",
-        refs=("drone_regular",),
+        refs=("drone_shahed",),
         subject=(
             "An electronic warfare UAV with multiple antenna arrays and EW pods on the wings. Nose "
             "pointing straight up toward the top edge. Medium fixed-wing drone with distinctive "
@@ -401,21 +385,39 @@ DRONES = [
     Sprite(
         name="drone_heavy",
         view="topdown", bg="white", aspect="1:1",
-        refs=("drone_regular",),
+        refs=("drone_shahed",),
         subject=(
-            "A large hexacopter drone (DJI Matrice 600 style) repurposed for bomb dropping. From "
-            "above you see: a central dark body/hub, 6 arms radiating outward (like a star/hexagon), "
-            "a bomb payload suspended underneath the center. NO propellers on the sprite — propellers "
-            "will be added programmatically as 6 spinning rectangles. The arms should have visible "
-            "motor mounts (small circles) at each tip but NO propeller blades. Dark gray industrial "
-            "drone body. The drone floats alone with nothing beneath it."
+            "ONLY the unarmed base airframe of a large fixed-wing UAV, Bayraktar TB2 / MQ-9 Reaper "
+            "inspired. This is a SEPARATE game sprite — runtime attaches other sprites to it later. "
+            "Nose pointing straight up toward the top edge. From above you see ONLY these aircraft "
+            "parts:\n"
+            "- long narrow fuselage\n"
+            "- high-aspect straight wings spanning most of the sprite\n"
+            "- twin tail booms with a compact V-tail at the rear\n"
+            "- rounded SATCOM/sensor dome near the nose\n"
+            "- two tiny flat EMPTY hardpoint brackets flush with the underside of the wings\n"
+            "The hardpoints must look like small flat mounting marks, NOT hanging objects. The area "
+            "below and around the wings remains empty white background. The silhouette must read as "
+            "a high-altitude aircraft that banks through wide turns and performs a low attack pass, "
+            "then climbs away. Larger and more imposing than Shahed-family drones, but still clean "
+            "and readable at small size. The drone floats alone with nothing beneath it. Medium-dark "
+            "military gray color scheme — NOT white, NOT bright green, NOT hexacopter, NO multicopter "
+            "arms, NO six rotors, no hanging shapes, no cylinders, no teardrop shapes, no pods, no "
+            "visible bombs, NO missiles, NO rockets, NO torpedoes, NO weapon payloads, no specular reflections, no bright spots. "
+            "All surfaces must be clearly darker than pure white."
         ),
-        palette="dark charcoal (#3A3A3A) body, medium gray (#666666) arms, dark (#444444) motor mounts at arm tips",
+        palette="dark gunship gray (#4A4E50) fuselage, medium gray (#6E7478) wings, charcoal (#25282A) outlines, black sensor dome, dark gray (#3A3A3A) empty pylon mounts",
+        extra=(
+            "IMPORTANT: Draw ONLY the aircraft body, wings, tail, sensor dome, and two tiny flat empty "
+            "hardpoint brackets. Do NOT include any bombs, missiles, rockets, munitions, payload pods, "
+            "drop tanks, capsules, cylinders, teardrops, oval objects, or any object hanging under the "
+            "wings. Do NOT draw weapon silhouettes. Clean wings with empty hardpoints only."
+        ),
     ),
     Sprite(
         name="drone_lancet",
         view="topdown", bg="white", aspect="1:1",
-        refs=("drone_regular",),
+        refs=("drone_shahed",),
         subject=(
             "A loitering munition drone (ZALA Lancet style). Nose pointing straight up toward the "
             "top edge. From above you see: a narrow cylindrical GRAY body with a sharp pointed nose "
@@ -430,7 +432,7 @@ DRONES = [
     Sprite(
         name="drone_bomber",
         view="topdown", bg="white", aspect="1:1",
-        refs=("drone_regular",),
+        refs=("drone_shahed",),
         subject=(
             "A heavy military bomber drone. Nose pointing straight up toward the top edge. From "
             "above you see: a wide fixed-wing planform with a massive center wing section, two "
@@ -445,6 +447,7 @@ DRONES = [
     Sprite(
         name="drone_swarm",
         view="topdown", bg="white", aspect="1:1",
+        refs=("drone_shahed",),
         subject=(
             "A tiny micro-drone (nano-UAV). Minimal gray square/diamond shape with 4 barely visible "
             "rotors. Very small and simple, matte dark gray."

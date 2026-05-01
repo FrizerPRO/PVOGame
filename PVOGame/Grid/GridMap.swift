@@ -55,6 +55,14 @@ class GridMap {
     }
 
     func loadLevel(_ level: LevelDefinition) {
+        for row in 0..<rows {
+            for col in 0..<cols {
+                cells[row][col].terrain = .ground
+                cells[row][col].towerID = nil
+                cells[row][col].settlementID = nil
+            }
+        }
+
         for row in 0..<min(rows, level.gridLayout.count) {
             for col in 0..<min(cols, level.gridLayout[row].count) {
                 let value = level.gridLayout[row][col]
