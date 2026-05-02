@@ -192,12 +192,19 @@ Definitions: `generate_sprites.py :: PROJECTILES`.
 
 | name                          | aspect | refs                  |
 |-------------------------------|--------|-----------------------|
-| fx_smoke_puff                 | 1:1    | —                     |
+| fx_smoke_puff                 | 1:1    | fx_explosion_medium_f6 |
 | fx_smoke_puff_gray            | 1:1    | fx_smoke_puff         |
-| fx_flame_glow                 | 1:1    | —                     |
-| fx_armor_spark                | 1:1    | —                     |
+| fx_flame_glow                 | 1:1    | fx_explosion_medium_f3 |
 | fx_damage_smoke               | 1:1    | fx_smoke_puff         |
-| fx_shadow_ellipse             | 16:9   | —                     |
+| fx_rocket_trail_puff          | 1:1    | fx_flame_glow         |
+| fx_ew_bolt_jagged             | 9:16   | —                     |
+| fx_ew_bolt_forked             | 4:5    | fx_ew_bolt_jagged     |
+| fx_ew_bolt_branching          | 3:4    | fx_ew_bolt_jagged     |
+| fx_ew_bolt_twin               | 9:16   | fx_ew_bolt_jagged     |
+| fx_ew_bolt_burst              | 1:1    | fx_ew_bolt_jagged     |
+| fx_ew_core_burst              | 1:1    | fx_ew_bolt_jagged     |
+| fx_ew_spark_cluster           | 1:1    | fx_ew_core_burst      |
+| fx_ew_hit_flash               | 1:1    | fx_ew_core_burst      |
 
 Definitions: `generate_sprites.py :: VFX_SIMPLE`.
 
@@ -291,13 +298,15 @@ Definitions: `generate_sprites.py :: SPECIAL`.
 | Towers (base + part + muzzle) | 19 |
 | Drones and enemy missiles     | 12 |
 | Player projectiles            | 6  |
-| Simple VFX                    | 6  |
-| Explosion frames (5 + 6 + 7)  | 18 |
-| Settlements                   | 5  |
+| Simple VFX                    | 13 |
+| Explosion anchors             | 3  |
+| Explosion frames (7 + 8 + 9)  | 24 |
+| Settlements                   | 6  |
+| Oil fountain frames           | 6  |
 | Terrain tiles                 | 7  |
 | UI elements                   | 31 |
 | Special (fighter jet, AppIcon)| 2  |
-| **Total**                     | **107** |
+| **Total**                     | **129** |
 
 ---
 

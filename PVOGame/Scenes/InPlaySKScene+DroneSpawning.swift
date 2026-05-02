@@ -630,7 +630,8 @@ extension InPlaySKScene {
 
         if let spriteNode = ewDrone.component(ofType: SpriteComponent.self)?.spriteNode {
             let scale = altitude.droneVisualScale
-            spriteNode.size = CGSize(width: 24 * scale, height: 24 * scale)
+            spriteNode.size = CGSize(width: Constants.SpriteSize.ewDrone * scale,
+                                     height: Constants.SpriteSize.ewDrone * scale)
             spriteNode.zPosition = 61 + CGFloat(altitude.rawValue) * 5
         }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate PVOGame sprites via Nano Banana Pro (gemini-3-pro-image-preview).
 
-All 105 sprites are declared inline as `Sprite` records; shared style/background/
+All 129 sprites are declared inline as `Sprite` records; shared style/background/
 no-junk/view clauses are injected by `sprite_prompts.build_prompt`. Output size is
 driven by `aspect_ratio` + `image_size` in the API config — pixel dimensions are not
 part of the prompt because the model does not honour arbitrary sizes.
@@ -619,6 +619,7 @@ PROJECTILES = [
 #   fx_rocket_trail_puff — ref: fx_flame_glow (hot exhaust, glows warmer than smoke)
 #   fx_ew_bolt_*         — standalone family (jagged is the sub-anchor; the rest
 #                          ref jagged for style — magenta/violet electrical palette)
+#   fx_ew_* accent sprites — small caps/sparks/glow layered over procedural EW arcs
 # ---------------------------------------------------------------------------
 
 VFX_SIMPLE = [
@@ -853,6 +854,81 @@ VFX_SIMPLE = [
             "NO dark border on the bolts. All segments are dead-straight lines with hard "
             "angular corners — no curves, no smoothing. Bolt angles must be slightly "
             "irregular — not a perfect five-pointed snowflake."
+        ),
+    ),
+    Sprite(
+        name="fx_ew_core_burst",
+        view="none", bg="black", aspect="1:1",
+        refs=("fx_ew_bolt_jagged",),
+        ref_mode="style",
+        subject=(
+            "A TINY asymmetric electronic-warfare static crackle near the center of a drone, "
+            "used only as a one-frame source accent for a larger procedural lightning line. "
+            "This is a small hand-painted VFX overlay sprite, NOT a full lightning bolt and "
+            "NOT a drone. Draw 7-12 DISCONNECTED electric ticks and flecks: tiny short dashes, "
+            "broken zigzag marks, pin-prick sparks, and small hook strokes scattered loosely "
+            "around the center. They do NOT radiate from one point; they look like random "
+            "electrostatic noise blinking around an emitter. The largest mark is no longer "
+            "than 10-12% of the frame width, and most marks are smaller. The marks occupy only "
+            "the central 30-35% of the frame, with pure black empty space around them. There is "
+            "no central filled shape: only a few tiny white/cyan/magenta marks separated by "
+            "black gaps. The silhouette must feel sparse, irregular, and accidental."
+        ),
+        palette="white-hot core (#FFFFFF), cyan-white glow (#BFFFFF), magenta edge (#C040FF), violet falloff (#602080), pure black background",
+        extra=(
+            "CRITICAL: SEPARATE game sprite -- do NOT draw the EW drone, tower, terrain, UI, "
+            "smoke, fire, or any scenery. NO full lightning bolt, NO burst, NO rays, NO radial "
+            "starburst, NO crystal shards, NO triangular shards, NO explosion, NO glow cloud, "
+            "NO filled blob, NO connected outline, NO smooth radial orb, NO large white center, "
+            "NO ring, NO snowflake symmetry. NO black outline, NO dark border. Do not make a "
+            "neat icon; make sparse disconnected painted electric noise that reads at 18-28 px "
+            "as a subtle source crackle."
+        ),
+    ),
+    Sprite(
+        name="fx_ew_spark_cluster",
+        view="none", bg="black", aspect="1:1",
+        refs=("fx_ew_core_burst",),
+        ref_mode="style",
+        subject=(
+            "A tiny loose cluster of 7-12 DISCONNECTED electric sparks for an EW lightning arc. "
+            "Each spark is a short hand-painted dash, pin-prick dot, or angular fleck, scattered "
+            "loosely with more empty black space than painted pixels. Mostly magenta and cyan-"
+            "white flecks, a few tiny violet glow tails, no central ball, no shared origin, no "
+            "connected shape. The cluster should add texture along a procedural line without "
+            "becoming a full effect on its own."
+        ),
+        palette="white-cyan sparks (#DFFFFF), magenta sparks (#C040FF), dim violet glow (#602080), pure black background",
+        extra=(
+            "CRITICAL: SEPARATE game sprite -- no drone, no tower, no scene. NO black outline, "
+            "NO dark border. NO burst, NO rays, NO circular glow blob, NO filled blob, no smoke, "
+            "no fire. Must remain readable and lightweight at 12-18 px."
+        ),
+    ),
+    Sprite(
+        name="fx_ew_hit_flash",
+        view="none", bg="black", aspect="1:1",
+        refs=("fx_ew_core_burst",),
+        ref_mode="style",
+        subject=(
+            "A very small asymmetric electrical contact mark for when an EW arc touches a tower. "
+            "This is a static one-frame hit accent, so it must be subtle and compact, not a full "
+            "effect. Draw 7-12 DISCONNECTED tiny marks in a tight uneven patch: pin-prick sparks, "
+            "short jagged ticks, tiny broken zigzag marks, and a few small magenta/cyan flecks. "
+            "The whole painted patch fits inside the central 25-30% of the frame; everything "
+            "outside that patch remains pure black. The marks cluster around a very small "
+            "white/cyan contact point no larger than 6-8% of the frame width, with black gaps "
+            "between all marks. No mark is longer than 10% of the frame width. It may be brighter "
+            "than fx_ew_core_burst, but it remains a tight contact crackle, not an explosion."
+        ),
+        palette="white-hot point (#FFFFFF), cyan-white ticks (#BFFFFF), magenta ticks (#C040FF), violet glow (#602080), pure black background",
+        extra=(
+            "CRITICAL: SEPARATE game sprite -- do NOT draw the tower, drone, terrain, smoke, fire, "
+            "UI, or text. NO full lightning bolt, NO long zigzag bolts, NO burst, NO rays, NO "
+            "radial starburst, NO circular halo, NO purple ring, NO broad background glow, NO "
+            "energy shield, NO crystal shards, NO triangular shards, NO round orb, NO filled blob, "
+            "NO explosion fireball, NO perfect star, NO connected outline. NO black outline, NO "
+            "dark border. Readable at 20-28 px as a compact electrical contact crackle."
         ),
     ),
 ]

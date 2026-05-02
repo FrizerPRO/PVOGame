@@ -63,6 +63,10 @@ final class AnimationTextureCache {
     /// Directional EW lightning bolt sprites (jagged / forked / branching / twin).
     /// Picked at random for each lightning discharge from the EW drone.
     private(set) var ewBoltTextures: [SKTexture] = []
+    /// Small sprite accents layered over procedural EW lightning.
+    private(set) var ewBoltBurst: SKTexture?
+    private(set) var ewSparkCluster: SKTexture?
+    private(set) var ewHitFlash: SKTexture?
 
     // MARK: - Drone textures
 
@@ -101,6 +105,9 @@ final class AnimationTextureCache {
         ewBoltTextures = ["fx_ew_bolt_jagged", "fx_ew_bolt_forked",
                           "fx_ew_bolt_branching", "fx_ew_bolt_twin"]
             .compactMap { loadOptionalTexture($0) }
+        ewBoltBurst = loadOptionalTexture("fx_ew_bolt_burst")
+        ewSparkCluster = loadOptionalTexture("fx_ew_spark_cluster")
+        ewHitFlash = loadOptionalTexture("fx_ew_hit_flash")
 
         // Load drone textures
         let droneNames = [
