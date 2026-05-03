@@ -720,6 +720,59 @@ struct LevelDefinition {
             prePlacedTowers: towers
         )
     }()
+
+    // MARK: - Test: Tower Damage / Cookoff
+
+    /// Test level for tower-hit effects: missile cookoff and turret blowoff.
+    /// Pre-places one rocket launcher, one ZU, and one Gepard, then spawns
+    /// tower-hunting enemies across several waves.
+    static let testTowerDamage: LevelDefinition = {
+        func scriptedWave(_ events: [ScriptEvent]) -> WaveDefinition {
+            .campaign(drones: 0, speed: 0, interval: 1.0, batch: 1, health: 1,
+                      script: WaveScript(events))
+        }
+
+        let w: [WaveDefinition] = [
+            scriptedWave([
+                ScriptEvent(at: 0.0, .harmWarning),
+                ScriptEvent(at: 0.35, .harmSalvo(count: 1, micro: 0.08))
+            ]),
+            scriptedWave([
+                ScriptEvent(at: 0.0, .lancet(count: 3))
+            ]),
+            scriptedWave([
+                ScriptEvent(at: 0.0, .mineLayer),
+                ScriptEvent(at: 5.0, .mineLayer)
+            ]),
+            scriptedWave([
+                ScriptEvent(at: 0.0, .ewDrone),
+                ScriptEvent(at: 3.5, .lancet(count: 2))
+            ]),
+            scriptedWave([
+                ScriptEvent(at: 0.0, .heavyDrone(count: 2)),
+                ScriptEvent(at: 4.0, .harmSalvo(count: 1, micro: 0.08))
+            ])
+        ]
+
+        let testTowers: [TowerType] = [.samLauncher, .autocannon, .gepard]
+        let towers: [(row: Int, col: Int, type: TowerType)] = [
+            (row: 7, col: 4, type: .samLauncher),
+            (row: 10, col: 3, type: .autocannon),
+            (row: 10, col: 6, type: .gepard)
+        ]
+
+        return LevelDefinition(
+            gridLayout: sharedLayout, dronePaths: sharedPaths,
+            waves: w, startingResources: 99999,
+            availableTowers: testTowers,
+            settlementCount: 0,
+            guaranteedTowers: testTowers,
+            conveyorSlotCount: testTowers.count,
+            instantConveyor: true,
+            infiniteLives: true,
+            prePlacedTowers: towers
+        )
+    }()
 }
 
 // MARK: - Combo Library

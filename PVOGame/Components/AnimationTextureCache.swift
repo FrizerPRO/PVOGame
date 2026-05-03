@@ -42,6 +42,8 @@ final class AnimationTextureCache {
     private(set) var smallExplosion: [SKTexture] = []
     private(set) var mediumExplosion: [SKTexture] = []
     private(set) var largeExplosion: [SKTexture] = []
+    private(set) var turretFire: [SKTexture] = []
+    private(set) var droneFire: [SKTexture] = []
 
     // Per-frame hold durations, aligned 1:1 with the *Explosion arrays above.
     // Intermediate half-step frames (f1_5, f2_5, f3_5) get shorter holds so
@@ -92,6 +94,7 @@ final class AnimationTextureCache {
 
         // Load explosion atlas if available
         loadExplosionAtlas()
+        loadFireAtlas()
 
         // Load VFX textures
         smokePuff = loadOptionalTexture("fx_smoke_puff")
@@ -159,7 +162,8 @@ final class AnimationTextureCache {
             muzzleSize: CGSize(width: 11, height: 11),
             turretAnchor: CGPoint(x: 0.5, y: 0.5),
             muzzleOffsetLeft: CGPoint(x: -5, y: 16),
-            muzzleOffsetRight: CGPoint(x: 5, y: 16)
+            muzzleOffsetRight: CGPoint(x: 5, y: 16),
+            turretPosition: CGPoint(x: 7.5, y: 0)
         )
 
         // SAM Launcher (S-300) — 2×1 vertical chassis, cab on top.
@@ -281,6 +285,29 @@ final class AnimationTextureCache {
             muzzleOffsetLeft: .zero,
             muzzleOffsetRight: .zero
         )
+    }
+
+    // MARK: - Fire atlas
+
+    private func loadFireAtlas() {
+        let atlas = SKTextureAtlas(named: "Fire")
+        let names = atlas.textureNames
+        guard !names.isEmpty else { return }
+
+        func texture(_ name: String) -> SKTexture {
+            if names.contains(name) { return atlas.textureNamed(name) }
+            return atlas.textureNamed("Fire/\(name)")
+        }
+
+        turretFire = (1...7).compactMap { frame in
+            let name = "fx_turret_fire_f\(frame)"
+            return names.contains(name) || names.contains("Fire/\(name)") ? texture(name) : nil
+        }
+        droneFire = (1...6).compactMap { frame in
+            let name = "fx_drone_fire_f\(frame)"
+            return names.contains(name) || names.contains("Fire/\(name)") ? texture(name) : nil
+        }
+        print("[TextureCache] fire loaded: turret=\(turretFire.count) drone=\(droneFire.count)")
     }
 
     // MARK: - Explosion atlas

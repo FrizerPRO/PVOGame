@@ -54,6 +54,16 @@ class RocketEntity: BulletEntity {
     private var travelledDistance: CGFloat = 0
     private var previousTrackedPosition: CGPoint?
     private var guidedFlightTime: TimeInterval = 0
+    private var isAccidentalFlight = false
+    private var accidentalFlightMaxDistance: CGFloat = 0
+    private weak var accidentalFriendlyTarget: TowerEntity?
+    private var accidentalFriendlyTargetPoint: CGPoint?
+    private var accidentalFriendlyImpactDistance: CGFloat?
+    private var accidentalTurnRate: CGFloat = 0
+    private var accidentalWobblePhase: CGFloat = 0
+    private var accidentalWobbleRate: CGFloat = 0
+    private var accidentalWobbleAmplitude: CGFloat = 0
+    private var accidentalBurnNode: SKNode?
 
     init(
         spec: Constants.GameBalance.RocketSpec
@@ -145,8 +155,57 @@ class RocketEntity: BulletEntity {
         )
     }
 
+    func configureAccidentalFlight(
+        directionAngle: CGFloat,
+        speed: CGFloat,
+        maxFlightDistance: CGFloat,
+        friendlyTarget: TowerEntity? = nil,
+        targetPoint: CGPoint? = nil
+    ) {
+        self.currentSpeed = max(0, speed)
+        self.travelledDistance = 0
+        self.smokeSpawnDistance = 0
+        self.previousTrackedPosition = nil
+        self.isCoastingAfterFuelExhaustion = false
+        self.isGuided = false
+        self.guidancePhase = .coast
+        self.trackedTarget = nil
+        self.trackingLockGranted = false
+        self.isAccidentalFlight = true
+        self.accidentalFlightMaxDistance = max(20, maxFlightDistance)
+        self.accidentalFriendlyTarget = friendlyTarget
+        self.accidentalFriendlyTargetPoint = targetPoint
+        self.accidentalFriendlyImpactDistance = targetPoint.map { point in
+            guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return maxFlightDistance }
+            return hypot(point.x - spriteNode.position.x, point.y - spriteNode.position.y)
+        }
+        self.accidentalTurnRate = CGFloat.random(in: -0.85...0.85)
+        self.accidentalWobblePhase = CGFloat.random(in: 0...(CGFloat.pi * 2))
+        self.accidentalWobbleRate = CGFloat.random(in: 6.5...10.5)
+        self.accidentalWobbleAmplitude = targetPoint == nil
+            ? CGFloat.random(in: 0.75...1.25)
+            : CGFloat.random(in: 0.28...0.55)
+
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+        spriteNode.physicsBody?.affectedByGravity = false
+        spriteNode.physicsBody?.allowsRotation = false
+        spriteNode.zRotation = directionAngle - .pi / 2
+        spriteNode.color = UIColor(red: 1.0, green: 0.55, blue: 0.18, alpha: 1.0)
+        spriteNode.colorBlendFactor = 0.45
+        attachAccidentalBurn(to: spriteNode)
+        spriteNode.physicsBody?.velocity = CGVector(
+            dx: cos(directionAngle) * currentSpeed,
+            dy: sin(directionAngle) * currentSpeed
+        )
+    }
+
     override func update(deltaTime seconds: TimeInterval) {
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+
+        if isAccidentalFlight {
+            updateAccidentalFlight(from: spriteNode, deltaTime: seconds)
+            return
+        }
 
         if isCoastingAfterFuelExhaustion {
             if (spriteNode.physicsBody?.velocity.dy ?? 0) <= 0 {
@@ -214,6 +273,57 @@ class RocketEntity: BulletEntity {
         spriteNode.physicsBody?.velocity = CGVector(dx: direction.dx * currentSpeed, dy: direction.dy * currentSpeed)
     }
 
+    private func updateAccidentalFlight(from spriteNode: SKSpriteNode, deltaTime seconds: TimeInterval) {
+        trackTravelDistance(from: spriteNode)
+        emitSmokeIfNeeded(from: spriteNode, deltaTime: seconds)
+
+        if let targetPoint = accidentalFriendlyTargetPoint {
+            let dx = targetPoint.x - spriteNode.position.x
+            let dy = targetPoint.y - spriteNode.position.y
+            let hitRadius = max(28, max(spriteNode.size.width, spriteNode.size.height) * 1.8)
+            let reachedImpactDistance = accidentalFriendlyImpactDistance.map { travelledDistance >= $0 } ?? false
+            if reachedImpactDistance || dx * dx + dy * dy <= hitRadius * hitRadius {
+                if let target = accidentalFriendlyTarget,
+                   !(target.stats?.isDisabled ?? true),
+                   target.component(ofType: SpriteComponent.self)?.spriteNode.parent != nil {
+                    spriteNode.position = target.worldPosition
+                    target.takeBombDamage(spec.damage, impactPosition: spriteNode.position)
+                }
+                detonateWithAnimation()
+                return
+            }
+        }
+
+        if travelledDistance >= accidentalFlightMaxDistance {
+            detonateWithAnimation()
+            return
+        }
+
+        accidentalWobblePhase += accidentalWobbleRate * CGFloat(seconds)
+        let heading = spriteNode.zRotation + .pi / 2
+        let turn = (accidentalTurnRate + sin(accidentalWobblePhase) * accidentalWobbleAmplitude) * CGFloat(seconds)
+        let newHeading = heading + turn
+        currentSpeed = min(
+            spec.maxSpeed,
+            currentSpeed + spec.acceleration * CGFloat(seconds)
+        )
+        spriteNode.zRotation = newHeading - .pi / 2
+        spriteNode.physicsBody?.velocity = CGVector(
+            dx: cos(newHeading) * currentSpeed,
+            dy: sin(newHeading) * currentSpeed
+        )
+
+        if let scene = spriteNode.scene {
+            let margin: CGFloat = 220
+            if spriteNode.position.x < scene.frame.minX - margin ||
+                spriteNode.position.x > scene.frame.maxX + margin ||
+                spriteNode.position.y < scene.frame.minY - margin ||
+                spriteNode.position.y > scene.frame.maxY + margin {
+                silentDetonate()
+            }
+        }
+    }
+
     private func configureRocketPhysicsAndTrail() {
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
@@ -231,6 +341,61 @@ class RocketEntity: BulletEntity {
         spriteNode.physicsBody?.usesPreciseCollisionDetection = true
     }
 
+    private func attachAccidentalBurn(to spriteNode: SKSpriteNode) {
+        accidentalBurnNode?.removeFromParent()
+
+        let flameRoot = SKNode()
+        flameRoot.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.50)
+        flameRoot.zPosition = 4
+
+        let outer = makeStylizedRocketFlame(
+            color: UIColor(red: 1.0, green: 0.34, blue: 0.06, alpha: 1.0),
+            size: CGSize(width: spriteNode.size.width * 1.25, height: spriteNode.size.height * 0.90)
+        )
+        let inner = makeStylizedRocketFlame(
+            color: UIColor(red: 1.0, green: 0.86, blue: 0.18, alpha: 1.0),
+            size: CGSize(width: spriteNode.size.width * 0.70, height: spriteNode.size.height * 0.54)
+        )
+        inner.position.y = -1
+        flameRoot.addChild(outer)
+        flameRoot.addChild(inner)
+
+        let flicker = SKAction.sequence([
+            SKAction.group([
+                SKAction.scaleX(to: 0.82, duration: 0.045),
+                SKAction.scaleY(to: 1.18, duration: 0.045),
+                SKAction.fadeAlpha(to: 0.78, duration: 0.045)
+            ]),
+            SKAction.group([
+                SKAction.scaleX(to: 1.10, duration: 0.055),
+                SKAction.scaleY(to: 0.92, duration: 0.055),
+                SKAction.fadeAlpha(to: 1.0, duration: 0.055)
+            ])
+        ])
+        flameRoot.run(SKAction.repeatForever(flicker))
+        spriteNode.addChild(flameRoot)
+        accidentalBurnNode = flameRoot
+    }
+
+    private func makeStylizedRocketFlame(color: UIColor, size: CGSize) -> SKShapeNode {
+        let path = CGMutablePath()
+        let halfWidth = size.width * 0.5
+        let top = size.height * 0.18
+        let bottom = -size.height * 0.82
+        path.move(to: CGPoint(x: 0, y: bottom))
+        path.addLine(to: CGPoint(x: -halfWidth, y: top * 0.15))
+        path.addQuadCurve(to: CGPoint(x: 0, y: top), control: CGPoint(x: -halfWidth * 0.35, y: top * 1.05))
+        path.addQuadCurve(to: CGPoint(x: halfWidth, y: top * 0.15), control: CGPoint(x: halfWidth * 0.35, y: top * 1.05))
+        path.closeSubpath()
+
+        let flame = SKShapeNode(path: path)
+        flame.fillColor = color
+        flame.strokeColor = UIColor(red: 0.55, green: 0.08, blue: 0.02, alpha: 0.75)
+        flame.lineWidth = 0.6
+        flame.blendMode = .add
+        return flame
+    }
+
     private func emitSmokeIfNeeded(from spriteNode: SKSpriteNode, deltaTime seconds: TimeInterval) {
         guard let scene = spriteNode.scene else { return }
 
@@ -239,7 +404,7 @@ class RocketEntity: BulletEntity {
         let cache = AnimationTextureCache.shared
 
         // Night mode: persistent flame glow on rocket tail, no smoke puffs
-        if nightMode {
+        if nightMode && !isAccidentalFlight {
             // Hide body via color blend (keeps alpha=1 so children stay visible)
             spriteNode.colorBlendFactor = 1.0
             spriteNode.color = .clear
@@ -279,7 +444,12 @@ class RocketEntity: BulletEntity {
         }
 
         // Day mode: restore body, normal smoke puffs
-        spriteNode.colorBlendFactor = 0
+        if isAccidentalFlight {
+            spriteNode.color = UIColor(red: 1.0, green: 0.55, blue: 0.18, alpha: 1.0)
+            spriteNode.colorBlendFactor = 0.45
+        } else {
+            spriteNode.colorBlendFactor = 0
+        }
         if let flame = nightFlameNode {
             flame.removeFromParent()
             nightFlameNode = nil
@@ -288,12 +458,12 @@ class RocketEntity: BulletEntity {
         // Distance-based spawn — guarantees no gap between puffs even at
         // terminal-dive speeds. 5pt spacing vs ~8pt minimum puff diameter
         // means every two consecutive puffs overlap by at least 40%.
-        let puffSpacing: CGFloat = 5.0
+        let puffSpacing: CGFloat = isAccidentalFlight ? 3.0 : 5.0
         // Safety cap: at 60fps a teleporting frame could in theory request
         // hundreds of puffs; bound it so one freak tick doesn't saturate the
         // pool.
         var perFrameSpawns = 0
-        let maxPerFrame = 8
+        let maxPerFrame = isAccidentalFlight ? 14 : 8
         while travelledDistance >= smokeSpawnDistance && perFrameSpawns < maxPerFrame {
             spawnSmokePuff(spriteNode: spriteNode, scene: scene, gameScene: gameScene, cache: cache)
             smokeSpawnDistance += puffSpacing
@@ -324,7 +494,7 @@ class RocketEntity: BulletEntity {
             texture = cache.smokePuff ?? Self.smokePuffTexture
         }
 
-        let baseRadius = CGFloat.random(in: 4.0...7.0)
+        let baseRadius = isAccidentalFlight ? CGFloat.random(in: 5.0...8.5) : CGFloat.random(in: 4.0...7.0)
         let puff = gameScene?.acquireSmokePuff() ?? SKSpriteNode(texture: texture)
         puff.texture = texture
         puff.size = CGSize(width: baseRadius * 2, height: baseRadius * 2)

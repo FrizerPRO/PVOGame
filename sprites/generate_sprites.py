@@ -934,6 +934,245 @@ VFX_SIMPLE = [
 ]
 
 
+_FIRE_LOOP_LOCK_CLAUSE = (
+    "Loop continuity: keep canvas bounds, center, palette, and the same vertical top-down camera "
+    "locked across the whole fire loop. This is a cyclic morphing flicker, not a growth/decay "
+    "explosion and not a sequence of newly redrawn fire shapes. Each non-anchor frame must be a "
+    "smooth deformation of the previous frame and frame 1: the same separate flame tongues, "
+    "small hot bridges, transparent gaps, and dark contour cuts should slide, stretch, shrink, "
+    "and brighten/dim like liquid paint. Do NOT invent a new central silhouette, do NOT replace "
+    "the center with a different flame pattern, and do NOT change the number or arrangement of "
+    "the main tongues between neighboring frames."
+)
+
+
+def _unique_refs(*names: str | None) -> tuple[str, ...]:
+    refs: list[str] = []
+    for name in names:
+        if name and name not in refs:
+            refs.append(name)
+    return tuple(refs)
+
+
+def _turret_fire_flicker_state(frame_no: int) -> str:
+    states = {
+        1: (
+            "Neutral anchor state: broken cluster of six to eight separate flat flame tongues "
+            "around the turret seam, with clear white negative-space gaps between tongues. Two "
+            "narrow hot bridges cross the center so there is no empty hole, but the center is "
+            "not filled into a solid disk. This exact tongue layout is the topology that every "
+            "later frame must preserve and morph."
+        ),
+        2: (
+            "First flare-up morph: starting from frame 1, keep the same individual tongues, "
+            "hot bridges, transparent gaps, and dark contour cuts, but make the flare clearly "
+            "readable without becoming a hard new keyframe. Lengthen alternating tongues by "
+            "26-32%, brighten the two center bridges toward hotter yellow, and slide the whole "
+            "central pattern up-right by about 5-7% of the fire width. The contour cuts must "
+            "remain recognizable from frame 1, but should bend and shift clockwise."
+        ),
+        3: (
+            "Rolling peak morph: continue directly from frame 2. The same enlarged tongues drift "
+            "a little farther clockwise/right, with the right-side tongues becoming brighter and "
+            "the left-side tongues becoming slightly more orange. Keep the same transparent gaps "
+            "and contour cuts from frame 2, warped forward by a few pixels, not replaced."
+        ),
+        4: (
+            "Cross-flow morph: continue from frame 3 while preserving the same tongue layout. "
+            "Shear the tongues gently along a lower-left to upper-right diagonal and bend the "
+            "existing dark contour cuts with that shear. The center bridges should look like "
+            "frame 3 being pushed by heat flow, not like a new diagonal flame design."
+        ),
+        5: (
+            "Cooling morph: continue from frame 4. The same tongues contract 12-18%, become "
+            "more orange at their edges, and settle back toward the original frame 1 positions. "
+            "Do not merge the tongues into one new shape; keep the frame 1 topology visible."
+        ),
+        6: (
+            "Low flicker morph: continue from frame 5. The same tongues and center bridges are "
+            "at their smallest and dimmest, with more orange showing between them, but their "
+            "silhouettes still match the frame 1 arrangement. Existing contour cuts soften and "
+            "shorten; they do not jump to new positions."
+        ),
+        7: (
+            "Return morph: brighten and widen the same tongues and center bridges from frame 6 "
+            "back toward the frame 1 anchor positions. The contour cuts slide back toward their "
+            "frame 1 placement. This frame should be close enough to frame 1 for a seamless loop, "
+            "but still visibly part of the motion path rather than an exact duplicate."
+        ),
+    }
+    return states[frame_no]
+
+
+def _turret_fire_frame(frame_no: int) -> Sprite:
+    prev = f"fx_turret_fire_f{frame_no - 1}" if frame_no > 1 else None
+    refs = _unique_refs(prev, "fx_turret_fire_f1" if frame_no > 1 else None, "fx_explosion_medium_f3")
+    temporal_note = (
+        "This is the anchor frame for the turret fire loop. Later frames must preserve this "
+        "shape, viewing angle, color material, and center position."
+        if frame_no == 1 else
+        f"This temporal frame evolves from {prev} while using fx_turret_fire_f1 as the loop "
+        "anchor. Preserve frame 1's identity and change only the flicker state. "
+        + ("As the final loop frame, it should ease back toward fx_turret_fire_f1 so the loop closes cleanly." if frame_no == 7 else "")
+    )
+    return Sprite(
+        name=f"fx_turret_fire_f{frame_no}",
+        view="topdown", bg="white", aspect="1:1",
+        refs=refs,
+        ref_mode="temporal" if prev else "style",
+        alpha_mode="keyed",
+        subject=(
+            f"Frame {frame_no} of 7 in a looping stylized fire animation for a destroyed "
+            "anti-air turret wreckage. ONLY FIRE: no turret parts, no wreckage pieces, no "
+            "debris, no smoke, no sparks, no ground. The camera is STRICTLY VERTICAL TOP-DOWN: "
+            "orthographic 90-degree overhead view, looking straight down at the flame, not 60-degree "
+            "and not side view. The fire lies flat as a broken cluster of separate orange-yellow "
+            "flame tongues/ribbons, like jagged petals licking around and across the turret seam. "
+            "There must be visible white negative-space gaps between the tongues so the sprite "
+            "does NOT become a filled circular pool. The center is crossed by a few narrow hot "
+            "bridges so there is no empty hole, but it must not be a solid disk. "
+            "It must NOT look like upright campfire triangles, a candle, or a torch. Match "
+            "the game's cartoon explosion sprites: soft volumetric fireball palette from "
+            "fx_explosion_medium_f3, dark painterly contour cuts inside the flame, readable "
+            "top-down silhouette, no realistic lens flares, no glossy highlights. For frames "
+            "2-7, preserve frame 1's camera, material, center position, tongue count, and gap "
+            "layout. The yellow/orange fire tongues must animate by smooth morphing from the "
+            "previous frame: no new center silhouette, no fresh redraw, no unrelated new flame "
+            "shape in the middle. Animation state: "
+            f"{_turret_fire_flicker_state(frame_no)} {temporal_note}"
+        ),
+        palette=(
+            "hot yellow core (#FFD84A), orange body (#FF7A12), deep red scorched edge "
+            "(#B83212), pure white background"
+        ),
+        extra=(
+            "Pure white background only, with no cast shadow or ground plane. Keep the effect "
+            "centered and within the same bounds "
+            "across all frames. NEGATIVE: no candle flame, no torch, no campfire icon, no "
+            "single vertical teardrop flame, no side-view upright flames, no angled 60-degree view, "
+            "no standing flame tongues, no smoke, no debris, no solid oval, no circular saucer, "
+            "no filled disk, no continuous flame pool, no round plate, "
+            f"no wreckage, no ground, no glossy highlights, no stars, no lens flare. {_FIRE_LOOP_LOCK_CLAUSE}"
+        ),
+    )
+
+
+def _drone_fire_flight_state(frame_no: int) -> str:
+    states = {
+        1: (
+            "Anchor flight state: compact ignition near the front/top of the sprite and a longer "
+            "swept-back flame tail flowing toward the bottom edge. Three main flame tongues are "
+            "pulled rearward by airflow, with small white gaps between them and a hot yellow root "
+            "near the drone body. This directionality is the identity of the loop."
+        ),
+        2: (
+            "Acceleration stretch: continue from frame 1. The same rearward tongues stretch 22-30% "
+            "farther toward the bottom edge, the tail narrows, and the yellow root brightens. The "
+            "top/front edge remains compact while the bottom/back edge becomes more torn and fast."
+        ),
+        3: (
+            "High-speed flutter peak: continue from frame 2. The same tail tongues whip slightly "
+            "to the right, with small separated ember-like orange tips at the rear. Preserve the "
+            "same root position and tongue count."
+        ),
+        4: (
+            "Crosswind flicker: continue from frame 3. The swept tail bends left while staying "
+            "attached to the same compact root. Transparent gaps widen between tongues so the "
+            "flame reads as fast airflow tearing it backward."
+        ),
+        5: (
+            "Compression phase: continue from frame 4. The rearward tail shortens 12-18%, becomes "
+            "more orange at the edges, and pulls closer to the root without turning into a round "
+            "blob."
+        ),
+        6: (
+            "Loop return: continue from frame 5. The tail brightens and re-extends toward the "
+            "frame 1 anchor shape, still swept backward toward the bottom edge. Close the loop "
+            "smoothly without becoming identical."
+        ),
+    }
+    return states[frame_no]
+
+
+def _drone_fire_frame(frame_no: int) -> Sprite:
+    prev = f"fx_drone_fire_f{frame_no - 1}" if frame_no > 1 else None
+    refs = _unique_refs(prev, "fx_drone_fire_f1" if frame_no > 1 else None, "fx_turret_fire_f1", "fx_explosion_medium_f3")
+    temporal_note = (
+        "This is the anchor frame for the drone fire loop."
+        if frame_no == 1 else
+        f"This temporal frame evolves from {prev} while using fx_drone_fire_f1 as the loop anchor. "
+        + ("As the final loop frame, it should ease back toward fx_drone_fire_f1 so the loop closes cleanly." if frame_no == 6 else "")
+    )
+    return Sprite(
+        name=f"fx_drone_fire_f{frame_no}",
+        view="none", bg="white", aspect="1:1",
+        refs=refs,
+        ref_mode="temporal" if prev else "style",
+        alpha_mode="keyed",
+        subject=(
+            f"Frame {frame_no} of 6 in a looping stylized damage fire for a burning drone. "
+            "ONLY FIRE: no drone parts, no debris, no smoke, no sparks, no ground. The camera "
+            "is top-down or high 60-degree view, not a side view. IMPORTANT ORIENTATION: the "
+            "drone nose / flight direction is toward the TOP edge of the canvas, and the flame "
+            "is dragged backward by high speed toward the BOTTOM edge. Show a compact hot root "
+            "near the upper-center and a longer asymmetric rearward trail: three to five separate "
+            "flattened orange-yellow flame tongues stretched down/back like airflow is tearing "
+            "them off the aircraft. Keep visible white negative-space gaps between tongues. Add "
+            "one or two narrow hot bridges near the root so there is no empty hole, but do not "
+            "make a solid blob or round flame pool. The silhouette should read like a fast-moving "
+            "burning drone, not stationary fire. It must not look like a free-standing candle, "
+            "torch, campfire, flower, starburst, or radial explosion. Match the game's cartoon "
+            "explosion palette, but keep the shape smaller, flatter, directional, and swept back. "
+            f"Animation state: {_drone_fire_flight_state(frame_no)} {temporal_note}"
+        ),
+        palette=(
+            "hot yellow core (#FFD84A), orange body (#FF7A12), deep red edge (#B83212), "
+            "pure white background"
+        ),
+        extra=(
+            "Pure white background only, with no cast shadow or ground plane. Keep all frames "
+            "centered and aligned, with the hot root consistently near the upper-center and the "
+            "tail consistently swept toward the bottom edge. NEGATIVE: no single flame, no torch, "
+            "no candle, no standalone campfire, no side-view upright flames, no smoke, no debris, "
+            "no glossy highlights, no stars, no lens flare, no radial flower, no starburst, no "
+            "symmetric rosette, no solid oval, no circular saucer, no filled disk, no continuous "
+            f"flame pool. {_FIRE_LOOP_LOCK_CLAUSE}"
+        ),
+    )
+
+
+VFX_FIRE_LOOP = (
+    [_turret_fire_frame(i) for i in range(1, 8)]
+    + [_drone_fire_frame(i) for i in range(1, 7)]
+)
+
+
+# ---------------------------------------------------------------------------
+# Looping fire animation frames
+#
+# This mirrors the explosion-frame dependency idea, but not the explosion's
+# growth/decay semantics. Fire is a cyclic flicker, so frame 1 is the loop
+# anchor:
+#
+#   turret f1          refs (fx_explosion_medium_f3) for the fireball palette
+#   turret f2          refs (turret f1, fx_explosion_medium_f3)
+#   turret f3..f6      refs (previous frame, turret f1, fx_explosion_medium_f3)
+#   turret f7          refs (turret f6, turret f1, fx_explosion_medium_f3)
+#                      and is prompted to ease back toward f1
+#
+# Drone fire follows the same pattern, with drone f1 as the loop anchor and
+# turret f1 as the shared fire-style parent:
+#
+#   drone f1           refs (turret f1, fx_explosion_medium_f3)
+#   drone f2..f5       refs (previous frame, drone f1, turret f1, fx_explosion_medium_f3)
+#   drone f6           refs (drone f5, drone f1, turret f1, fx_explosion_medium_f3)
+#                      and is prompted to ease back toward drone f1
+#
+# In short: previous frame carries temporal continuity, f1 prevents identity
+# drift, and fx_explosion_medium_f3 pins the palette/material.
+# ---------------------------------------------------------------------------
+
+
 # ---------------------------------------------------------------------------
 # Explosion animation frames
 #
@@ -2199,6 +2438,7 @@ SPECIAL = [
 # Dependency chain:
 #   EXPLOSION_ANCHORS        # medium_f3 = GLOBAL VFX ANCHOR (no refs)
 #     └─ VFX_SIMPLE          # fx_flame_glow refs anchor; fx_smoke_puff refs medium_f6
+#     └─ VFX_FIRE_LOOP       # fire f1 refs medium_f3; fN refs (previous, f1, medium_f3)
 #        └─ TOWERS           # muzzle flashes ref fx_flame_glow
 #        └─ PROJECTILES      # tracers ref fx_flame_glow
 #     └─ EXPLOSION_{S,M,L}   # frame Nth refs (frame N-1, size sub-anchor)
@@ -2212,6 +2452,7 @@ SPECIAL = [
 SPRITES: list[Sprite] = (
     EXPLOSION_ANCHORS
     + VFX_SIMPLE
+    + VFX_FIRE_LOOP
     + TOWERS
     + DRONES
     + PROJECTILES

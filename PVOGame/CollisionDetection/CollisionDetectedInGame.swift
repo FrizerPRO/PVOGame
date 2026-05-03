@@ -115,6 +115,7 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
     }
 
     private func handleShellHitsMine(shell: Shell, mineBomb: MineBombEntity) {
+        guard mineBomb.canBeShotDown else { return }
         // Rockets and rocket blast are intentionally ineffective against mines.
         if shell is RocketEntity {
             return
@@ -246,7 +247,8 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
         // It will keep flying with the swarm toward the next retargeted tower.
         if tower.stats?.isDisabled ?? true { return }
 
-        tower.takeBombDamage(Constants.AdvancedEnemies.swarmTowerDamage)
+        let impactPos = swarm.component(ofType: SpriteComponent.self)?.spriteNode.position
+        tower.takeBombDamage(Constants.AdvancedEnemies.swarmTowerDamage, impactPosition: impactPos)
         swarm.takeDamage(swarm.health)
         if swarm.isHit {
             gameScene?.onDroneDestroyed(drone: swarm)
@@ -263,7 +265,8 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
            nodeB.physicsBody?.categoryBitMask == Constants.towerBitMask {
             if kamikaze.isHit { return true }
             if let tower = findTowerForNode(nodeB) {
-                tower.takeBombDamage(Constants.Kamikaze.towerDamage)
+                let impactPos = kamikaze.component(ofType: SpriteComponent.self)?.spriteNode.position
+                tower.takeBombDamage(Constants.Kamikaze.towerDamage, impactPosition: impactPos)
                 kamikaze.takeDamage(kamikaze.health)
                 if kamikaze.isHit {
                     gameScene?.onDroneDestroyed(drone: kamikaze)
@@ -275,7 +278,8 @@ class CollisionDetectedInGame: NSObject, SKPhysicsContactDelegate {
            nodeA.physicsBody?.categoryBitMask == Constants.towerBitMask {
             if kamikaze.isHit { return true }
             if let tower = findTowerForNode(nodeA) {
-                tower.takeBombDamage(Constants.Kamikaze.towerDamage)
+                let impactPos = kamikaze.component(ofType: SpriteComponent.self)?.spriteNode.position
+                tower.takeBombDamage(Constants.Kamikaze.towerDamage, impactPosition: impactPos)
                 kamikaze.takeDamage(kamikaze.health)
                 if kamikaze.isHit {
                     gameScene?.onDroneDestroyed(drone: kamikaze)

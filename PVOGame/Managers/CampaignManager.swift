@@ -141,6 +141,14 @@ class CampaignManager {
             definition: LevelDefinition.testEWDrone,
             requiredLevel: nil
         ),
+        CampaignLevel(
+            id: "test_tower_damage",
+            name: "TEST: Tower Damage",
+            subtitle: "5 waves — HARM, Lancet, bombers",
+            waveCount: 5,
+            definition: LevelDefinition.testTowerDamage,
+            requiredLevel: nil
+        ),
     ]
 
     // MARK: - Progress

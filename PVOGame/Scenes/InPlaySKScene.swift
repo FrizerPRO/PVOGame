@@ -370,6 +370,15 @@ class InPlaySKScene: SKScene {
     let cellSnapDuration: TimeInterval = 0.08
     var selectedTower: TowerEntity?
     var selectedSettlement: SettlementEntity?
+    var levelSelectContentNode: SKNode?
+    var levelSelectScrollThumb: SKSpriteNode?
+    var levelSelectScrollOffset: CGFloat = 0
+    var levelSelectMaxScrollOffset: CGFloat = 0
+    var levelSelectViewportTop: CGFloat = 0
+    var levelSelectViewportBottom: CGFloat = 0
+    var levelSelectTouchStart: CGPoint?
+    var levelSelectLastTouchY: CGFloat = 0
+    var levelSelectDidScroll = false
 
     // MARK: - Update Loop
 

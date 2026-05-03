@@ -221,23 +221,8 @@ final class LancetDroneEntity: AttackDroneEntity {
     }
 
     private func hitTower(_ tower: TowerEntity) {
-        // Destroy tower
-        tower.takeBombDamage(Constants.Lancet.towerDestroyDamage)
-
-        // Explosion VFX at impact
-        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode,
-           let scene = spriteNode.scene {
-            let flash = SKShapeNode(circleOfRadius: 12)
-            flash.fillColor = .orange
-            flash.strokeColor = .clear
-            flash.position = spriteNode.position
-            flash.zPosition = 55
-            flash.alpha = 0.9
-            scene.addChild(flash)
-            let expand = SKAction.scale(to: 2.5, duration: 0.2)
-            let fade = SKAction.fadeOut(withDuration: 0.15)
-            flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))
-        }
+        let impactPos = component(ofType: SpriteComponent.self)?.spriteNode.position
+        tower.takeBombDamage(Constants.Lancet.towerDestroyDamage, impactPosition: impactPos)
 
         didHit()
     }

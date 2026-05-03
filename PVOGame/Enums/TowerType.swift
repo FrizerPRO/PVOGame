@@ -93,7 +93,7 @@ enum TowerType: String, CaseIterable {
     var reachableAltitudes: Set<DroneAltitude> {
         switch self {
         case .autocannon: return [.low, .medium, .micro]
-        case .ciws: return [.low, .micro]
+        case .ciws: return [.low, .medium, .micro]
         case .samLauncher: return [.low, .medium, .high, .ballistic, .cruise]
         case .interceptor: return [.low, .medium, .high, .ballistic, .cruise]
         case .radar: return []

@@ -94,7 +94,50 @@ programmatic damage effects when hit. Sprite artists should be aware:
 
 ### Critical damage (burning)
 - Color tint: red-brown (rgb 153, 38, 26) at `colorBlendFactor: 0.45`
-- Fire: orange-yellow emitter, birthRate 40, alpha 0.9, wider angular spread
+- Fire: `fx_drone_fire_f1..f6` compact flipbook, with gray smoke emitter behind it
+
+## Looping fire visual effects
+
+### Destroyed turret fire
+
+Frames: `fx_turret_fire_f1..f7`
+
+Prompt direction:
+- Only fire: no wreckage, no debris, no smoke, no sparks, no ground
+- Strict vertical top-down view: orthographic 90-degree overhead camera, not 60-degree and not side view
+- Broken cluster of separate flat flame tongues/ribbons, like jagged petals licking around and across the turret seam
+- Visible transparent/white negative-space gaps between tongues; no dense filled disk, no circular saucer, no continuous flame pool
+- A few narrow hot bridges cross the center so there is no empty hole, but the center must not become a solid blob
+- Orange-yellow cartoon explosion palette, same tongue count and gap layout across the loop
+- Dark red painterly contour cuts inside the flame
+- Dependency graph mirrors explosions, but as a loop: `f1` refs `fx_explosion_medium_f3`; `f2` refs `f1` + `fx_explosion_medium_f3`; `f3..f6` ref previous frame + `f1` + `fx_explosion_medium_f3`; `f7` refs `f6` + `f1` + `fx_explosion_medium_f3` and must ease back toward `f1`
+- Frames `f2..f7` must preserve `f1` camera, material, center position, tongue count, and gap layout. The center animates by smooth deformation from the previous frame, not by inventing a new central silhouette
+- Center animation is mandatory but must be continuous: the same tongues, hot bridges, transparent gaps, and dark contour cuts should slide, stretch, shrink, brighten, and dim like liquid paint. Do not replace them with new shapes on each frame
+- `f2` is the first flare-up morph: same tongues and hot bridges as `f1`, alternating tongues lengthen 26-32%, center bridges brighten toward hotter yellow, center shifted up-right by about 5-7% of the fire width, contour cuts noticeably bent/shifted clockwise
+- `f3` continues from `f2`: same enlarged tongues drift farther clockwise/right, right-side tongues brighter, left-side tongues more orange, gaps preserved, contour cuts warped forward by only a few pixels
+- `f4` continues from `f3`: same tongue layout gently sheared lower-left to upper-right, existing contour cuts bend with that shear
+- `f5` continues from `f4`: same tongues contract 12-18%, become more orange at the edges, and settle toward `f1` positions
+- `f6` continues from `f5`: same tongues and center bridges at smallest/dimmest state, more orange visible between them, contour cuts softened and shortened but not moved to new locations
+- `f7` returns toward `f1`: same tongues and center bridges brighten/widen back toward anchor positions, contour cuts slide back toward `f1`, loop closes smoothly without exact duplication
+- Avoid candle flame, torch, campfire triangles, single teardrop flame, solid oval, circular saucer, filled disk, glossy highlights, lens flare
+
+### Drone damage fire
+
+Frames: `fx_drone_fire_f1..f6`
+
+Prompt direction:
+- Only fire: no drone parts, no debris, no smoke, no sparks, no ground
+- Top-down or high 60-degree view, not side view
+- Orientation is locked: drone nose / flight direction points toward the top edge; fire is dragged backward toward the bottom edge
+- Compact hot root near the upper-center, attached to the aircraft body area
+- Longer asymmetric rearward trail: three to five separate flattened flame tongues stretched down/back by high-speed airflow
+- Visible transparent/white gaps between tongues; small orange rear tips may separate like airflow is tearing the flame backward
+- One or two narrow hot bridges near the root so there is no empty hole, but the fire must not become a solid blob or flame pool
+- Strong directional/speed read: top/front edge compact, bottom/rear edge torn, elongated, and flickering
+- Smaller and flatter than turret fire
+- Dependency graph mirrors turret fire: `f1` refs `fx_turret_fire_f1` + `fx_explosion_medium_f3`; `f2..f5` ref previous frame + `drone f1` + `turret f1` + `fx_explosion_medium_f3`; `f6` refs `f5` + `drone f1` + `turret f1` + `fx_explosion_medium_f3` and must ease back toward `drone f1`
+- Frame motion: `f2` stretches the swept tail 22-30%; `f3` whips the tail slightly right with small rear tips; `f4` bends it left/crosswind; `f5` compresses the tail 12-18%; `f6` returns toward `f1`
+- Avoid standalone campfire, candle, torch, single vertical flame, radial flower, starburst, symmetric rosette, solid oval, circular saucer, and filled disk
 
 ### Design implications
 - Use medium-toned colors so tint and fire effect remain visible

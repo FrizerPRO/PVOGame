@@ -223,6 +223,11 @@ class Constants{
             visualScale: 0.62
         )
 
+        static let disabledTowerFriendlyFireChance: CGFloat = 0.05
+        static let disabledTowerCookoffLaunchStagger: TimeInterval = 0.035
+        static let turretBlowoffSparkDuration: TimeInterval = 0.9
+        static let turretBlowoffPersistentFireInterval: TimeInterval = 0.12
+
         static func interceptorRocketSpec(forScreenHeight screenHeight: CGFloat) -> RocketSpec {
             let dynamicDistance = max(40, screenHeight * interceptorRangeScreenHeightRatio)
             return RocketSpec(

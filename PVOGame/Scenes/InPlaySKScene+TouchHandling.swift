@@ -34,6 +34,78 @@ extension InPlaySKScene {
         dragState = nil
     }
 
+    func beginLevelSelectTouch(at location: CGPoint) {
+        levelSelectTouchStart = location
+        levelSelectLastTouchY = location.y
+        levelSelectDidScroll = false
+    }
+
+    func updateLevelSelectTouch(to location: CGPoint) {
+        guard let start = levelSelectTouchStart else { return }
+
+        let dy = location.y - levelSelectLastTouchY
+        if abs(location.y - start.y) > 8 {
+            levelSelectDidScroll = true
+        }
+        updateLevelSelectScroll(to: levelSelectScrollOffset + dy)
+        levelSelectLastTouchY = location.y
+    }
+
+    func endLevelSelectTouch(at location: CGPoint) {
+        guard levelSelectTouchStart != nil else { return }
+
+        var wasScroll = levelSelectDidScroll
+        if let start = levelSelectTouchStart {
+            let dx = location.x - start.x
+            let dy = location.y - start.y
+            wasScroll = wasScroll || sqrt(dx * dx + dy * dy) > 10
+        }
+
+        levelSelectTouchStart = nil
+        levelSelectDidScroll = false
+
+        guard !wasScroll else { return }
+
+        let touchedNode = atPoint(location)
+        guard let actionName = levelSelectActionName(from: touchedNode) else { return }
+
+        if actionName == "levelSelectBack" {
+            enumerateChildNodes(withName: "//levelSelectOverlay") { node, _ in
+                node.removeFromParent()
+            }
+            resetLevelSelectState()
+            showMainMenu()
+            return
+        }
+
+        guard isPointInsideLevelSelectViewport(location),
+              actionName.hasPrefix("levelCard_"),
+              let idx = Int(actionName.replacingOccurrences(of: "levelCard_", with: "")) else { return }
+
+        let campaign = CampaignManager.shared
+        guard campaign.levels.indices.contains(idx) else { return }
+
+        let level = campaign.levels[idx]
+        selectedLevel = level.definition
+        selectedCampaignLevelId = level.id
+        startGame()
+    }
+
+    func levelSelectActionName(from node: SKNode) -> String? {
+        var current: SKNode? = node
+        while let checkedNode = current {
+            if let name = checkedNode.name,
+               name == "levelSelectBack" || name.hasPrefix("levelCard_") {
+                return name
+            }
+            if checkedNode.name == "levelSelectOverlay" {
+                break
+            }
+            current = checkedNode.parent
+        }
+        return nil
+    }
+
     // MARK: - Touch Handling
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -44,25 +116,17 @@ extension InPlaySKScene {
 
         switch currentPhase {
         case .mainMenu:
+            if childNode(withName: "//levelSelectOverlay") != nil {
+                beginLevelSelectTouch(at: location)
+                return
+            }
+
             if touchedNode.name == "startGameButton" {
                 selectedLevel = LevelDefinition.level1
                 selectedCampaignLevelId = nil
                 startGame()
             } else if touchedNode.name == "campaignButton" {
                 showLevelSelect()
-            } else if let name = touchedNode.name, name.hasPrefix("levelCard_") {
-                if let idx = Int(name.replacingOccurrences(of: "levelCard_", with: "")) {
-                    let campaign = CampaignManager.shared
-                    let level = campaign.levels[idx]
-                    selectedLevel = level.definition
-                    selectedCampaignLevelId = level.id
-                    startGame()
-                }
-            } else if touchedNode.name == "levelSelectBack" {
-                enumerateChildNodes(withName: "//levelSelectOverlay") { node, _ in
-                    node.removeFromParent()
-                }
-                showMainMenu()
             }
 
         case .gameOver:
@@ -147,8 +211,17 @@ extension InPlaySKScene {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesMoved(touches, with: event)
-        guard let touch = touches.first, var state = dragState else { return }
+        guard let touch = touches.first else { return }
         let location = touch.location(in: self)
+
+        if currentPhase == .mainMenu,
+           levelSelectContentNode != nil,
+           levelSelectTouchStart != nil {
+            updateLevelSelectTouch(to: location)
+            return
+        }
+
+        guard var state = dragState else { return }
 
         if !state.isDragActive {
             // Check if finger moved far enough to activate drag
@@ -208,6 +281,12 @@ extension InPlaySKScene {
         super.touchesEnded(touches, with: event)
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
+
+        if currentPhase == .mainMenu,
+           childNode(withName: "//levelSelectOverlay") != nil {
+            endLevelSelectTouch(at: location)
+            return
+        }
 
         guard let state = dragState else { return }
 
@@ -286,6 +365,8 @@ extension InPlaySKScene {
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesCancelled(touches, with: event)
+        levelSelectTouchStart = nil
+        levelSelectDidScroll = false
         cancelDrag()
     }
 

@@ -287,6 +287,7 @@ extension InPlaySKScene {
         enumerateChildNodes(withName: "//mainMenuOverlay") { node, _ in
             node.removeFromParent()
         }
+        resetLevelSelectState()
 
         let overlay = SKNode()
         overlay.name = "levelSelectOverlay"
@@ -302,13 +303,37 @@ extension InPlaySKScene {
         title.fontSize = 24
         title.fontColor = .white
         title.position = CGPoint(x: frame.midX, y: frame.height - 80 - safeTop)
+        title.zPosition = 3
         overlay.addChild(title)
 
         let campaign = CampaignManager.shared
         let levels = campaign.levels
         let cardHeight: CGFloat = 48
         let spacing: CGFloat = 8
-        let startY = frame.height - 120 - safeTop
+        let topY = frame.height - 118 - safeTop
+        let bottomY = max(safeBottom + 86, 86)
+        let viewportHeight = max(120, topY - bottomY)
+        let startY = topY - cardHeight / 2
+        let contentHeight = CGFloat(levels.count) * cardHeight + CGFloat(max(0, levels.count - 1)) * spacing
+
+        levelSelectViewportTop = topY
+        levelSelectViewportBottom = bottomY
+        levelSelectMaxScrollOffset = max(0, contentHeight - viewportHeight)
+
+        let cropNode = SKCropNode()
+        cropNode.zPosition = 1
+        overlay.addChild(cropNode)
+
+        let maskRect = CGRect(x: 20, y: bottomY, width: frame.width - 40, height: viewportHeight)
+        let mask = SKShapeNode(rect: maskRect)
+        mask.fillColor = .white
+        mask.strokeColor = .clear
+        cropNode.maskNode = mask
+
+        let content = SKNode()
+        content.name = "levelSelectContent"
+        cropNode.addChild(content)
+        levelSelectContentNode = content
 
         for (i, level) in levels.enumerated() {
             let y = startY - CGFloat(i) * (cardHeight + spacing)
@@ -322,7 +347,7 @@ extension InPlaySKScene {
             )
             card.position = CGPoint(x: frame.midX, y: y)
             card.name = unlocked ? "levelCard_\(i)" : nil
-            overlay.addChild(card)
+            content.addChild(card)
 
             // Level number
             let numLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
@@ -354,6 +379,7 @@ extension InPlaySKScene {
             subLabel.position = CGPoint(x: -card.size.width / 2 + 44, y: -8)
             subLabel.horizontalAlignmentMode = .left
             subLabel.verticalAlignmentMode = .center
+            subLabel.name = card.name
             card.addChild(subLabel)
 
             // Stars
@@ -374,14 +400,37 @@ extension InPlaySKScene {
                 lockLabel.fontColor = .gray
                 lockLabel.position = CGPoint(x: card.size.width / 2 - 40, y: 0)
                 lockLabel.verticalAlignmentMode = .center
+                lockLabel.name = card.name
                 card.addChild(lockLabel)
             }
         }
 
+        if levelSelectMaxScrollOffset > 0 {
+            let track = SKSpriteNode(
+                color: UIColor.white.withAlphaComponent(0.14),
+                size: CGSize(width: 3, height: viewportHeight)
+            )
+            track.position = CGPoint(x: frame.width - 12, y: bottomY + viewportHeight / 2)
+            track.zPosition = 2
+            overlay.addChild(track)
+
+            let visibleRatio = min(1, viewportHeight / max(viewportHeight, contentHeight))
+            let thumbHeight = max(28, viewportHeight * visibleRatio)
+            let thumb = SKSpriteNode(
+                color: UIColor.white.withAlphaComponent(0.5),
+                size: CGSize(width: 5, height: thumbHeight)
+            )
+            thumb.position = CGPoint(x: track.position.x, y: topY - thumbHeight / 2)
+            thumb.zPosition = 3
+            overlay.addChild(thumb)
+            levelSelectScrollThumb = thumb
+        }
+
         // Back button
         let backBtn = SKSpriteNode(color: .systemRed, size: CGSize(width: 120, height: 40))
-        backBtn.position = CGPoint(x: frame.midX, y: startY - CGFloat(levels.count) * (cardHeight + spacing) - 20)
+        backBtn.position = CGPoint(x: frame.midX, y: max(safeBottom + 42, 42))
         backBtn.name = "levelSelectBack"
+        backBtn.zPosition = 3
         overlay.addChild(backBtn)
 
         let backLabel = SKLabelNode(fontNamed: Constants.GameBalance.hudFontName)
@@ -391,6 +440,39 @@ extension InPlaySKScene {
         backLabel.verticalAlignmentMode = .center
         backLabel.name = "levelSelectBack"
         backBtn.addChild(backLabel)
+
+        updateLevelSelectScroll(to: 0)
+    }
+
+    func resetLevelSelectState() {
+        levelSelectContentNode = nil
+        levelSelectScrollThumb = nil
+        levelSelectScrollOffset = 0
+        levelSelectMaxScrollOffset = 0
+        levelSelectViewportTop = 0
+        levelSelectViewportBottom = 0
+        levelSelectTouchStart = nil
+        levelSelectLastTouchY = 0
+        levelSelectDidScroll = false
+    }
+
+    func updateLevelSelectScroll(to offset: CGFloat) {
+        let clampedOffset = min(max(offset, 0), levelSelectMaxScrollOffset)
+        levelSelectScrollOffset = clampedOffset
+        levelSelectContentNode?.position.y = clampedOffset
+
+        guard let thumb = levelSelectScrollThumb else { return }
+        let viewportHeight = levelSelectViewportTop - levelSelectViewportBottom
+        let travel = max(0, viewportHeight - thumb.size.height)
+        let progress = levelSelectMaxScrollOffset > 0 ? clampedOffset / levelSelectMaxScrollOffset : 0
+        thumb.position.y = levelSelectViewportTop - thumb.size.height / 2 - travel * progress
+    }
+
+    func isPointInsideLevelSelectViewport(_ point: CGPoint) -> Bool {
+        point.x >= 20 &&
+        point.x <= frame.width - 20 &&
+        point.y >= levelSelectViewportBottom &&
+        point.y <= levelSelectViewportTop
     }
 
     func startGame() {
@@ -400,6 +482,7 @@ extension InPlaySKScene {
         enumerateChildNodes(withName: "//levelSelectOverlay") { node, _ in
             node.removeFromParent()
         }
+        resetLevelSelectState()
 
         currentPhase = .build
         score = 0

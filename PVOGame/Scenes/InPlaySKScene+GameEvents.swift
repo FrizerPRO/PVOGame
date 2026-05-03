@@ -1118,21 +1118,9 @@ extension InPlaySKScene {
     }
 
     func onHarmHitTower(harm: HarmMissileEntity) {
-        guard let tower = harm.targetTower,
-              let stats = tower.stats else { return }
-        tower.takeBombDamage(Constants.GameBalance.harmMissileTowerDamage)
-
-        // Impact explosion VFX
-        if let pos = harm.component(ofType: SpriteComponent.self)?.spriteNode.position {
-            let flash = SKSpriteNode(color: .orange, size: CGSize(width: 20, height: 20))
-            flash.position = pos
-            flash.zPosition = isNightWave ? Constants.NightWave.nightEffectZPosition : 50
-            flash.alpha = 0.8
-            addChild(flash)
-            let expand = SKAction.scale(to: 2.5, duration: 0.2)
-            let fade = SKAction.fadeOut(withDuration: 0.2)
-            flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))
-        }
+        guard let tower = harm.targetTower else { return }
+        let impactPos = harm.component(ofType: SpriteComponent.self)?.spriteNode.position
+        tower.takeBombDamage(Constants.GameBalance.harmMissileTowerDamage, impactPosition: impactPos)
     }
 
     // MARK: - Mine Layer / Bomber Drone
@@ -1273,11 +1261,433 @@ extension InPlaySKScene {
     }
 
     func onBombHitTower(_ mine: MineBombEntity, tower: TowerEntity) {
-        tower.takeBombDamage(mine.damage)
-        // Small explosion VFX
         let pos = mine.component(ofType: SpriteComponent.self)?.spriteNode.position ?? tower.worldPosition
-        spawnBombExplosion(at: pos)
+        tower.takeBombDamage(mine.damage, impactPosition: pos)
         removeEntity(mine)
+    }
+
+    func onTowerDisabledByHit(_ tower: TowerEntity, impactPosition: CGPoint) {
+        switch tower.towerType {
+        case .samLauncher, .interceptor, .pzrk:
+            triggerRocketTowerCookoff(from: tower)
+        case .autocannon, .ciws, .gepard:
+            triggerRotatingTurretBlowoff(on: tower)
+        default:
+            break
+        }
+    }
+
+    private func triggerRocketTowerCookoff(from tower: TowerEntity) {
+        guard let stats = tower.stats,
+              let ammo = stats.magazineAmmo,
+              ammo > 0,
+              let spec = cookoffRocketSpec(for: tower.towerType)
+        else { return }
+
+        stats.emptyMagazine()
+        let sourcePosition = tower.worldPosition
+        let targetCandidates = cookoffFriendlyTargets(from: tower, range: spec.maxFlightDistance)
+
+        for index in 0..<ammo {
+            let target: TowerEntity?
+            if !targetCandidates.isEmpty &&
+                CGFloat.random(in: 0...1) < Constants.GameBalance.disabledTowerFriendlyFireChance {
+                target = targetCandidates.randomElement()
+            } else {
+                target = nil
+            }
+
+            let launchPoint = CGPoint(
+                x: sourcePosition.x + CGFloat.random(in: -8...8),
+                y: sourcePosition.y + CGFloat.random(in: -8...8)
+            )
+            let targetPoint = target?.worldPosition
+            let directionAngle: CGFloat
+            if let targetPoint {
+                directionAngle = atan2(targetPoint.y - launchPoint.y, targetPoint.x - launchPoint.x)
+            } else {
+                directionAngle = CGFloat.random(in: 0...(CGFloat.pi * 2))
+            }
+            spawnCookoffRocket(
+                spec: spec,
+                at: launchPoint,
+                directionAngle: directionAngle,
+                speed: spec.initialSpeed,
+                target: target,
+                targetPoint: targetPoint,
+                delay: TimeInterval(index) * Constants.GameBalance.disabledTowerCookoffLaunchStagger
+            )
+        }
+    }
+
+    private func cookoffRocketSpec(for towerType: TowerType) -> Constants.GameBalance.RocketSpec? {
+        switch towerType {
+        case .samLauncher:
+            return Constants.GameBalance.standardRocketSpec
+        case .interceptor:
+            return Constants.GameBalance.interceptorRocketSpec(forScreenHeight: frame.height)
+        case .pzrk:
+            return Constants.GameBalance.pzrkRocketBaseSpec
+        default:
+            return nil
+        }
+    }
+
+    private func cookoffFriendlyTargets(from sourceTower: TowerEntity, range: CGFloat) -> [TowerEntity] {
+        guard let towerPlacement else { return [] }
+        let sourcePosition = sourceTower.worldPosition
+        let rangeSquared = range * range
+        return towerPlacement.towers.filter { candidate in
+            guard candidate !== sourceTower,
+                  !(candidate.stats?.isDisabled ?? true),
+                  candidate.component(ofType: SpriteComponent.self)?.spriteNode.parent != nil
+            else { return false }
+            return squaredDistance(candidate.worldPosition, sourcePosition) <= rangeSquared
+        }
+    }
+
+    private func spawnCookoffRocket(
+        spec: Constants.GameBalance.RocketSpec,
+        at launchPoint: CGPoint,
+        directionAngle: CGFloat,
+        speed: CGFloat,
+        target: TowerEntity?,
+        targetPoint: CGPoint?,
+        delay: TimeInterval
+    ) {
+        let rocket = RocketEntity(spec: spec)
+        guard let rocketSprite = rocket.component(ofType: SpriteComponent.self)?.spriteNode else { return }
+        rocketSprite.position = launchPoint
+        rocketSprite.zPosition = isNightWave ? Constants.NightWave.nightEffectZPosition : 45
+        rocketSprite.zRotation = directionAngle - .pi / 2
+        addEntity(rocket)
+
+        let ignite = SKAction.run { [weak self] in
+            self?.spawnCookoffIgnition(at: launchPoint)
+        }
+        let launch = SKAction.run { [weak rocket, weak target] in
+            rocket?.configureAccidentalFlight(
+                directionAngle: directionAngle,
+                speed: speed,
+                maxFlightDistance: spec.maxFlightDistance * 1.15,
+                friendlyTarget: target,
+                targetPoint: targetPoint
+            )
+        }
+        rocketSprite.run(SKAction.sequence([
+            SKAction.wait(forDuration: delay),
+            ignite,
+            launch
+        ]))
+    }
+
+    private func spawnCookoffIgnition(at position: CGPoint) {
+        let flame: SKSpriteNode
+        if let flameTex = AnimationTextureCache.shared.flameGlow {
+            flame = SKSpriteNode(texture: flameTex, size: CGSize(width: 16, height: 16))
+            flame.color = .white
+            flame.colorBlendFactor = 0
+        } else {
+            flame = SKSpriteNode(color: .orange, size: CGSize(width: 14, height: 14))
+            flame.colorBlendFactor = 1
+        }
+        flame.position = position
+        flame.zPosition = isNightWave ? Constants.NightWave.nightEffectZPosition : 46
+        flame.alpha = 0.9
+        flame.blendMode = .add
+        addChild(flame)
+        flame.run(SKAction.sequence([
+            SKAction.group([
+                SKAction.scale(to: 2.1, duration: 0.08),
+                SKAction.colorize(with: .white, colorBlendFactor: 0.55, duration: 0.04)
+            ]),
+            SKAction.group([
+                SKAction.scale(to: 1.4, duration: 0.10),
+                SKAction.fadeOut(withDuration: 0.10)
+            ]),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func triggerRotatingTurretBlowoff(on tower: TowerEntity) {
+        guard let spriteNode = tower.component(ofType: SpriteComponent.self)?.spriteNode,
+              spriteNode.parent != nil else { return }
+
+        let localJointPosition = rotatingTurretJointPosition(for: tower)
+        let jointRadius = max(8, min(spriteNode.size.width, spriteNode.size.height) * 0.23)
+        let jointEffect = makeTurretJointSparkEffect(at: localJointPosition, radius: jointRadius)
+        tower.installCatastrophicDamageEffect(jointEffect)
+
+        run(SKAction.sequence([
+            SKAction.wait(forDuration: Constants.GameBalance.turretBlowoffSparkDuration),
+            SKAction.run { [weak self, weak tower, weak spriteNode, weak jointEffect] in
+                guard let self,
+                      let tower,
+                      let spriteNode,
+                      spriteNode.parent != nil,
+                      tower.stats?.isDisabled == true
+                else { return }
+
+                let blastPosition = spriteNode.convert(localJointPosition, to: self)
+                self.spawnTowerImpactExplosion(at: blastPosition, damage: 2)
+                self.screenShake(intensity: 3.5, duration: 0.16)
+
+                if let detached = self.makeDetachedTurretSprite(from: tower, fallbackPosition: blastPosition) {
+                    self.addChild(detached)
+                    self.animateDetachedTurret(detached)
+                }
+
+                tower.markTurretBlownOff()
+                if let jointEffect {
+                    self.startPersistentTurretFire(on: jointEffect, radius: jointRadius)
+                }
+            }
+        ]), withKey: "turretBlowoff-\(ObjectIdentifier(tower))")
+    }
+
+    private func rotatingTurretJointPosition(for tower: TowerEntity) -> CGPoint {
+        tower.turretNode?.position ?? .zero
+    }
+
+    private func makeTurretJointSparkEffect(at position: CGPoint, radius: CGFloat) -> SKNode {
+        let effect = SKNode()
+        effect.position = position
+        effect.zPosition = 38
+
+        let ring = SKShapeNode(circleOfRadius: radius)
+        ring.name = "turretJointRing"
+        ring.strokeColor = UIColor(red: 1.0, green: 0.45, blue: 0.08, alpha: 0.95)
+        ring.fillColor = .clear
+        ring.lineWidth = 1.4
+        ring.blendMode = .add
+        effect.addChild(ring)
+        let innerRing = SKShapeNode(circleOfRadius: radius * 0.66)
+        innerRing.name = "turretJointInnerRing"
+        innerRing.strokeColor = UIColor(red: 1.0, green: 0.80, blue: 0.16, alpha: 0.85)
+        innerRing.fillColor = .clear
+        innerRing.lineWidth = 0.9
+        innerRing.blendMode = .add
+        effect.addChild(innerRing)
+        ring.run(SKAction.repeatForever(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.35, duration: 0.08),
+            SKAction.fadeAlpha(to: 0.95, duration: 0.05)
+        ])))
+        innerRing.run(SKAction.repeatForever(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.25, duration: 0.06),
+            SKAction.fadeAlpha(to: 0.85, duration: 0.04)
+        ])))
+
+        effect.run(SKAction.repeatForever(SKAction.sequence([
+            SKAction.run { [weak self, weak effect] in
+                guard let self, let effect else { return }
+                for _ in 0..<3 {
+                    self.spawnTurretJointSpark(in: effect, radius: radius)
+                }
+            },
+            SKAction.wait(forDuration: 0.018)
+        ])), withKey: "jointSparkLoop")
+
+        return effect
+    }
+
+    private func spawnTurretJointSpark(in effect: SKNode, radius: CGFloat) {
+        let angle = CGFloat.random(in: 0...(CGFloat.pi * 2))
+        let spark = SKSpriteNode(
+            color: CGFloat.random(in: 0...1) > 0.28 ? .yellow : .orange,
+            size: CGSize(width: CGFloat.random(in: 5...12), height: CGFloat.random(in: 1.2...2.0))
+        )
+        spark.position = CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+        spark.zRotation = angle
+        spark.zPosition = 3
+        spark.alpha = 0.95
+        spark.blendMode = .add
+        effect.addChild(spark)
+        let travel = CGFloat.random(in: 12...28)
+        spark.run(SKAction.sequence([
+            SKAction.group([
+                SKAction.moveBy(x: cos(angle) * travel, y: sin(angle) * travel, duration: 0.20),
+                SKAction.fadeOut(withDuration: 0.20)
+            ]),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func makeDetachedTurretSprite(from tower: TowerEntity, fallbackPosition: CGPoint) -> SKSpriteNode? {
+        guard let spriteNode = tower.component(ofType: SpriteComponent.self)?.spriteNode else { return nil }
+
+        let detached: SKSpriteNode
+        let position: CGPoint
+        let rotation: CGFloat
+        if let turret = tower.turretNode {
+            detached = SKSpriteNode(texture: turret.texture, color: turret.color, size: turret.size)
+            detached.anchorPoint = turret.anchorPoint
+            detached.colorBlendFactor = turret.colorBlendFactor
+            detached.alpha = turret.alpha
+            detached.xScale = turret.xScale
+            detached.yScale = turret.yScale
+            position = turret.convert(.zero, to: self)
+            rotation = turret.zRotation + spriteNode.zRotation
+        } else {
+            detached = SKSpriteNode(
+                color: tower.towerType.color.withAlphaComponent(0.85),
+                size: CGSize(width: spriteNode.size.width * 0.55, height: spriteNode.size.height * 0.35)
+            )
+            position = fallbackPosition
+            rotation = spriteNode.zRotation
+        }
+
+        detached.position = position
+        detached.zRotation = rotation
+        detached.zPosition = isNightWave ? Constants.NightWave.nightEffectZPosition + 2 : 55
+        return detached
+    }
+
+    private func animateDetachedTurret(_ turret: SKSpriteNode) {
+        let flyX = CGFloat.random(in: -34...34)
+        let flyY = CGFloat.random(in: 34...58)
+        let rotate = CGFloat.random(in: -1...1) >= 0 ? CGFloat.pi * 2.6 : -CGFloat.pi * 2.6
+        turret.run(SKAction.sequence([
+            SKAction.group([
+                SKAction.moveBy(x: flyX, y: flyY, duration: 0.55),
+                SKAction.rotate(byAngle: rotate, duration: 0.55),
+                SKAction.scale(to: 0.86, duration: 0.55)
+            ]),
+            SKAction.wait(forDuration: 0.35),
+            SKAction.group([
+                SKAction.fadeOut(withDuration: 0.45),
+                SKAction.moveBy(x: flyX * 0.25, y: -12, duration: 0.45)
+            ]),
+            SKAction.removeFromParent()
+        ]))
+    }
+
+    private func startPersistentTurretFire(on effect: SKNode, radius: CGFloat) {
+        effect.removeAction(forKey: "jointSparkLoop")
+        effect.childNode(withName: "turretJointRing")?.removeFromParent()
+        effect.childNode(withName: "turretJointInnerRing")?.removeFromParent()
+
+        let fire = makeTurretFireSprite(radius: radius)
+        effect.addChild(fire)
+
+        let smoke = makeDroneStyleTurretSmokeEmitter(radius: radius)
+        effect.addChild(smoke)
+    }
+
+    private func makeTurretFireSprite(radius: CGFloat) -> SKNode {
+        let frames = AnimationTextureCache.shared.turretFire
+        let crop = SKCropNode()
+        crop.name = "turretFireSprite"
+        crop.zPosition = 6
+
+        let seamMask = SKShapeNode(circleOfRadius: radius * 1.08)
+        seamMask.strokeColor = .white
+        seamMask.fillColor = .white
+        seamMask.lineWidth = 0
+        seamMask.glowWidth = 0
+        crop.maskNode = seamMask
+
+        let sprite = SKSpriteNode(texture: frames.first)
+        sprite.name = "turretFireSpriteFrame"
+        sprite.size = CGSize(width: radius * 2.55, height: radius * 2.55)
+        sprite.position = .zero
+        sprite.zPosition = 0
+        sprite.blendMode = .alpha
+        if !frames.isEmpty {
+            sprite.run(SKAction.repeatForever(
+                SKAction.animate(with: frames, timePerFrame: 0.055, resize: false, restore: false)
+            ), withKey: "turretFireFlipbook")
+        }
+        crop.addChild(sprite)
+        return crop
+    }
+
+    private func makeDroneStyleTurretSmokeEmitter(radius: CGFloat) -> SKEmitterNode {
+        let emitter = SKEmitterNode()
+        emitter.name = "turretFireSmokeEmitter"
+        emitter.particleTexture = Self.sharedSmokePuffTexture
+        emitter.particleBirthRate = 26
+        emitter.particleLifetime = 1.25
+        emitter.particleLifetimeRange = 0.38
+        emitter.particlePositionRange = CGVector(dx: radius * 1.35, dy: radius * 0.95)
+        emitter.particleSpeed = 18
+        emitter.particleSpeedRange = 9
+        emitter.emissionAngle = .pi / 2
+        emitter.emissionAngleRange = .pi / 3
+        emitter.particleAlpha = 0.58
+        emitter.particleAlphaSpeed = -0.44
+        emitter.particleScale = 0.22
+        emitter.particleScaleRange = 0.09
+        emitter.particleScaleSpeed = 0.26
+        emitter.particleColor = UIColor(white: 0.20, alpha: 1)
+        emitter.particleColorBlendFactor = 1.0
+        emitter.particleBlendMode = .alpha
+        emitter.zPosition = 9
+        return emitter
+    }
+
+    func spawnTowerImpactExplosion(at position: CGPoint, damage: Int) {
+        let cache = AnimationTextureCache.shared
+        let useMedium = damage >= 2 && !cache.mediumExplosion.isEmpty
+        let textures = useMedium ? cache.mediumExplosion : cache.smallExplosion
+        let diameter: CGFloat = damage >= 2 ? 52 : 36
+        let zPos = isNightWave ? Constants.NightWave.nightEffectZPosition : 50
+
+        if !textures.isEmpty {
+            let node = acquireExplosionNode()
+            node.texture = textures[0]
+            node.size = CGSize(width: diameter, height: diameter)
+            node.color = .white
+            node.colorBlendFactor = 0
+            node.position = position
+            node.zPosition = zPos
+            node.alpha = 1.0
+            node.setScale(1.0)
+            addChild(node)
+            node.run(SKAction.sequence([
+                SKAction.animate(with: textures, timePerFrame: 0.045, resize: false, restore: false),
+                SKAction.run { [weak self, weak node] in
+                    guard let self, let node else { return }
+                    self.releaseExplosionNode(node)
+                }
+            ]))
+        } else {
+            let flash = SKSpriteNode(color: .orange, size: CGSize(width: diameter * 0.5, height: diameter * 0.5))
+            flash.position = position
+            flash.zPosition = zPos
+            flash.alpha = 0.9
+            addChild(flash)
+            let expand = SKAction.scale(to: 2.4, duration: 0.18)
+            let fade = SKAction.fadeOut(withDuration: 0.18)
+            flash.run(SKAction.sequence([SKAction.group([expand, fade]), SKAction.removeFromParent()]))
+        }
+
+        let smokeTex = cache.damageSmokeTexture ?? cache.smokePuffGray ?? cache.smokePuff
+        for i in 0..<5 {
+            let puff: SKSpriteNode
+            if let smokeTex {
+                puff = SKSpriteNode(texture: smokeTex, size: CGSize(width: 13, height: 13))
+                puff.alpha = 0.62
+            } else {
+                puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.62), size: CGSize(width: 13, height: 13))
+            }
+            puff.position = CGPoint(
+                x: position.x + CGFloat.random(in: -10...10),
+                y: position.y + CGFloat.random(in: -8...8)
+            )
+            puff.zPosition = zPos - 1
+            addChild(puff)
+
+            let delay = TimeInterval(i) * 0.035
+            let rise = SKAction.moveBy(x: CGFloat.random(in: -10...10), y: CGFloat.random(in: 20...36), duration: 0.8)
+            rise.timingMode = .easeOut
+            let grow = SKAction.scale(to: CGFloat.random(in: 1.8...2.5), duration: 0.8)
+            let fade = SKAction.fadeOut(withDuration: 0.8)
+            puff.run(SKAction.sequence([
+                SKAction.wait(forDuration: delay),
+                SKAction.group([rise, grow, fade]),
+                SKAction.removeFromParent()
+            ]))
+        }
     }
 
     func spawnBombExplosion(at position: CGPoint) {

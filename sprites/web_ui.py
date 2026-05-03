@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import queue
 import sys
@@ -71,6 +72,8 @@ LOG_BUFFER: list[str] = []              # full session log (for late subscribers
 LOG_SUBSCRIBERS: list[queue.Queue] = []  # live SSE queues
 
 OUT_DIR = DEFAULT_OUT
+THUMB_LOCK = threading.Lock()
+THUMB_CACHE: dict[tuple[str, int, int], bytes] = {}
 
 
 def log(msg: str) -> None:
@@ -436,6 +439,30 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_thumb_png(self, path: Path, max_px: int = 128):
+        if not path.exists():
+            self._send_json({"error": "not found", "path": str(path)}, status=404)
+            return
+        stat = path.stat()
+        key = (str(path), stat.st_mtime_ns, max_px)
+        with THUMB_LOCK:
+            data = THUMB_CACHE.get(key)
+        if data is None:
+            with Image.open(path) as img:
+                thumb = img.convert("RGBA")
+                thumb.thumbnail((max_px, max_px), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                thumb.save(buf, "PNG", optimize=True)
+                data = buf.getvalue()
+            with THUMB_LOCK:
+                THUMB_CACHE[key] = data
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _read_json_body(self) -> dict:
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length <= 0:
@@ -494,6 +521,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "unknown sprite"}, status=404)
                 return
             self._send_png(processed_path(OUT_DIR, sp))
+            return
+        if path.startswith("/thumb/raw/"):
+            name = path[len("/thumb/raw/"):]
+            sp = BY_NAME.get(name)
+            if sp is None:
+                self._send_json({"error": "unknown sprite"}, status=404)
+                return
+            self._send_thumb_png(raw_path(OUT_DIR, sp))
+            return
+        if path.startswith("/thumb/processed/"):
+            name = path[len("/thumb/processed/"):]
+            sp = BY_NAME.get(name)
+            if sp is None:
+                self._send_json({"error": "unknown sprite"}, status=404)
+                return
+            self._send_thumb_png(processed_path(OUT_DIR, sp))
             return
         self._send_json({"error": "not found"}, status=404)
 
@@ -1099,9 +1142,19 @@ function renderCard(sp) {
   });
   const thumb = el("div", {class: "thumb"});
   if (sp.has_processed) {
-    thumb.append(el("img", {src: `/image/processed/${sp.name}?t=${STATE.cacheBust}`, alt: sp.name}));
+    thumb.append(el("img", {
+      src: `/thumb/processed/${sp.name}?t=${STATE.cacheBust}`,
+      alt: sp.name,
+      loading: "lazy",
+      decoding: "async",
+    }));
   } else if (sp.has_raw) {
-    thumb.append(el("img", {src: `/image/raw/${sp.name}?t=${STATE.cacheBust}`, alt: sp.name}));
+    thumb.append(el("img", {
+      src: `/thumb/raw/${sp.name}?t=${STATE.cacheBust}`,
+      alt: sp.name,
+      loading: "lazy",
+      decoding: "async",
+    }));
   } else {
     thumb.append(el("div", {class: "placeholder", text: "— not generated —"}));
   }
@@ -1318,9 +1371,19 @@ function renderTreeNode(container, name, primaryChildren, depth) {
   // Thumb
   const thumb = el("div", {class: "thumb-sm"});
   if (sp.has_processed) {
-    thumb.append(el("img", {src: `/image/processed/${name}?t=${STATE.cacheBust}`, alt: name}));
+    thumb.append(el("img", {
+      src: `/thumb/processed/${name}?t=${STATE.cacheBust}`,
+      alt: name,
+      loading: "lazy",
+      decoding: "async",
+    }));
   } else if (sp.has_raw) {
-    thumb.append(el("img", {src: `/image/raw/${name}?t=${STATE.cacheBust}`, alt: name}));
+    thumb.append(el("img", {
+      src: `/thumb/raw/${name}?t=${STATE.cacheBust}`,
+      alt: name,
+      loading: "lazy",
+      decoding: "async",
+    }));
   } else {
     thumb.append(el("div", {class: "placeholder", text: "none"}));
   }

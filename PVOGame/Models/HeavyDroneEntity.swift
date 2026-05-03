@@ -1106,6 +1106,7 @@ final class HeavyDroneEntity: AttackDroneEntity {
         let bomb = MineBombEntity()
         bomb.place(at: releaseWorldPos)
         bomb.configureOrigin(isFromCrashedDrone: false, sourceDrone: self)
+        bomb.makeUnshootable()
         bomb.targetTower = target
         bomb.damage = Constants.AdvancedEnemies.heavyDroneBombDamage
         scene.addEntity(bomb)
@@ -1123,6 +1124,8 @@ final class HeavyDroneEntity: AttackDroneEntity {
             body.affectedByGravity = false
             body.velocity = .zero
             body.categoryBitMask = 0
+            body.contactTestBitMask = 0
+            body.collisionBitMask = 0
         }
 
         let glide = SKAction.move(to: target.worldPosition, duration: dropDuration)

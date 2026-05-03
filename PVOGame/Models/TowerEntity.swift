@@ -14,6 +14,8 @@ class TowerEntity: GKEntity {
     private var rangeIndicator: SKShapeNode?
     private var wasDisabled = false
     private var smokeEmitter: SKNode?
+    private var catastrophicEffectNode: SKNode?
+    private var turretBlownOff = false
 
     // Multi-layer sprite nodes (nil when fallback colored squares are used)
     private(set) var turretNode: SKSpriteNode?
@@ -200,11 +202,17 @@ class TowerEntity: GKEntity {
 
     // MARK: - Durability
 
-    func takeBombDamage(_ amount: Int) {
+    func takeBombDamage(_ amount: Int, impactPosition: CGPoint? = nil) {
         guard let stats else { return }
+        let wasDisabledBefore = stats.isDisabled
         stats.takeBombDamage(amount)
+        showImpactFeedback(at: impactPosition, damage: amount)
         if stats.isDisabled {
             showDisabledEffect()
+            if !wasDisabledBefore,
+               let scene = component(ofType: SpriteComponent.self)?.spriteNode.scene as? InPlaySKScene {
+                scene.onTowerDisabledByHit(self, impactPosition: impactPosition ?? worldPosition)
+            }
         }
     }
 
@@ -215,6 +223,87 @@ class TowerEntity: GKEntity {
         if wasDamaged {
             hideDisabledEffect()
             wasDisabled = false
+        }
+    }
+
+    func installCatastrophicDamageEffect(_ node: SKNode) {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+        catastrophicEffectNode?.removeAllActions()
+        catastrophicEffectNode?.removeFromParent()
+        catastrophicEffectNode = node
+        spriteNode.addChild(node)
+    }
+
+    func markTurretBlownOff() {
+        turretBlownOff = true
+        turretNode?.removeAllActions()
+        turretNode?.isHidden = true
+        muzzleNode?.isHidden = true
+    }
+
+    private func clearCatastrophicDamageEffect() {
+        catastrophicEffectNode?.removeAllActions()
+        catastrophicEffectNode?.removeFromParent()
+        catastrophicEffectNode = nil
+
+        if turretBlownOff {
+            turretNode?.isHidden = false
+            turretNode?.alpha = 1.0
+            turretNode?.setScale(1.0)
+            turretBlownOff = false
+        }
+        muzzleNode?.isHidden = true
+    }
+
+    private func showImpactFeedback(at impactPosition: CGPoint?, damage: Int) {
+        guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
+        if let impactPosition, let scene = spriteNode.scene as? InPlaySKScene {
+            scene.spawnTowerImpactExplosion(at: impactPosition, damage: damage)
+        }
+        spawnImpactSmokeBurst(on: spriteNode)
+
+        let savedColor = spriteNode.color
+        let savedBlend = spriteNode.colorBlendFactor
+        spriteNode.removeAction(forKey: "towerHitFlash")
+        spriteNode.run(SKAction.sequence([
+            SKAction.colorize(with: .white, colorBlendFactor: 0.85, duration: 0.04),
+            SKAction.colorize(with: savedColor, colorBlendFactor: savedBlend, duration: 0.10)
+        ]), withKey: "towerHitFlash")
+    }
+
+    private func spawnImpactSmokeBurst(on spriteNode: SKSpriteNode) {
+        let damageTex = AnimationTextureCache.shared.damageSmokeTexture
+            ?? AnimationTextureCache.shared.smokePuffGray
+            ?? AnimationTextureCache.shared.smokePuff
+        for i in 0..<6 {
+            let puff: SKSpriteNode
+            if let tex = damageTex {
+                puff = SKSpriteNode(texture: tex, size: CGSize(width: 12, height: 12))
+                puff.alpha = 0.68
+            } else {
+                puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.68), size: CGSize(width: 12, height: 12))
+            }
+            puff.position = CGPoint(
+                x: CGFloat.random(in: -12...12),
+                y: CGFloat.random(in: -6...10)
+            )
+            puff.zPosition = 32
+            spriteNode.addChild(puff)
+
+            let delay = TimeInterval(i) * 0.025
+            let rise = SKAction.moveBy(
+                x: CGFloat.random(in: -10...10),
+                y: CGFloat.random(in: 18...34),
+                duration: 0.75
+            )
+            rise.timingMode = .easeOut
+            let grow = SKAction.scale(to: CGFloat.random(in: 1.8...2.6), duration: 0.75)
+            let fade = SKAction.fadeOut(withDuration: 0.75)
+            puff.run(SKAction.sequence([
+                SKAction.wait(forDuration: delay),
+                SKAction.group([rise, grow, fade]),
+                SKAction.removeFromParent()
+            ]))
         }
     }
 
@@ -229,6 +318,8 @@ class TowerEntity: GKEntity {
         component(ofType: TowerAnimationComponent.self)?.onDisabled()
 
         let damageTex = AnimationTextureCache.shared.damageSmokeTexture
+            ?? AnimationTextureCache.shared.smokePuffGray
+            ?? AnimationTextureCache.shared.smokePuff
         if smokeEmitter == nil {
             let smoke = SKNode()
             smoke.name = "towerSmoke"
@@ -237,22 +328,24 @@ class TowerEntity: GKEntity {
                     guard spriteNode != nil, let smoke else { return }
                     let puff: SKSpriteNode
                     if let tex = damageTex {
-                        puff = SKSpriteNode(texture: tex, size: CGSize(width: 8, height: 8))
-                        puff.alpha = 0.5
+                        puff = SKSpriteNode(texture: tex, size: CGSize(width: 12, height: 12))
+                        puff.alpha = 0.68
                     } else {
-                        puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.5), size: CGSize(width: 8, height: 8))
+                        puff = SKSpriteNode(color: UIColor.gray.withAlphaComponent(0.68), size: CGSize(width: 12, height: 12))
                     }
                     puff.position = CGPoint(
-                        x: CGFloat.random(in: -6...6),
-                        y: CGFloat.random(in: -2...4)
+                        x: CGFloat.random(in: -12...12),
+                        y: CGFloat.random(in: -6...8)
                     )
-                    puff.zPosition = 30
+                    puff.zPosition = 32
                     smoke.addChild(puff)
-                    let rise = SKAction.moveBy(x: CGFloat.random(in: -4...4), y: 18, duration: 0.8)
-                    let fade = SKAction.fadeOut(withDuration: 0.8)
-                    puff.run(SKAction.sequence([SKAction.group([rise, fade]), SKAction.removeFromParent()]))
+                    let rise = SKAction.moveBy(x: CGFloat.random(in: -8...8), y: 28, duration: 1.0)
+                    rise.timingMode = .easeOut
+                    let fade = SKAction.fadeOut(withDuration: 1.0)
+                    let grow = SKAction.scale(to: 2.1, duration: 1.0)
+                    puff.run(SKAction.sequence([SKAction.group([rise, grow, fade]), SKAction.removeFromParent()]))
                 },
-                SKAction.wait(forDuration: 0.25)
+                SKAction.wait(forDuration: 0.12)
             ]))
             smoke.run(smokeAction, withKey: "smokeLoop")
             spriteNode.addChild(smoke)
@@ -267,6 +360,7 @@ class TowerEntity: GKEntity {
         smokeEmitter?.removeAllActions()
         smokeEmitter?.removeFromParent()
         smokeEmitter = nil
+        clearCatastrophicDamageEffect()
 
         let hasTexture = AnimationTextureCache.shared.towerTextures[towerType]?.base != nil
 

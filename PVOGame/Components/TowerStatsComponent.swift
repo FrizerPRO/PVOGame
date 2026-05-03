@@ -109,6 +109,12 @@ class TowerStatsComponent: GKComponent {
         magazineReloadTimer = 0
     }
 
+    func emptyMagazine() {
+        guard magazineCapacity != nil else { return }
+        magazineAmmo = 0
+        magazineReloadTimer = 0
+    }
+
     // MARK: - Military Aid Buffs
 
     func addMagazineCapacity(_ bonus: Int) {

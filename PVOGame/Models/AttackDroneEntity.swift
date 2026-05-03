@@ -15,6 +15,24 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         let heading: CGFloat
     }
 
+    private struct DamageFireProfile {
+        let fireWidthMultiplier: CGFloat
+        let fireHeightMultiplier: CGFloat
+        let fireMinWidth: CGFloat
+        let fireMinHeight: CGFloat
+        let fireYOffsetMultiplier: CGFloat
+        let fireAlpha: CGFloat
+        let timePerFrame: TimeInterval
+        let smokeBirthRate: CGFloat
+        let smokeAlpha: CGFloat
+        let smokeScale: CGFloat
+        let smokeSpeed: CGFloat
+        let emberBirthRate: CGFloat
+        let emberAlpha: CGFloat
+        let emberScale: CGFloat
+        let emberSpeed: CGFloat
+    }
+
     public var flyingPath: FlyingPath
 
     public var damage: CGFloat
@@ -63,7 +81,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
     private var hpBarContainer: SKNode?
 
     // PvZ-style damage visuals
-    private var damageSmoke: SKEmitterNode?
+    private var damageSmoke: SKNode?
     private var currentDamageLevel: DamageVisualLevel = .none
     var isBossType: Bool { false }
 
@@ -73,8 +91,18 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         case medium = 2
         case critical = 3
 
-        /// All damage stages from most severe to least, used for threshold distribution.
-        static let allStages: [DamageVisualLevel] = [.critical, .medium, .light]
+        static func stages(forHealthSteps steps: Int) -> [DamageVisualLevel] {
+            switch steps {
+            case ...0:
+                return []
+            case 1:
+                return [.critical]
+            case 2:
+                return [.medium, .critical]
+            default:
+                return [.light, .medium, .critical]
+            }
+        }
 
         static func < (lhs: DamageVisualLevel, rhs: DamageVisualLevel) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -111,6 +139,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         guard !isHit else { return }
         health = max(0, health - amount)
         if health <= 0 {
+            clearDamageVisuals()
             didHit()
         } else {
             // White hit flash (0.05s) — restores damage tint after
@@ -183,22 +212,21 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         guard maxHealth > 1 else { return }
         guard let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode else { return }
 
-        // Take as many visual stages as the drone has HP steps, filling from most severe.
-        // 2 HP (1 step)  → [critical]
-        // 3 HP (2 steps) → [critical, medium]
-        // 4+ HP (3+ steps) → [critical, medium, light]
+        // Scale visual severity with available HP steps.
+        // 2 HP (1 step)  -> [critical]
+        // 3 HP (2 steps) -> [medium, critical]
+        // 4+ HP          -> [light, medium, critical]
         let steps = maxHealth - 1
-        let stages = Array(DamageVisualLevel.allStages.prefix(min(steps, DamageVisualLevel.allStages.count)))
+        let stages = DamageVisualLevel.stages(forHealthSteps: steps)
         let usedCount = stages.count
 
         // Evenly split HP range into (usedCount+1) bands.
-        // Band i triggers stages[i] when health <= maxHealth * (usedCount - i) / (usedCount + 1)
+        // Later stages are more severe, so keep scanning and take the strongest matching stage.
         var newLevel: DamageVisualLevel = .none
         for (i, stage) in stages.enumerated() {
             let threshold = maxHealth * (usedCount - i) / (usedCount + 1)
             if health <= threshold {
                 newLevel = stage
-                break
             }
         }
 
@@ -214,13 +242,11 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
             spriteNode.colorBlendFactor = max(spriteNode.colorBlendFactor, 0.15)
             spriteNode.color = blendColor(spriteNode.color, with: .gray, factor: 0.3)
         case .medium:
-            // Heavier smoke + darker tint
-            addDamageSmoke(on: spriteNode, birthRate: 20, alpha: 0.5)
-            spriteNode.color = UIColor(white: 0.35, alpha: 1)
-            spriteNode.colorBlendFactor = 0.35
+            addDamageFire(on: spriteNode, level: .medium)
+            spriteNode.color = UIColor(white: 0.38, alpha: 1)
+            spriteNode.colorBlendFactor = 0.32
         case .critical:
-            // Fire effect — drone is burning
-            addDamageFire(on: spriteNode)
+            addDamageFire(on: spriteNode, level: .critical)
             spriteNode.color = UIColor(red: 0.6, green: 0.15, blue: 0.1, alpha: 1)
             spriteNode.colorBlendFactor = 0.45
         }
@@ -241,14 +267,15 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
 
         let emitter = SKEmitterNode()
         emitter.particleTexture = Self.smokeTexture
+        emitter.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.08)
         emitter.particleBirthRate = birthRate
         emitter.particleLifetime = 0.6
         emitter.particleLifetimeRange = 0.3
-        emitter.particlePositionRange = CGVector(dx: spriteNode.size.width * 0.3, dy: spriteNode.size.height * 0.3)
+        emitter.particlePositionRange = CGVector(dx: spriteNode.size.width * 0.24, dy: spriteNode.size.height * 0.28)
         emitter.particleSpeed = 12
         emitter.particleSpeedRange = 6
-        emitter.emissionAngle = .pi / 2
-        emitter.emissionAngleRange = .pi / 4
+        emitter.emissionAngle = -.pi / 2
+        emitter.emissionAngleRange = .pi / 5
         emitter.particleAlpha = alpha
         emitter.particleAlphaSpeed = -0.8
         emitter.particleScale = 0.15
@@ -260,22 +287,141 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         damageSmoke = emitter
     }
 
-    private func addDamageFire(on spriteNode: SKSpriteNode) {
+    private func clearDamageVisuals() {
+        damageSmoke?.removeAllActions()
         damageSmoke?.removeFromParent()
+        damageSmoke = nil
+
+        if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
+            spriteNode.childNode(withName: "droneDamageFire")?.removeFromParent()
+        }
+    }
+
+    private func damageFireProfile(for level: DamageVisualLevel) -> DamageFireProfile {
+        switch level {
+        case .medium:
+            return DamageFireProfile(
+                fireWidthMultiplier: 0.42,
+                fireHeightMultiplier: 0.82,
+                fireMinWidth: 13,
+                fireMinHeight: 19,
+                fireYOffsetMultiplier: -0.10,
+                fireAlpha: 0.72,
+                timePerFrame: 0.075,
+                smokeBirthRate: 7,
+                smokeAlpha: 0.24,
+                smokeScale: 0.09,
+                smokeSpeed: 14,
+                emberBirthRate: 2.5,
+                emberAlpha: 0.48,
+                emberScale: 0.045,
+                emberSpeed: 24
+            )
+        case .critical:
+            return DamageFireProfile(
+                fireWidthMultiplier: 0.62,
+                fireHeightMultiplier: 1.20,
+                fireMinWidth: 18,
+                fireMinHeight: 26,
+                fireYOffsetMultiplier: -0.18,
+                fireAlpha: 0.98,
+                timePerFrame: 0.052,
+                smokeBirthRate: 15,
+                smokeAlpha: 0.42,
+                smokeScale: 0.13,
+                smokeSpeed: 22,
+                emberBirthRate: 9,
+                emberAlpha: 0.82,
+                emberScale: 0.06,
+                emberSpeed: 34
+            )
+        default:
+            return DamageFireProfile(
+                fireWidthMultiplier: 0.54,
+                fireHeightMultiplier: 1.0,
+                fireMinWidth: 14,
+                fireMinHeight: 22,
+                fireYOffsetMultiplier: -0.14,
+                fireAlpha: 0.85,
+                timePerFrame: 0.06,
+                smokeBirthRate: 10,
+                smokeAlpha: 0.30,
+                smokeScale: 0.11,
+                smokeSpeed: 18,
+                emberBirthRate: 5,
+                emberAlpha: 0.65,
+                emberScale: 0.05,
+                emberSpeed: 28
+            )
+        }
+    }
+
+    private func addDamageFire(on spriteNode: SKSpriteNode, level: DamageVisualLevel) {
+        damageSmoke?.removeFromParent()
+        let profile = damageFireProfile(for: level)
+
+        let frames = AnimationTextureCache.shared.droneFire
+        if let firstFrame = frames.first {
+            let effect = SKNode()
+            effect.name = "droneDamageFire"
+            effect.zPosition = 30
+
+            let fire = SKSpriteNode(texture: firstFrame)
+            fire.size = CGSize(
+                width: max(profile.fireMinWidth, spriteNode.size.width * profile.fireWidthMultiplier),
+                height: max(profile.fireMinHeight, spriteNode.size.height * profile.fireHeightMultiplier)
+            )
+            fire.position = CGPoint(x: spriteNode.size.width * 0.02, y: spriteNode.size.height * profile.fireYOffsetMultiplier)
+            fire.alpha = profile.fireAlpha
+            fire.blendMode = .alpha
+            fire.zPosition = 2
+            fire.run(SKAction.repeatForever(
+                SKAction.animate(with: frames, timePerFrame: profile.timePerFrame, resize: false, restore: false)
+            ), withKey: "droneFireFlipbook")
+            effect.addChild(fire)
+
+            let smoke = SKEmitterNode()
+            smoke.particleTexture = Self.smokeTexture
+            smoke.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.18)
+            smoke.particleBirthRate = profile.smokeBirthRate
+            smoke.particleLifetime = 0.62
+            smoke.particleLifetimeRange = 0.22
+            smoke.particlePositionRange = CGVector(dx: spriteNode.size.width * 0.16, dy: spriteNode.size.height * 0.42)
+            smoke.particleSpeed = profile.smokeSpeed
+            smoke.particleSpeedRange = 7
+            smoke.emissionAngle = -.pi / 2
+            smoke.emissionAngleRange = .pi / 8
+            smoke.particleAlpha = profile.smokeAlpha
+            smoke.particleAlphaSpeed = -0.7
+            smoke.particleScale = profile.smokeScale
+            smoke.particleScaleRange = profile.smokeScale * 0.35
+            smoke.particleScaleSpeed = 0.14
+            smoke.particleColor = UIColor(white: 0.30, alpha: 1)
+            smoke.particleColorBlendFactor = 1.0
+            smoke.zPosition = 1
+            effect.addChild(smoke)
+
+            let embers = makeDamageEmberEmitter(spriteNode: spriteNode, profile: profile)
+            effect.addChild(embers)
+
+            spriteNode.addChild(effect)
+            damageSmoke = effect
+            return
+        }
 
         let emitter = SKEmitterNode()
         emitter.particleTexture = Self.smokeTexture
-        emitter.particleBirthRate = 40
+        emitter.particleBirthRate = max(12, profile.emberBirthRate * 4)
         emitter.particleLifetime = 0.4
         emitter.particleLifetimeRange = 0.2
         emitter.particlePositionRange = CGVector(dx: spriteNode.size.width * 0.3, dy: spriteNode.size.height * 0.3)
-        emitter.particleSpeed = 18
+        emitter.particleSpeed = profile.emberSpeed
         emitter.particleSpeedRange = 8
-        emitter.emissionAngle = .pi / 2
+        emitter.emissionAngle = -.pi / 2
         emitter.emissionAngleRange = .pi / 3
-        emitter.particleAlpha = 0.9
+        emitter.particleAlpha = profile.emberAlpha
         emitter.particleAlphaSpeed = -1.5
-        emitter.particleScale = 0.2
+        emitter.particleScale = max(0.08, profile.emberScale * 2.2)
         emitter.particleScaleSpeed = 0.1
         // Fire: orange-yellow, fading to red-dark
         emitter.particleColor = UIColor(red: 1.0, green: 0.6, blue: 0.1, alpha: 1)
@@ -289,6 +435,31 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         emitter.zPosition = 30
         spriteNode.addChild(emitter)
         damageSmoke = emitter
+    }
+
+    private func makeDamageEmberEmitter(spriteNode: SKSpriteNode, profile: DamageFireProfile) -> SKEmitterNode {
+        let emitter = SKEmitterNode()
+        emitter.name = "droneDamageEmberEmitter"
+        emitter.particleTexture = Self.smokeTexture
+        emitter.position = CGPoint(x: 0, y: -spriteNode.size.height * 0.24)
+        emitter.particleBirthRate = profile.emberBirthRate
+        emitter.particleLifetime = 0.36
+        emitter.particleLifetimeRange = 0.16
+        emitter.particlePositionRange = CGVector(dx: spriteNode.size.width * 0.16, dy: spriteNode.size.height * 0.26)
+        emitter.particleSpeed = profile.emberSpeed
+        emitter.particleSpeedRange = 10
+        emitter.emissionAngle = -.pi / 2
+        emitter.emissionAngleRange = .pi / 7
+        emitter.particleAlpha = profile.emberAlpha
+        emitter.particleAlphaSpeed = -1.7
+        emitter.particleScale = profile.emberScale
+        emitter.particleScaleRange = profile.emberScale * 0.45
+        emitter.particleScaleSpeed = -0.02
+        emitter.particleColor = UIColor(red: 1.0, green: 0.45, blue: 0.08, alpha: 1)
+        emitter.particleColorBlendFactor = 1.0
+        emitter.particleBlendMode = .add
+        emitter.zPosition = 3
+        return emitter
     }
 
     private func blendColor(_ base: UIColor, with overlay: UIColor, factor: CGFloat) -> UIColor {
@@ -310,8 +481,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
         isHit = false
         health = maxHealth
         currentDamageLevel = .none
-        damageSmoke?.removeFromParent()
-        damageSmoke = nil
+        clearDamageVisuals()
         if let spriteNode = component(ofType: SpriteComponent.self)?.spriteNode {
             spriteNode.colorBlendFactor = 0
         }
@@ -340,6 +510,7 @@ public class AttackDroneEntity: GKEntity, FlyingProjectile{
 
     public func didHit(){
         isHit = true
+        clearDamageVisuals()
         component(ofType: FlyingProjectileComponent.self)?.behavior?.removeAllGoals()
         let physicBody = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody
         physicBody?.affectedByGravity = false

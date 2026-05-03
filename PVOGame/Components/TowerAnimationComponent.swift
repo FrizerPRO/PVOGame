@@ -18,6 +18,9 @@ class TowerAnimationComponent: GKComponent {
     private var alternatingBarrel = false  // toggles left/right for Pantsir/Gepard
     private var isFiringContinuously = false
     private var textures: AnimationTextureCache.TowerTextures?
+    private var restingTurretPosition: CGPoint {
+        textures?.turretPosition ?? .zero
+    }
 
     init(towerType: TowerType) {
         self.towerType = towerType
@@ -108,7 +111,7 @@ class TowerAnimationComponent: GKComponent {
         guard let turret = turretNode else { return }
         // Reset position first to prevent drift from interrupted animations
         turret.removeAction(forKey: "recoil")
-        turret.position = .zero
+        turret.position = restingTurretPosition
         let recoil = SKAction.sequence([
             SKAction.moveBy(x: 0, y: -2.0, duration: 0.02),
             SKAction.moveBy(x: 0, y: 2.0, duration: 0.06)
@@ -151,7 +154,7 @@ class TowerAnimationComponent: GKComponent {
         isFiringContinuously = false
 
         turretNode?.removeAction(forKey: "ciwsVibrate")
-        turretNode?.position = .zero  // Reset to center of base
+        turretNode?.position = restingTurretPosition
 
         muzzleNode?.removeAction(forKey: "ciwsFlash")
         muzzleNode?.isHidden = true
@@ -162,7 +165,7 @@ class TowerAnimationComponent: GKComponent {
     private func animateGepardAlternating() {
         guard let turret = turretNode else { return }
         turret.removeAction(forKey: "recoil")
-        turret.position = .zero
+        turret.position = restingTurretPosition
         let recoil = SKAction.sequence([
             SKAction.moveBy(x: alternatingBarrel ? -0.3 : 0.3, y: -1.5, duration: 0.02),
             SKAction.moveBy(x: alternatingBarrel ? 0.3 : -0.3, y: 1.5, duration: 0.04)
@@ -214,7 +217,7 @@ class TowerAnimationComponent: GKComponent {
     private func animateSoldierRecoil() {
         guard let turret = turretNode else { return }
         turret.removeAction(forKey: "soldierRecoil")
-        turret.position = .zero
+        turret.position = restingTurretPosition
         let recoil = SKAction.sequence([
             SKAction.moveBy(x: 0, y: -2.0, duration: 0.06),
             SKAction.moveBy(x: 0, y: 2.0, duration: 0.10)

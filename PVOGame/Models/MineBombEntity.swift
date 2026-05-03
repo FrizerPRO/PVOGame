@@ -10,6 +10,7 @@ import GameplayKit
 
 final class MineBombEntity: GKEntity {
     private(set) var isFromCrashedMineLayer = false
+    private(set) var canBeShotDown = true
     private weak var sourceDrone: AttackDroneEntity?
     weak var targetTower: TowerEntity?
     /// Damage dealt to the target tower on impact. Default 1 (MineLayer
@@ -61,7 +62,7 @@ final class MineBombEntity: GKEntity {
         self.sourceDrone = sourceDrone
         if let body = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
             var contactMask = Constants.groundBitMask
-            if !isFromCrashedDrone {
+            if !isFromCrashedDrone && canBeShotDown {
                 contactMask |= Constants.bulletBitMask
             }
             if isFromCrashedDrone {
@@ -77,6 +78,15 @@ final class MineBombEntity: GKEntity {
 
     func canHitDrone(_ drone: AttackDroneEntity) -> Bool {
         !(isFromCrashedMineLayer && sourceDrone === drone)
+    }
+
+    func makeUnshootable() {
+        canBeShotDown = false
+        if let body = component(ofType: GeometryComponent.self)?.geometryNode.physicsBody {
+            body.categoryBitMask = 0
+            body.contactTestBitMask = 0
+            body.collisionBitMask = 0
+        }
     }
 
     func silentDetonate() {
